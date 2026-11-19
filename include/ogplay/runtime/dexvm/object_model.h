@@ -213,6 +213,7 @@ public:
     // The ordinary device memory class stays fixed after clearGrowthLimit.
     [[nodiscard]] std::uint64_t NormalHeapGrowthLimitBytes() const noexcept;
     [[nodiscard]] std::uint64_t MaximumHeapBytes() const noexcept;
+    [[nodiscard]] bool HasPendingGcRequest() const noexcept;
     [[nodiscard]] bool ShouldCollectFor(std::uint64_t request_bytes) const noexcept;
     void AdjustTargetAfterGc() noexcept;
     [[nodiscard]] float TargetHeapUtilization() const noexcept;

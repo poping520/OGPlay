@@ -74,6 +74,7 @@ struct InterpreterExecutionState final {
     // root guest stack (04 §1 outbound marshaling).
     std::uint32_t native_depth{};
     bool constructing_throwable{};
+    bool collecting_gc{};
     // Teardown handshake, read once per instruction by Tick().
     std::atomic<bool> stop_requested{false};
     std::atomic<std::uint64_t> deadline_ns{};
@@ -334,11 +335,12 @@ public:
     // The hot path resolves the active execution once per Call entry and
     // threads the reference through Run/Step/Tick instead of re-resolving
     // the thread-local routing on every instruction.
+    void PollExecutionSafepoint(const InterpreterExecutionState& execution);
+
     void Tick(InterpreterExecutionState& execution, const std::uint64_t amount = 1) {
         execution.ticks += amount;
         if (amount == 1U && (execution.ticks & 1023U) == 0U) {
-            owner->CheckExecutionDeadline();
-            execution_lock.YieldToWaiter();
+            PollExecutionSafepoint(execution);
         }
         if (execution.stop_requested.load(std::memory_order_relaxed)) {
             throw DexVmError(DexVmErrorReason::thread_stopped,

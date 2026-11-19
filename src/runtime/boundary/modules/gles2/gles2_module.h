@@ -37,7 +37,7 @@ public:
         if constexpr (Id >= 3U)
             return UnimplementedGl(calls_, call, "libGLESv2.so",
                                    gles::generated::gles2_extensions::kFunctions[Id].name);
-        std::scoped_lock execution_lock(graphics_.execution_mutex);
+        const GraphicsBoundaryContext::GlesExecutionScope execution(graphics_, call);
         graphics_.ActivateCurrentContext();
         try {
             if constexpr (Id == 0) return InvokeMapPointer(call, graphics_, calls_);
@@ -51,7 +51,7 @@ public:
 
     template <gles::GlesThunkId FunctionId>
     std::uint32_t Invoke(const A32CallFrame& call) {
-        std::scoped_lock execution_lock(graphics_.execution_mutex);
+        const GraphicsBoundaryContext::GlesExecutionScope execution(graphics_, call);
         graphics_.ActivateCurrentContext();
         if constexpr (FunctionId == 70U || FunctionId == 65U) {
             if (call.Argument(2) == 0U)

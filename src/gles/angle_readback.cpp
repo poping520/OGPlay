@@ -75,10 +75,10 @@ private:
 
 class AsyncAngleReadback::Impl final {
 public:
-    Impl(const AngleFrame& source, Publish publish)
+    Impl(const AngleFrame& source, Publish publish, EglContextTrace trace)
         : info_(source.Info()), backend_(source.Backend()), version_(source.ClientVersion()),
-          context_(source.NativeContext()), surface_(source.NativeSurface()),
-          display_(source.NativeDisplay()), publish_(std::move(publish)) {
+          context_(source.NativeContext()), surface_(source.NativeSurface()), display_(source.NativeDisplay()),
+          publish_(std::move(publish)), trace_(trace) {
 #if OGPLAY_HAS_ANGLE
         reverse_ = HasToken(reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS)),
                             "GL_ANGLE_pack_reverse_row_order");
@@ -168,7 +168,8 @@ private:
 #if OGPLAY_HAS_ANGLE
         std::optional<AngleFrame> collector;
         try {
-            collector.emplace(AngleFrame::CreatePbuffer(backend_, 1, 1, version_, context_));
+            collector.emplace(
+                AngleFrame::CreatePbuffer(backend_, 1, 1, version_, context_, CompressedTextureFamily::all, trace_));
             if (collector->NativeDisplay() != display_) throw std::runtime_error("presentation collector display differs");
             for (auto& slot : slots_) {
                 glGenBuffers(1, &slot.buffer);
@@ -255,6 +256,7 @@ private:
     int version_;
     EglHandle context_, surface_, display_;
     Publish publish_;
+    EglContextTrace trace_;
     mutable std::mutex mutex_;
     std::mutex producer_mutex_, join_mutex_;
     std::condition_variable changed_;
@@ -272,7 +274,8 @@ private:
 #endif
 };
 
-std::shared_ptr<AsyncAngleReadback> AsyncAngleReadback::Create(const AngleFrame& source, Publish publish) {
+std::shared_ptr<AsyncAngleReadback> AsyncAngleReadback::Create(const AngleFrame& source, Publish publish,
+                                                               EglContextTrace trace) {
 #if OGPLAY_HAS_ANGLE
     if (!source.IsCurrentOnCallingThread()) throw std::logic_error("presentation source is not current");
     const auto info = source.Info();
@@ -284,9 +287,13 @@ std::shared_ptr<AsyncAngleReadback> AsyncAngleReadback::Create(const AngleFrame&
         !(es3 || (HasToken(extensions, "GL_NV_pixel_buffer_object") &&
                   HasToken(extensions, "GL_EXT_map_buffer_range") && HasToken(extensions, "GL_OES_mapbuffer"))) ||
         !HasToken(eglQueryString(reinterpret_cast<EGLDisplay>(source.NativeDisplay()), EGL_EXTENSIONS), "EGL_KHR_fence_sync")) return nullptr;
-    return std::shared_ptr<AsyncAngleReadback>(new AsyncAngleReadback(std::make_unique<Impl>(source, std::move(publish))));
+    return std::shared_ptr<AsyncAngleReadback>(
+        new AsyncAngleReadback(std::make_unique<Impl>(source, std::move(publish), trace)));
 #else
-    static_cast<void>(source); static_cast<void>(publish); return nullptr;
+    static_cast<void>(source);
+    static_cast<void>(publish);
+    static_cast<void>(trace);
+    return nullptr;
 #endif
 }
 AsyncAngleReadback::AsyncAngleReadback(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}

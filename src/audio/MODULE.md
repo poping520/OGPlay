@@ -20,7 +20,7 @@
   替换，`lease` 标识已捕获的 FD 窗口。来源读取仍由上层注入，audio 模块不解析 APK/VFS。
 - `EncodedAudioDataSource`：窄拥有型接口只发布 `Size` 与带 `stop_token` 的 `ReadAt`；
   decoder 按块消费，来源寿命覆盖 prepare/playback，取消只终止当前任务。
-- `EncodedMusicMixer` / `EncodedAudioStream`：音乐按 OGG/MP3/WAV bitstream 分块读取，
+- `EncodedMusicMixer` / `EncodedAudioStream`：音乐按 OGG/MP3/WAV/MP4（M4A）bitstream 分块读取，
   不缓存整首 PCM；SoundPool 仍用短音效全量缓存。音乐最多 16 实例，所持编码窗口总量
   128 MiB、单窗口 64 MiB；每 decoder PCM 块 16 KiB，Vorbis codec arena 上限 2 MiB。
   元数据准备在实例拥有的 jthread 中进行；每实例最多一个任务，不 detach，reset/release/
@@ -38,7 +38,11 @@
   以及多 player 64-bit 累加后一次饱和。AudioTrack STREAM/STATIC 与 OpenSL buffer
   queue 使用不同 stop/clear 语义；STATIC 数据不被播放消费。
 - `DecodeWav`：解码有界 RIFF/WAVE PCM8/16 mono/stereo，拒绝压缩 WAVE。
-- `DecodeEncodedAudio`：按魔数分派 OGG/WAV/MP3。
+- `ExternalAudioDecoder`：识别文件偏移 4 处的 ISO BMFF `ftyp` 后，经集成层注入的 FFmpeg
+  解码器打开 MP4/M4A AAC，读取有界的交错 S16 PCM 块，支持回到流首。音频模块无需链接 video。
+- `DecodeEncodedAudio`：按魔数分派 OGG/WAV/MP3，SoundPool 的 MP4/M4A AAC 整段解码
+  复用注入接口。解码失败携带封装及可识别的编码名，由 Android 集成层记录
+  `android.media.audio_codec.<编码>`，无法识别编码时记录 `android.media.audio_container.unknown`。
 - M3/M6 定义对象表、PCM 队列、回调与媒体状态机。
 
 ## 不变量
@@ -54,7 +58,7 @@
   `EncodedAudioDataSource`，不得在接入后再复制完整编码源。OGG/MP3 输入请求块不超过
   64 KiB，Vorbis header arena 不超过 2 MiB；WAV 用定位读取。短 SoundPool 音效才允许
   上层显式、有总量上限的 ReadAll。
-- Ogg/MP3/WAV 输入最大 64 MiB、解码 PCM 最大 128 MiB，只接受 1/2 声道和正采样率；空、损坏、
+- 编码音频输入最大 64 MiB、整段解码 PCM 最大 128 MiB，输出为 1/2 声道和正采样率；空、损坏、
   超限或不支持流必须在发布 PCM 前明确失败。WAV 容器不得当作裸 PCM。
 - SoundPool resource 只有在上游完成真实加载后才能 `MarkLoaded`；未接入加载、解码和
   输出前，load/play 只能留下可查询 pending request，查询必须返回目录事实，不得发布

@@ -37,6 +37,8 @@ private:
 
 }  // namespace
 
+EncodedMusicMixer::EncodedMusicMixer(ExternalAudioDecoder decoder) : external_decoder_(std::move(decoder)) {}
+
 std::uint32_t EncodedMusicMixer::Create() {
     std::scoped_lock lock(mutex_);
     if (players_.size() >= kMaximumPlayers) throw std::length_error("music player limit reached");
@@ -117,6 +119,7 @@ bool EncodedMusicMixer::Prepare(const std::uint32_t player) {
     if (found == players_.end() || found->second.prepare_task != task) return false;
     auto& state = found->second;
     state.decoder = std::move(task->stream);
+    state.prepare_failure = std::move(task->failure);
     state.prepare_task.reset();
     if (!state.decoder) return false;
     state.sample_rate = state.decoder->Rate();
@@ -137,17 +140,25 @@ bool EncodedMusicMixer::BeginPrepare(const std::uint32_t player) {
     found->second.prepared = false;
     found->second.playing = false;
     found->second.decode_failed = false;
+    found->second.prepare_failure.reset();
     auto task = std::make_shared<PrepareTask>();
     const auto source = found->second.source;
     // Raw task pointer is safe: the owner joins before destroying any task data.
     // No detached threads and no callback into the mixer from the worker.
-    task->worker = std::jthread([work = task.get(), source](std::stop_token stop) {
+    task->worker = std::jthread([work = task.get(), source, decoder = external_decoder_](std::stop_token stop) {
         std::unique_ptr<EncodedAudioStream> stream;
-        try { stream = std::make_unique<EncodedAudioStream>(source, stop); }
-        catch (const std::exception&) {}
+        std::optional<AudioDecodeFailure> failure;
+        try {
+            stream = std::make_unique<EncodedAudioStream>(source, stop, decoder);
+        } catch (const AudioDecodeError& error) {
+            failure = error.Failure();
+        } catch (const std::exception& error) {
+            failure = AudioDecodeFailure{error.what(), {}};
+        }
         {
             std::scoped_lock lock(work->mutex);
             work->stream = std::move(stream);
+            work->failure = std::move(failure);
             work->done = true;
         }
         work->ready.notify_all();
@@ -168,6 +179,7 @@ EncodedMusicMixer::PrepareStatus EncodedMusicMixer::PollPrepare(
         std::scoped_lock task_lock(task->mutex);
         if (!task->done) return PrepareStatus::pending;
         state.decoder = std::move(task->stream);
+        state.prepare_failure = std::move(task->failure);
     }
     state.prepare_task.reset();
     if (!state.decoder) return PrepareStatus::failed;
@@ -178,6 +190,12 @@ EncodedMusicMixer::PrepareStatus EncodedMusicMixer::PollPrepare(
     state.position = 0;
     state.completed = false;
     return PrepareStatus::ready;
+}
+
+std::optional<AudioDecodeFailure> EncodedMusicMixer::PrepareFailure(std::uint32_t player) const {
+    std::scoped_lock lock(mutex_);
+    const auto found = players_.find(player);
+    return found == players_.end() ? std::nullopt : found->second.prepare_failure;
 }
 
 void EncodedMusicMixer::Start(const std::uint32_t player) {
@@ -242,7 +260,6 @@ void EncodedMusicMixer::SetVolume(const std::uint32_t player, const float left,
 }
 
 void EncodedMusicMixer::SetAudioStream(std::uint32_t player, std::int32_t stream) {
-    if (stream < 0 || stream >= 10) throw std::invalid_argument("invalid audio stream");
     std::scoped_lock lock(mutex_);
     players_.at(player).audio_stream = stream;
 }
@@ -339,6 +356,9 @@ void EncodedMusicMixer::MixIntoAccumulator(
         if (source_frames == 0U || player.sample_rate == 0U) continue;
         const auto step = static_cast<double>(player.sample_rate) /
                           static_cast<double>(output_rate);
+        // MediaPlayer accepts any stream ID. Use the music gain for IDs without a mixer slot.
+        const auto stream = static_cast<std::size_t>(player.audio_stream);
+        const auto gain = stream_gains_[stream < stream_gains_.size() ? stream : 3U];
         for (std::size_t rendered = 0; rendered < output_frames; ++rendered) {
             if (player.position >= static_cast<double>(source_frames)) {
                 if (player.looping) {
@@ -359,7 +379,6 @@ void EncodedMusicMixer::MixIntoAccumulator(
                 player.decode_failed = true;
                 break;
             }
-            const auto gain = stream_gains_[static_cast<std::size_t>(player.audio_stream)];
             const auto source_l = samples[0] * gain;
             const auto source_r = samples[1] * gain;
             accumulator[rendered * 2U] +=

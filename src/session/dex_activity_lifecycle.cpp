@@ -73,6 +73,8 @@ dx::VmValue CallOn(dx::Interpreter& vm, dx::VmObjectRef object, const char* name
 
 void AttachDexApplicationThread(dx::Interpreter& vm, runtime::DexVmAndroidContext& context) {
     static_cast<void>(context);
+    static_cast<void>(
+        CallDirect(vm, "Ldalvik/system/CloseGuard;", "setEnabled", "(Z)V", std::array{dx::VmValue::Int(0)}));
     constexpr auto owner = "Landroid/app/ActivityThread;";
     const auto type = vm.Linker().ResolveDescriptor(owner);
     RequireOutcome(vm, vm.EnsureClassInitialized(type), "ActivityThread initialization");

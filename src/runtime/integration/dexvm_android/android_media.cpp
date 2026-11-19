@@ -34,6 +34,19 @@ private:
 };
 }  // namespace
 
+void ReportAndroidAudioDecodeFailure(dx::Interpreter& vm, std::string_view operation,
+                                     const audio::AudioDecodeFailure& failure) {
+    if (auto* ledger = vm.Ledger()) {
+        ledger->RecordUnimplemented(failure.codec.empty() ? "android.media.audio_container.unknown"
+                                                          : "android.media.audio_codec." + failure.codec,
+                                    0);
+    }
+    if (auto* logger = vm.Log()) {
+        logger->Write(core::LogLevel::warn, "runtime.android.audio.decode", failure.message, {},
+                      {{"operation", std::string(operation)}});
+    }
+}
+
 Decl Declare_android_media_AudioSystem_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/media/AudioSystem;");
     builder.MergesBootClass();
@@ -809,8 +822,8 @@ std::size_t MixVideoPcmIntoAccumulator(DexVmAndroidContext& context, const std::
     for (auto& [handle, state] : context.video_views) {
         if (state.player == nullptr || !state.playing) continue;
         try {
-            if (MixOneVideoView(state, interleaved_stereo, output_rate,
-                                gains.at(static_cast<std::size_t>(state.audio_stream))))
+            const auto stream = static_cast<std::size_t>(state.audio_stream);
+            if (MixOneVideoView(state, interleaved_stereo, output_rate, gains[stream < gains.size() ? stream : 3U]))
                 ++contributed;
         } catch (const video::VideoPlayerError&) {
             // Audio workers publish only a fact. The guest main pump owns Java callbacks.
@@ -949,21 +962,28 @@ std::optional<std::string> PumpAndroidAudioTracks(dexvm::Interpreter& vm, DexVmA
             }
             found->second.phase =
                 status == audio::EncodedMusicMixer::PrepareStatus::ready ? Phase::prepared : Phase::error;
+            bool video_failure = false;
             if (status == audio::EncodedMusicMixer::PrepareStatus::failed || !found->second.display_window.IsNull()) {
                 try {
                     if (PrepareAndroidMediaVideo(context, handle)) continue;
                 } catch (const video::VideoCodecUnsupportedError& error) {
+                    video_failure = true;
                     if (auto* ledger = vm.Ledger())
                         ledger->RecordUnimplemented("android.video.codec." + error.codec(), 0);
                     if (auto* logger = vm.Log())
                         logger->Write(core::LogLevel::warn, "runtime.video.prepare", error.what());
                 } catch (const dexvm::VmJavaThrow& error) {
+                    video_failure = true;
                     if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.media.video_prepare", 0);
                     if (auto* logger = vm.Log())
                         logger->Write(core::LogLevel::warn, "runtime.video.prepare", error.message);
                 }
             }
             if (found->second.phase == Phase::error) {
+                if (!video_failure && context.encoded_music) {
+                    if (const auto failure = context.encoded_music->PrepareFailure(found->second.music))
+                        android_intrinsics::ReportAndroidAudioDecodeFailure(vm, "MediaPlayer.prepareAsync", *failure);
+                }
                 if (const auto error = post("Landroid/media/MediaPlayer;", found->second.jni_weak, 100, 1, -1);
                     error.has_value()) {
                     return error;

@@ -77,6 +77,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   或 DexVM native context 的 `call_mutex`。进入可能等待这些锁或执行 guest 的边界前，
   按完整递归深度 `ReleaseForBlocking`；正常及异常出口均 `ReacquireAfterBlocking`。
   JNI 回调在桥入口重新获取 VM 锁；释放期间只使用已复制的参数与稳定 owner，不访问 VM 状态。
+  持有 AssetManager 资源锁或其他 intrinsic 宿主锁时，禁止执行字节码或释放 VM 执行锁。
+  防线作用域在持锁期间跳过 `YieldToWaiter`，并让 `ReleaseForBlocking` 抛出带锁名的 `internal_invariant`。
   JNI 解释方法因 thread_stopped 展开时，保留调用线程身份转为 A32GuestCallCancelled，供
   native clone 正常退出；其他解释器错误继续传播为失败，不按消息或关闭阶段吞掉异常。
 
@@ -293,6 +295,7 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   也泵送原版 Handler 媒体事件，不依赖创建 AudioTrack。
   PCM 最近邻重采样饱和混入，停/暂停/结束静默；自由运行可按真实时间节流，
   手动步进保持确定性。SoundPool 解码成功才原子提交 loaded，失败保留 pending/错误事实。
+  进程在 FFmpeg 可用时向 MediaPlayer 和 SoundPool 的音频 mixer 注入同一纯音频解码入口。
 - legacy media 的 no-op/返回值只表示 Java 契约；volume/pitch/loaded/voice 为受检会话状态。
   资源必须真实非空且受 JNI size 限制；audio.load_movie 仅登记最多 4096 UTF-16 单元的请求，
   不等于已播放。display.change_mode/process.exit 只发布可查询请求，由上层实施窗口/清理策略。

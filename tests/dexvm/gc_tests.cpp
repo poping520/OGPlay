@@ -24,6 +24,7 @@
 #include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "interpreter_backends.h"
+#include "interpreter_fixture.h"
 
 DOCTEST_REGISTER_EXCEPTION_TRANSLATOR(const ogplay::runtime::dexvm::VmJavaThrow& error) {
     return doctest::String((error.descriptor + ": " + error.message).c_str());
@@ -88,6 +89,30 @@ struct GcVm final {
               }(),
               model, native_bridge, ledger, InterpreterConfig{.backend = backend}) {}
 };
+
+TEST_CASE("DexVM GC services allocation requests from intrinsics in an allocation-free Java loop") {
+    using namespace ogplay::test::interpreter;
+    WithEachBackend([](const InterpreterConfig config) {
+        constexpr std::int32_t array_bytes = 64 * 1024;
+        constexpr std::int32_t iterations = 4096;
+        std::int32_t allocations = 0;
+        auto allocator = IntrinsicClassBuilder::Class("Lgc/IntrinsicAllocator;");
+        allocator.StaticMethod("allocate", "()V", [&](IntrinsicContext& call) {
+            auto& model = call.vm.Model();
+            static_cast<void>(
+                model.NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte, array_bytes));
+            ++allocations;
+            return VmValue{};
+        });
+        Vm fixture(config, {}, {std::move(allocator).Build()}, "gc_intrinsic_allocations.dex");
+        REQUIRE(static_cast<std::uint64_t>(iterations) * array_bytes > fixture.model.HeapGrowthLimitBytes());
+        const auto outcome = fixture.CallStatic("Lgc/AllocationLoop;", "run", "(I)V", {VmValue::Int(iterations)});
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+        CHECK(allocations == iterations);
+        CHECK(fixture.interpreter.Stats().gc_collections > 0);
+        CHECK(fixture.interpreter.Stats().gc_freed_bytes >= array_bytes);
+    });
+}
 
 TEST_CASE("DexVM GC root surface enumerates permanent static JNI and session roots") {
     GcVm fixture;

@@ -11,12 +11,12 @@
 
 #include "ogplay/audio/java_sound_pool_mixer.h"
 #include "ogplay/runtime/vfs/vfs.h"
+#include "ogplay/video/ffmpeg_video_player.h"
 
 namespace {
 
-[[nodiscard]] std::vector<std::byte> ReadSound() {
-    const auto path = std::filesystem::path{OGPLAY_SOURCE_DIR} /
-                      "tests/fixtures/audio/short-vorbis.ogg";
+[[nodiscard]] std::vector<std::byte> ReadSound(const char* filename = "short-vorbis.ogg") {
+    const auto path = std::filesystem::path{OGPLAY_SOURCE_DIR} / "tests/fixtures/audio" / filename;
     std::ifstream input(path, std::ios::binary);
     const std::vector<char> bytes{std::istreambuf_iterator<char>{input}, {}};
     std::vector<std::byte> result;
@@ -87,6 +87,18 @@ TEST_CASE("SoundPool mixer keeps unavailable resources explicit") {
         ogplay::audio::JavaSoundPoolKind::big, 99, 0, 1.0F));
     CHECK(mixer.LoadedResourceCount() == 0U);
     CHECK(mixer.ActiveVoiceCount() == 0U);
+}
+
+TEST_CASE("SoundPool loads a pure audio M4A sample") {
+    auto decoder = ogplay::video::MakeFfmpegAudioDecoder();
+    if (!decoder) return;
+    const auto bytes = ReadSound("short-aac.m4a");
+    REQUIRE_FALSE(bytes.empty());
+    ogplay::audio::JavaSoundPoolMixer mixer([&](const ogplay::audio::EncodedAudioSource&) { return bytes; },
+                                            std::move(decoder));
+    const auto pool = mixer.CreatePool(1);
+    CHECK(mixer.LoadSample(pool, ogplay::audio::EncodedAudioSource::Resource(1)) != 0);
+    CHECK(mixer.LoadedResourceCount() == 1);
 }
 
 TEST_CASE("SoundPool mixer decodes WAV windows") {

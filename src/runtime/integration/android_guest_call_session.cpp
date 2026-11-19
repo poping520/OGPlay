@@ -51,6 +51,7 @@
 #include "ogplay/runtime/jni/jni_native_registry.h"
 #include "ogplay/runtime/jni/jni_object.h"
 #include "ogplay/runtime/syscall/arm_kernel_helpers.h"
+#include "ogplay/video/ffmpeg_video_player.h"
 #include "runtime/integration/nested_guest_cpu_pool.h"
 #include "runtime/integration/api19_linker_view.h"
 #include "runtime/integration/guest_cpu_environment.h"
@@ -694,7 +695,8 @@ public:
                     BindProcessCallbacks(request.boundary_options, this)),
           guest_jni_(address_space_), dispatcher_(CreateAndroidArmSyscallDispatcher(ledger_)), jni_dispatcher_(ledger_),
           invocations_(classes_), fields_(classes_), objects_(classes_),
-          sound_pool_mixer_(request.sound_resource_loader), java_vm_(environment_), threads_([this] {
+          sound_pool_mixer_(request.sound_resource_loader, video::MakeFfmpegAudioDecoder()),
+          encoded_music_(video::MakeFfmpegAudioDecoder()), java_vm_(environment_), threads_([this] {
               auto result = std::make_unique<cpu::DynarmicCpu>(memory_bus_, execution_context_);
               ConfigureFastHostCalls(*result);
               return result;

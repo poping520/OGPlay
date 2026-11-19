@@ -165,6 +165,7 @@ public:
     // Stable bytecode safe point: hand off to queued hosts without publishing
     // a guest blocking transition or releasing guest monitors.
     void YieldToWaiter();
+    [[nodiscard]] bool HasWaiters() const;
     [[nodiscard]] bool HeldByCurrentThread() const;
     // Observes real host threads entering/leaving guest blocking scopes.
     // The callback runs outside the execution-lock mutex and must not throw.
@@ -174,6 +175,19 @@ public:
 private:
     class Impl;
     std::unique_ptr<Impl> impl_;
+};
+
+// Prevents VM handoff while this host thread holds a host lock.
+// The diagnostic name, if provided, must outlive the scope.
+class VmYieldForbiddenScope final {
+public:
+    explicit VmYieldForbiddenScope(const char* lock_name = nullptr) noexcept;
+    ~VmYieldForbiddenScope();
+    VmYieldForbiddenScope(const VmYieldForbiddenScope&) = delete;
+    VmYieldForbiddenScope& operator=(const VmYieldForbiddenScope&) = delete;
+
+private:
+    const char* previous_lock_name_;
 };
 
 class VmExecutionLockScope final {

@@ -17,6 +17,8 @@ void RegisterGraphicsStateTables(dx::Interpreter& vm, const std::shared_ptr<DexV
 
 using Decl = dexvm::IntrinsicClassDecl;
 using Context = std::shared_ptr<DexVmAndroidContext>;
+void ReportAndroidAudioDecodeFailure(dx::Interpreter& vm, std::string_view operation,
+                                     const audio::AudioDecodeFailure& failure);
 dx::VmObjectRef CreateApplicationResources(dx::IntrinsicContext& call, const Context& context);
 std::optional<dx::CoreIntrinsicServices::Passwd> ReadGuestPasswd(dx::Interpreter& vm, const Context& context,
                                                                  std::int32_t uid);

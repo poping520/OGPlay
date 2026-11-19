@@ -155,6 +155,8 @@ template <class Operation>
 V Checked(const char* exception, Operation&& operation) {
     try {
         return operation();
+    } catch (const dx::DexVmError&) {
+        throw;
     } catch (const std::runtime_error& e) {
         throw dx::VmJavaThrow{exception, e.what()};
     }
@@ -253,15 +255,27 @@ V OpenFd(Call& c, Manager& manager, std::string_view path, std::optional<std::in
     using android_intrinsics::CallAndroidMethod;
     if (!offsets.IsValid()) throw dx::VmJavaThrow{kNull, "asset FD offsets"};
     if (c.vm.Model().ArrayLength(offsets) < 2) throw dx::VmJavaThrow{kBounds, "asset FD offsets"};
-    const auto range = Open(manager, path, cookie)->openFd();
-    if (range.source.isUpToDate && !range.source.isUpToDate()) throw dx::VmJavaThrow{kFile, "asset archive changed"};
-    const auto descriptor = c.vm.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
-    const auto root = c.vm.ProtectReferences(std::array{descriptor});
-    const auto file = c.vm.IO().OpenFile(range.source.name, true, false, false, false, false);
-    c.vm.IO().SetDescriptor(descriptor,
-                            {dx::IoRuntime::DescriptorKind::vfs_path, range.source.name, 0, false, {}, {}, file});
-    c.vm.IO().BindFileStream(descriptor, file, false);
+    auto& io = c.vm.IO();
+    std::uint64_t offset;
+    std::uint64_t length;
+    std::shared_ptr<dx::IoRuntime::OpenFileDescription> file;
+    {
+        AssetManagerLock lock(manager.assetManager->mutex);
+        const auto range = Open(manager, path, cookie)->openFd();
+        if (range.source.isUpToDate && !range.source.isUpToDate())
+            throw dx::VmJavaThrow{kFile, "asset archive changed"};
+        offset = range.offset;
+        length = range.length;
+        file = io.OpenFile(range.source.name, true, false, false, false, false);
+    }
+    dx::VmObjectRef descriptor;
+    bool descriptor_bound = false;
     try {
+        descriptor = c.vm.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
+        const auto root = c.vm.ProtectReferences(std::array{descriptor});
+        io.SetDescriptor(descriptor, {dx::IoRuntime::DescriptorKind::vfs_path, file->path, 0, false, {}, {}, file});
+        descriptor_bound = true;
+        io.BindFileStream(descriptor, file, false);
         static_cast<void>(CallAndroidMethod(c.vm, descriptor, "setInt$", "(I)V", {V::Int(file->handle)}));
         const auto pfd = c.vm.NewIntrinsicInstance("Landroid/os/ParcelFileDescriptor;");
         const auto pfdRoot = c.vm.ProtectReferences(std::array{pfd});
@@ -276,11 +290,14 @@ V OpenFd(Call& c, Manager& manager, std::string_view path, std::optional<std::in
         if (outcome.exception.IsValid())
             throw dx::VmJavaThrow{c.vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
                                   outcome.exception};
-        c.vm.Model().SetPrimitiveElement(offsets, 0, range.offset);
-        c.vm.Model().SetPrimitiveElement(offsets, 1, range.length);
+        c.vm.Model().SetPrimitiveElement(offsets, 0, offset);
+        c.vm.Model().SetPrimitiveElement(offsets, 1, length);
         return V::Ref(pfd);
     } catch (...) {
-        c.vm.IO().CloseDescriptor(descriptor);
+        if (descriptor_bound)
+            io.CloseDescriptor(descriptor);
+        else
+            io.CloseOpenFile(*file);
         throw;
     }
 }
@@ -436,7 +453,7 @@ Decl Declare_android_content_res_AssetManager_Natives(const Context& context) {
     const auto instance = [&](const char* name, const char* signature, std::uint32_t flags, auto operation) {
         bind(name, signature, flags, [operation](Call& c, ResourceNativeState& state) {
             const auto owner = ManagerFor(c, state);
-            std::scoped_lock lock(owner->assetManager->mutex);
+            AssetManagerLock lock(owner->assetManager->mutex);
             return operation(c, state, owner, owner->assetManager->core);
         });
     };
@@ -452,7 +469,7 @@ Decl Declare_android_content_res_AssetManager_Natives(const Context& context) {
     });
     bind("destroy", "()V", kPrivate | kFinal, [](Call& c, ResourceNativeState& s) {
         const auto manager = s.managers.remove(ManagerToken(c.vm, c.receiver));
-        std::scoped_lock lock(manager->assetManager->mutex);
+        AssetManagerLock lock(manager->assetManager->mutex);
         manager->assetManager->retired = true;
         for (const auto& [cookie, token] : manager->pools)
             s.pools.retire(token);
@@ -528,24 +545,34 @@ Decl Declare_android_content_res_AssetManager_Natives(const Context& context) {
                  });
              });
 
-    const auto open = [&](const char* name, const char* signature, bool nonAsset, bool fd) {
-        instance(name, signature, nonAsset && fd ? kPrivate : kPrivate | kFinal,
-                 [nonAsset, fd](Call& c, ResourceNativeState& s, auto& owner, auto&) {
+    const auto open = [&](const char* name, const char* signature, bool nonAsset) {
+        instance(name, signature, kPrivate | kFinal,
+                 [nonAsset](Call& c, ResourceNativeState& s, auto& owner, auto&) {
                      return Checked(kFile, [&] {
                          const auto arg = nonAsset ? 1U : 0U;
                          const auto path = String(c, arg);
                          const auto cookie = nonAsset ? std::optional{c.arguments[0].AsInt()} : std::nullopt;
-                         if (fd) return OpenFd(c, *owner, path, cookie, c.arguments[arg + 1].ref);
                          if (U(c, arg + 1) > 3) throw dx::VmJavaThrow{kArgument, "invalid asset access mode"};
                          auto asset = Open(*owner, path, cookie);
                          return Int(s.assets.add(std::make_shared<AssetHandle>(AssetHandle{owner, std::move(asset)})));
                      });
                  });
     };
-    open("openAsset", "(Ljava/lang/String;I)I", false, false);
-    open("openNonAssetNative", "(ILjava/lang/String;I)I", true, false);
-    open("openAssetFd", "(Ljava/lang/String;[J)Landroid/os/ParcelFileDescriptor;", false, true);
-    open("openNonAssetFdNative", "(ILjava/lang/String;[J)Landroid/os/ParcelFileDescriptor;", true, true);
+    open("openAsset", "(Ljava/lang/String;I)I", false);
+    open("openNonAssetNative", "(ILjava/lang/String;I)I", true);
+    const auto openFd = [&](const char* name, const char* signature, bool nonAsset) {
+        bind(name, signature, nonAsset ? kPrivate : kPrivate | kFinal, [nonAsset](Call& c, ResourceNativeState& s) {
+            return Checked(kFile, [&] {
+                const auto owner = ManagerFor(c, s);
+                const auto arg = nonAsset ? 1U : 0U;
+                const auto path = String(c, arg);
+                const auto cookie = nonAsset ? std::optional{c.arguments[0].AsInt()} : std::nullopt;
+                return OpenFd(c, *owner, path, cookie, c.arguments[arg + 1].ref);
+            });
+        });
+    };
+    openFd("openAssetFd", "(Ljava/lang/String;[J)Landroid/os/ParcelFileDescriptor;", false);
+    openFd("openNonAssetFdNative", "(ILjava/lang/String;[J)Landroid/os/ParcelFileDescriptor;", true);
     instance("openXmlAssetNative", "(ILjava/lang/String;)I", kPrivate | kFinal,
              [](Call& c, ResourceNativeState& s, auto& owner, auto&) { return OpenXml(c, s, *owner); });
     instance("destroyAsset", "(I)V", kPrivate | kFinal, [](Call& c, ResourceNativeState& s, auto& owner, auto&) {
@@ -665,7 +692,7 @@ Decl Declare_android_content_res_AssetManager_Natives(const Context& context) {
     const auto themeNative = [&](const char* name, const char* signature, auto operation) {
         bind(name, signature, kStatic | kFinal, [operation](Call& c, ResourceNativeState& s) {
             const auto theme = s.themes.get(U(c, 0));
-            std::scoped_lock lock(theme->owner->assetManager->mutex);
+            AssetManagerLock lock(theme->owner->assetManager->mutex);
             if (theme->owner->assetManager->retired) throw dx::VmJavaThrow{kState, "theme manager is retired"};
             return operation(c, s, theme->theme);
         });
@@ -679,12 +706,12 @@ Decl Declare_android_content_res_AssetManager_Natives(const Context& context) {
         auto& dm = dest->owner->assetManager->mutex;
         auto& sm = source->owner->assetManager->mutex;
         if (&dm == &sm) {
-            std::scoped_lock lock(dm);
+            AssetManagerLock lock(dm);
             if (dest->owner->assetManager->retired || source->owner->assetManager->retired)
                 throw dx::VmJavaThrow{kState, "theme manager is retired"};
             dest->theme.setTo(source->theme);
         } else {
-            std::scoped_lock lock(dm, sm);
+            AssetManagerLock lock(dm, sm);
             if (dest->owner->assetManager->retired || source->owner->assetManager->retired)
                 throw dx::VmJavaThrow{kState, "theme manager is retired"};
             dest->theme.setTo(source->theme);
@@ -910,7 +937,7 @@ dx::VmObjectRef CreateApplicationResources(Call& c, const Context& context) {
 std::vector<std::byte> ReadAndroidApkAsset(dx::Interpreter& vm, const Context& context, dx::VmObjectRef object,
                                            const std::string& name) {
     const auto manager = ResolveResourceAssetManager(vm, *context, object);
-    std::scoped_lock lock(manager->mutex);
+    AssetManagerLock lock(manager->mutex);
     auto asset = manager->core.open(name);
     if (!asset) throw dx::VmJavaThrow{kFile, name};
     return ReadResourceAsset(*asset, 32U << 20);

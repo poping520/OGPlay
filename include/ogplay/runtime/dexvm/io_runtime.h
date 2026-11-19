@@ -169,6 +169,7 @@ public:
     [[nodiscard]] std::shared_ptr<OpenFileDescription> OpenFile(std::string path, bool readable, bool writable,
                                                                 bool append, bool truncate, bool create,
                                                                 bool exclusive = false);
+    void CloseOpenFile(OpenFileDescription& file);
     void BindFileStream(VmObjectRef owner, std::shared_ptr<OpenFileDescription> file, bool close_underlying);
     [[nodiscard]] std::size_t FileAvailable(VmObjectRef owner) const;
     [[nodiscard]] std::size_t ReadFileStream(VmObjectRef owner, std::span<std::byte> destination);

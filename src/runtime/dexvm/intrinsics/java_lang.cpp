@@ -190,18 +190,6 @@ IntrinsicClassDecl Declare_java_lang_Runtime_Overrides(const CoreIntrinsicServic
     return std::move(builder).Build();
 }
 
-IntrinsicClassDecl Declare_libcore_io_IoUtils_Overrides() {
-    auto builder = IntrinsicClassBuilder::Class("Llibcore/io/IoUtils;", "Ljava/lang/Object;");
-    builder.MergesBootClass();
-    builder.StaticMethod("closeQuietly", "(Ljava/lang/AutoCloseable;)V", [](IntrinsicContext& context) {
-        if (auto* ledger = context.vm.Ledger()) {
-            ledger->RecordUnimplemented("dexvm.libcore.io_utils.close_quietly", 0);
-        }
-        return VmValue::Void();
-    });
-    return std::move(builder).Build();
-}
-
 IntrinsicClassDecl Declare_java_lang_Math_Natives() {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Math;");
     builder.MergesBootClass();

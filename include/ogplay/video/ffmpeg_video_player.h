@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 
+#include "ogplay/audio/encoded_audio.h"
 #include "ogplay/video/video_player.h"
 
 namespace ogplay::video {
@@ -28,5 +29,9 @@ namespace ogplay::video {
 [[nodiscard]] std::unique_ptr<VideoPlayer> OpenFfmpegVideo(
     std::shared_ptr<const VideoDataSource> source);
 [[nodiscard]] VideoSourcePlayerFactory MakeFfmpegVideoSourcePlayerFactory();
+
+// Empty when FFmpeg is unavailable. Accepts ISO BMFF with an audio track and
+// no video track other than attached artwork.
+[[nodiscard]] audio::ExternalAudioDecoder MakeFfmpegAudioDecoder();
 
 }  // namespace ogplay::video

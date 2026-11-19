@@ -1061,7 +1061,6 @@ void AttachAndroidClockObserver(DexVmAndroidContext& context, dexvm::VmExecution
             if (thread == context.clock_driver && context.clock_monitors)
                 context.clock_monitors->ObserveClockDriverBlocking(blocked);
             auto& egl = context.egl;
-            // The swap worker can release the execution lock under pace_mutex.
             {
                 std::scoped_lock lock(egl.pace_mutex);
                 if (egl.pace_driver == thread) egl.pace_driver_blocked = blocked;
@@ -1164,32 +1163,35 @@ void RetireGuestEglSurface(DexVmAndroidContext& context) {
 void PaceEglSwap(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock, std::uint64_t native_thread,
                  std::uint32_t window_surface, std::uint64_t context_token) {
     auto& egl = context.egl;
-    std::unique_lock lock(egl.pace_mutex);
     const auto thread = std::this_thread::get_id();
-    if (const auto it = egl.producers.find(thread); it != egl.producers.end()) it->second.wait_timed_out = false;
-    if (!egl.pace_driver.has_value() || *egl.pace_driver == thread || egl.pace_driver_blocked || egl.pace_shutdown) {
-        return;
-    }
-    const auto observed = egl.pace_generation;
-    if (native_thread) {
-        auto& producer = egl.producers[thread];
-        producer.native_thread = native_thread;
-        producer.context_token = context_token;
-        producer.window_surface = window_surface;
-        producer.waiting = true;
-        producer.blocked = false;
+    std::uint64_t observed;
+    {
+        std::scoped_lock lock(egl.pace_mutex);
+        if (const auto it = egl.producers.find(thread); it != egl.producers.end()) it->second.wait_timed_out = false;
+        if (!egl.pace_driver.has_value() || *egl.pace_driver == thread || egl.pace_driver_blocked ||
+            egl.pace_shutdown) {
+            return;
+        }
+        observed = egl.pace_generation;
+        if (native_thread) {
+            auto& producer = egl.producers[thread];
+            producer.native_thread = native_thread;
+            producer.context_token = context_token;
+            producer.window_surface = window_surface;
+            producer.waiting = true;
+            producer.blocked = false;
+        }
     }
     egl.pace_changed.notify_all();
     const auto depth = execution_lock.ReleaseForBlocking(false);
     try {
+        std::unique_lock lock(egl.pace_mutex);
         egl.pace_changed.wait(
             lock, [&] { return egl.pace_generation != observed || egl.pace_driver_blocked || egl.pace_shutdown; });
     } catch (...) {
-        lock.unlock();
         execution_lock.ReacquireAfterBlocking(depth, false);
         throw;
     }
-    lock.unlock();
     execution_lock.ReacquireAfterBlocking(depth, false);
 }
 

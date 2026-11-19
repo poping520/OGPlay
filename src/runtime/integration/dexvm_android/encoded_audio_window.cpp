@@ -96,7 +96,7 @@ std::shared_ptr<const audio::EncodedAudioDataSource> LoadEncodedAudioSource(
         const auto manager = context.application_resource_manager.lock();
         if (!manager) return nullptr;
         try {
-            std::scoped_lock lock(manager->mutex);
+            AssetManagerLock lock(manager->mutex);
             if (manager->retired) return nullptr;
             std::unique_ptr<resources::Asset> asset;
             if (source.kind == audio::EncodedAudioSource::Kind::resource) {

@@ -18,6 +18,8 @@ GL_OES_framebuffer_object 的 15 个独立 OES ABI 入口复用唯一 ANGLE 对�
 
 压缩格式计数、数组与 boolean/float/integer 查询共用下层实际上传能力；ATC 格式
 元数据沿现有 share-group 保存，禁止的子图更新在 guest 搬运前返回 GL error。
+固定绘制将缺少第 0 级图像的采样单元视为未启用，按 context、纹理名及目标记一次 warn。
+其他不完整状态（如 mipmap 缺级或尺寸、格式不一致）仍由 ANGLE 按 ES2 规则采样为黑色。
 
 API19 OES/IMG 的 ABI 相同核心别名复用原 handler；blend OES 直接执行 ANGLE。
 draw-texture 的八入口复用固定 shader 与 ANGLE 三角形绘制，支持共享纹理对象的

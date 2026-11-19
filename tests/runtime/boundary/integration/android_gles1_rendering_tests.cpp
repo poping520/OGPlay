@@ -43,6 +43,60 @@
 
 using namespace ogplay::test::android_boundary;
 
+TEST_CASE("GLES1 fixed draws ignore enabled textures without level zero") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture fixture;
+    fixture.boundary.OpenManagedSurface();
+    const auto gl = [&](std::string_view symbol, std::array<std::uint32_t, 4> args = {}) {
+        return fixture.Call("libGLESv1_CM.so", symbol, args);
+    };
+    const auto name = fixture.output.Add(0x300U);
+    gl("glGenTextures", {1U, name.Value()});
+    const auto texture = fixture.bus.Read32(name, 1U);
+    REQUIRE(texture != 0U);
+    for (std::uint32_t unit = 0x84C0U; unit <= 0x84C2U; ++unit) {
+        gl("glActiveTexture", {unit});
+        gl("glBindTexture", {0x0DE1U, texture});
+        gl("glEnable", {0x0DE1U});
+        gl("glTexEnvi", {0x2300U, 0x2200U, 0x2100U});  // GL_MODULATE
+    }
+    gl("glActiveTexture", {0x84C0U});
+    gl("glViewport", {0U, 0U, 4U, 3U});
+
+    const auto vertices = fixture.output.Add(0x380U);
+    constexpr std::array rectangle{-1.0F, -1.0F, 1.0F, -1.0F, -1.0F, 1.0F, 1.0F, 1.0F};
+    for (std::size_t index = 0; index < rectangle.size(); ++index)
+        fixture.bus.Write32(vertices.Add(index * 4U), std::bit_cast<std::uint32_t>(rectangle[index]), 1U);
+    gl("glVertexPointer", {2U, 0x1406U, 0U, vertices.Value()});
+    gl("glEnableClientState", {ogplay::runtime::detail::kGles1VertexArray});
+    gl("glColor4ub", {64U, 128U, 192U, 255U});
+    const auto indices = fixture.output.Add(0x3C0U);
+    fixture.memory.Write(indices, std::array{std::byte{0}, std::byte{1}, std::byte{2}, std::byte{3}}, 1U);
+    fixture.bus.Write32(fixture.stack, 3U, 1U);  // glDrawTexiOES height
+
+    const auto check_draw = [&](std::string_view symbol, std::array<std::uint32_t, 4> args) {
+        CAPTURE(symbol);
+        gl("glClear", {0x00004000U});
+        CHECK_NOTHROW(gl(symbol, args));
+        CHECK(gl("glGetError") == 0U);
+        fixture.boundary.PresentManagedSurface();
+        const auto frame = fixture.boundary.TakeLatestFrame();
+        REQUIRE(frame.has_value());
+        const auto pixel = (frame->width + 1U) * 4U;
+        CHECK(frame->rgba8[pixel] == 64);
+        CHECK(frame->rgba8[pixel + 1U] == 128);
+        CHECK(frame->rgba8[pixel + 2U] == 192);
+        CHECK(frame->rgba8[pixel + 3U] == 255);
+    };
+    check_draw("glDrawArrays", {0x0005U, 0U, 4U});
+    check_draw("glDrawElements", {0x0005U, 4U, 0x1401U, indices.Value()});
+    check_draw("glDrawTexiOES", {0U, 0U, 0U, 4U});
+    const auto warnings = fixture.logger.Snapshot(std::nullopt, "runtime.gles1.incomplete_texture");
+    REQUIRE(warnings.size() == 1U);
+    CHECK(warnings.front().level == ogplay::core::LogLevel::warn);
+    fixture.boundary.CloseManagedSurface();
+}
+
 TEST_CASE("GLES1 high sampled unit uses the unique unit-zero coordinate array") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture fixture;

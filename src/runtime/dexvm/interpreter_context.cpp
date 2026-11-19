@@ -24,6 +24,8 @@ namespace ogplay::runtime::dexvm {
 namespace {
 
 thread_local std::unordered_map<const void*, InterpreterExecutionState*> active_executions;
+thread_local std::size_t yield_forbidden_depth{};
+thread_local const char* yield_forbidden_lock_name{};
 
 }  // namespace
 
@@ -54,6 +56,17 @@ Interpreter::RootScope::~RootScope() noexcept {
 }
 
 // ---- VmExecutionLock -------------------------------------------------------
+
+VmYieldForbiddenScope::VmYieldForbiddenScope(const char* lock_name) noexcept
+    : previous_lock_name_(yield_forbidden_lock_name) {
+    ++yield_forbidden_depth;
+    if (lock_name) yield_forbidden_lock_name = lock_name;
+}
+
+VmYieldForbiddenScope::~VmYieldForbiddenScope() {
+    yield_forbidden_lock_name = previous_lock_name_;
+    --yield_forbidden_depth;
+}
 
 class VmExecutionLock::Impl final {
 public:
@@ -114,6 +127,10 @@ void VmExecutionLock::Release() {
 }
 
 std::size_t VmExecutionLock::ReleaseForBlocking(bool notify_observer) {
+    if (yield_forbidden_depth != 0)
+        throw DexVmError(DexVmErrorReason::internal_invariant,
+                         std::string("VM lock release while holding ") +
+                             (yield_forbidden_lock_name ? yield_forbidden_lock_name : "a host lock"));
     const auto self = std::this_thread::get_id();
     std::unique_lock lock(impl_->mutex);
     if (impl_->depth == 0 || impl_->owner != self) {
@@ -150,7 +167,13 @@ bool VmExecutionLock::HeldByCurrentThread() const {
     return impl_->depth > 0 && impl_->owner == std::this_thread::get_id();
 }
 
+bool VmExecutionLock::HasWaiters() const {
+    std::lock_guard lock(impl_->mutex);
+    return !impl_->waiters.empty();
+}
+
 void VmExecutionLock::YieldToWaiter() {
+    if (yield_forbidden_depth != 0) return;
     std::unique_lock lock(impl_->mutex);
     if (impl_->waiters.empty()) return;
     if (impl_->depth == 0 || impl_->owner != std::this_thread::get_id())
@@ -942,6 +965,14 @@ void Interpreter::RunFinalization() {
 GcSweepResult Interpreter::CollectGarbage(const std::string_view trigger, const bool clear_soft_references) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     auto& execution = impl_->Execution();
+
+    // Starting finalizer daemons and releasing native peers can re-enter Java.
+    struct CollectionScope final {
+        bool& active;
+        bool previous;
+
+        ~CollectionScope() { active = previous; }
+    } scope{execution.collecting_gc, std::exchange(execution.collecting_gc, true)};
     const auto gc_started = hal::Clock::SteadyTimestampNs();
     impl_->RecordTrace(DexVmTraceKind::gc_begin, execution);
     if (const auto reference = impl_->linker->FindClass("Ljava/lang/ref/FinalizerReference;")) {
@@ -979,8 +1010,17 @@ GcSweepResult Interpreter::CollectGarbage(const std::string_view trigger, const 
     return swept;
 }
 
+void Interpreter::Impl::PollExecutionSafepoint(const InterpreterExecutionState& execution) {
+    owner->CheckExecutionDeadline();
+    if (model->HasPendingGcRequest() && !execution.collecting_gc && !execution.constructing_throwable)
+        static_cast<void>(owner->CollectGarbage("deferred-allocation", false));
+    execution_lock.YieldToWaiter();
+}
+
 void Interpreter::Impl::PrepareSafeAllocation(const std::uint64_t request_bytes, const std::string_view trigger) {
     if (!model->ShouldCollectFor(request_bytes)) return;
+    const auto& execution = Execution();
+    if (execution.collecting_gc || execution.constructing_throwable) return;
     static_cast<void>(owner->CollectGarbage(trigger, false));
     if (model->GrowFor(request_bytes)) return;
     static_cast<void>(owner->CollectGarbage(std::string(trigger) + "-before-oom", true));

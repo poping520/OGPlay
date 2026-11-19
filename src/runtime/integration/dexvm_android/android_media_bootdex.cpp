@@ -527,26 +527,32 @@ Decl Declare_android_media_SoundPool_SoundPoolImpl_Natives(const Context& contex
         if (found == context->sound_pools.end() || sound == 0) return;
         found->second.pending_loads.push_back({sound, 0});
     };
+    const auto load_sample = [context, enqueue_load](dx::IntrinsicContext& call, std::uint32_t pool,
+                                                     const audio::EncodedAudioSource& source) {
+        const auto sound = context->encoded_audio_playback->LoadSample(pool, source);
+        if (sound == 0) {
+            if (source.lease != 0U) context->encoded_audio_leases.erase(source.lease);
+            if (const auto failure = context->encoded_audio_playback->LoadFailureDetails(source))
+                ReportAndroidAudioDecodeFailure(call.vm, "SoundPool.load", *failure);
+        }
+        enqueue_load(call, sound);
+        return dx::VmValue::Int(sound);
+    };
     builder.DirectMethod(
         "_load", "(Ljava/io/FileDescriptor;JJI)I",
-        [context, pool_of, enqueue_load](dx::IntrinsicContext& call) {
+        [context, pool_of, load_sample](dx::IntrinsicContext& call) {
             const auto pool = pool_of(call);
             if (pool == 0U || context->encoded_audio_playback == nullptr) {
                 return dx::VmValue::Int(0);
             }
             auto source = DescriptorSource(context, call, call.arguments[0].ref, call.arguments[1].AsLong(),
                                            call.arguments[2].AsLong());
-            const auto sound = context->encoded_audio_playback->LoadSample(pool, source);
-            if (sound == 0 && source.lease != 0U) {
-                context->encoded_audio_leases.erase(source.lease);
-            }
-            enqueue_load(call, sound);
-            return dx::VmValue::Int(sound);
+            return load_sample(call, pool, source);
         },
         kPrivNatFin);
     builder.DirectMethod(
         "_load", "(Ljava/lang/String;I)I",
-        [context, pool_of, enqueue_load](dx::IntrinsicContext& call) {
+        [context, pool_of, load_sample](dx::IntrinsicContext& call) {
             const auto pool = pool_of(call);
             if (pool == 0U || context->encoded_audio_playback == nullptr || !call.arguments[0].ref.IsValid()) {
                 return dx::VmValue::Int(0);
@@ -556,12 +562,7 @@ Decl Declare_android_media_SoundPool_SoundPoolImpl_Natives(const Context& contex
             source.name = call.vm.StringUtf8(call.arguments[0].ref);
             source.length = std::numeric_limits<std::uint64_t>::max();
             static_cast<void>(CaptureEncodedAudioWindow(*context, source));
-            const auto sound = context->encoded_audio_playback->LoadSample(pool, source);
-            if (sound == 0 && source.lease != 0U) {
-                context->encoded_audio_leases.erase(source.lease);
-            }
-            enqueue_load(call, sound);
-            return dx::VmValue::Int(sound);
+            return load_sample(call, pool, source);
         },
         kPrivNatFin);
     builder.FinalMethod(
@@ -810,6 +811,10 @@ Decl Declare_android_media_MediaPlayer_Natives(const Context& context) {
                     throw;
                 }
                 state.phase = Phase::error;
+                if (const auto failure = context->encoded_music->PrepareFailure(state.music)) {
+                    ReportAndroidAudioDecodeFailure(call.vm, "MediaPlayer.prepare", *failure);
+                    throw dx::VmJavaThrow{"Ljava/io/IOException;", "MediaPlayer prepare failed: " + failure->message};
+                }
                 throw dx::VmJavaThrow{"Ljava/io/IOException;", "MediaPlayer prepare failed"};
             }
             state.phase = Phase::prepared;
@@ -1097,9 +1102,9 @@ Decl Declare_android_media_MediaPlayer_Natives(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             auto& state = RequireMedia(context, call);
             const auto stream = call.arguments[0].AsInt();
-            if (stream < 0 || stream >= 10)
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid audio stream"};
-            if (state.phase != Phase::idle && state.phase != Phase::initialized && state.phase != Phase::stopped)
+            if (state.audio_stream == stream) return dx::VmValue::Void();
+            if (state.phase == Phase::prepared || state.phase == Phase::started || state.phase == Phase::paused ||
+                state.phase == Phase::completed)
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "stream type after prepare"};
             std::scoped_lock video_lock(context->video_views_mutex);
             if (auto* video = VideoStateOf(context, call.receiver.Value())) video->audio_stream = stream;

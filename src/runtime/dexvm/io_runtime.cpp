@@ -197,11 +197,7 @@ void IoRuntime::CloseDescriptor(const VmObjectRef owner) {
     state.closed = true;
     if (state.input) state.input->closed = true;
     if (state.output) state.output->closed = true;
-    if (state.file && !state.file->closed) {
-        state.file->closed = true;
-        if (!file_system_) throw IoRuntimeError("guest filesystem is unavailable", 38);
-        file_system_->CloseHandle(state.file->handle);
-    }
+    if (state.file) CloseOpenFile(*state.file);
 }
 
 std::shared_ptr<IoRuntime::OpenFileDescription> IoRuntime::OpenFile(std::string path, const bool readable,
@@ -228,6 +224,13 @@ std::shared_ptr<IoRuntime::OpenFileDescription> IoRuntime::OpenFile(std::string 
         throw;
     }
     return file;
+}
+
+void IoRuntime::CloseOpenFile(OpenFileDescription& file) {
+    if (file.closed) return;
+    file.closed = true;
+    if (!file_system_) throw IoRuntimeError("guest filesystem is unavailable", 38);
+    file_system_->CloseHandle(file.handle);
 }
 
 void IoRuntime::BindFileStream(const VmObjectRef owner, std::shared_ptr<OpenFileDescription> file,

@@ -234,7 +234,7 @@ std::vector<std::int32_t> EglModule::ReadAttributes(const GuestPtr<std::int32_t>
 
 std::string EglModule::GuestExtensionsLocked() {
     std::string result = "EGL_KHR_get_all_proc_addresses ";
-    if (!native_display_) native_display_ = gles::EglDisplayResources::Create(context_.graphics.backend);
+    EnsureNativeDisplayLocked();
     const auto native = " " + native_display_->Extensions() + " ";
     for (const auto name :
          {"EGL_KHR_fence_sync", "EGL_KHR_reusable_sync", "EGL_KHR_wait_sync", "EGL_KHR_image_base",
@@ -313,13 +313,19 @@ bool EglModule::IsConfig(const std::uint32_t handle) {
     if (handle == kDefaultConfig) return true;
     if (handle != kRgbConfig && handle != kPackedRgbConfig) return false;
     std::scoped_lock lock(mutex_);
-    if (!native_display_) native_display_ = gles::EglDisplayResources::Create(context_.graphics.backend);
+    EnsureNativeDisplayLocked();
     return handle == kPackedRgbConfig ? native_display_->SupportsRgb565Surface()
                                       : native_display_->SupportsRgbSurface();
 }
 
+void EglModule::EnsureNativeDisplayLocked() {
+    if (!native_display_)
+        native_display_ = gles::EglDisplayResources::Create(context_.graphics.backend,
+                                                            EglContextLogging(context_.graphics.logger, "guest-egl"));
+}
+
 std::uint32_t EglModule::ConfigAttributeLocked(const std::uint32_t handle, const std::uint32_t attribute) {
-    if (!native_display_) native_display_ = gles::EglDisplayResources::Create(context_.graphics.backend);
+    EnsureNativeDisplayLocked();
     if (handle != kDefaultConfig && (handle != kRgbConfig || !native_display_->SupportsRgbSurface()) &&
         (handle != kPackedRgbConfig || !native_display_->SupportsRgb565Surface()))
         throw gles::EglLifecycleError(gles::EglOperation::choose_config, kEglBadConfig);
@@ -434,7 +440,7 @@ std::optional<AndroidSurfaceWindow> EglModule::WindowGeometry(memory::GuestAddre
 template <std::uint16_t FunctionId>
 std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
     if constexpr (FunctionId == 0xF100U || FunctionId == 0xF101U) {
-        std::scoped_lock execution_lock(context_.graphics.execution_mutex);
+        const GraphicsBoundaryContext::GlesExecutionScope execution(context_.graphics, call);
         context_.graphics.ActivateCurrentContext();
         gles::EglHandle native{};
         {
@@ -494,7 +500,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         try {
             const auto attributes = ReadAttributes(call.Pointer<std::int32_t>(1), tid);
-            if (!native_display_) native_display_ = gles::EglDisplayResources::Create(graphics.backend);
+            EnsureNativeDisplayLocked();
             std::vector<std::uint32_t> matches;
             for (const auto config : {kDefaultConfig, kRgbConfig, kPackedRgbConfig}) {
                 if (config == kRgbConfig && !native_display_->SupportsRgbSurface()) continue;
@@ -708,7 +714,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         state.gles1_draw = context_.gles1_draw;
         state.gles1_draw.Reset();
         try {
-            if (!native_display_) native_display_ = gles::EglDisplayResources::Create(graphics.backend);
+            EnsureNativeDisplayLocked();
             const auto share_native = args[2] == 0U ? 0U : contexts_.at(args[2]).frame->NativeContext();
             state.frame = std::make_unique<gles::AngleFrame>(gles::AngleFrame::CreateContext(
                 native_display_, static_cast<int>(version == 1U ? 2U : version), share_native, ColorFormat(args[1]),
@@ -1009,9 +1015,11 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
                     // The first frame of a target is synchronous; later swaps queue behind a fence.
                     if (context_.async_present_readback) {
                         auto readback = gles::AsyncAngleReadback::Create(
-                            *frame, [this, presentation_target](std::vector<std::uint8_t> rgba8) {
+                            *frame,
+                            [this, presentation_target](std::vector<std::uint8_t> rgba8) {
                                 PublishPresentation(presentation_target, std::move(rgba8));
-                            });
+                            },
+                            EglContextLogging(graphics.logger, "window-readback"));
                         if (readback) {
                             auto created = std::make_shared<SurfacePresentation>(
                                 SurfacePresentation{presentation_target, std::move(readback)});
@@ -1166,7 +1174,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         }
         std::scoped_lock lock(mutex_);
         try {
-            if (!native_display_) native_display_ = gles::EglDisplayResources::Create(graphics.backend);
+            EnsureNativeDisplayLocked();
             std::vector<std::uint32_t> configs{kDefaultConfig};
             if (native_display_->SupportsRgbSurface()) configs.push_back(kRgbConfig);
             if (native_display_->SupportsRgb565Surface()) configs.push_back(kPackedRgbConfig);
@@ -1380,7 +1388,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         surface.texture_format = texture_format;
         surface.mipmap = mipmap;
         try {
-            if (!native_display_) native_display_ = gles::EglDisplayResources::Create(graphics.backend);
+            EnsureNativeDisplayLocked();
             surface.backing = gles::EglSurfaceResources::Create(native_display_, width * graphics.layout.factor,
                                                                 height * graphics.layout.factor, texture_format, mipmap,
                                                                 args[1] == kRgbConfig);
@@ -1565,7 +1573,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             return 0U;
         }
         try {
-            if (!native_display_) native_display_ = gles::EglDisplayResources::Create(graphics.backend);
+            EnsureNativeDisplayLocked();
             if constexpr (FunctionId == 34U) {
                 if (args[1] != 0x30F9U && args[1] != 0x30FAU) {
                     threads_[tid].error = kEglBadAttribute;

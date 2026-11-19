@@ -172,8 +172,8 @@
     {
       "path": "lib/libogplay_jni.so",
       "source_project": "ogplay",
-      "size": 193724,
-      "sha256": "ab958953a298bbe101028e355187ed35cfcb1b73736a4ebb6c4f18dd91cd3003",
+      "size": 195260,
+      "sha256": "5bd53fb721109bbf308d22f3559fb525bffc03b22db8f5516df9bd5cef02cb16",
       "soname": "libogplay_jni.so",
       "needed": [
         "libssl.so",
@@ -225,7 +225,7 @@
           },
           {
             "path": "src/guest/zip/zip_stream_jni.c",
-            "sha256": "3860ebbe0bc3690f459a20f4fdaaeef5b164c65e44574057f4e630ac30a6dad9"
+            "sha256": "8a91c2b7ba839fc6e3005b333f683dba3448e3210e0a51a4d017757af2bdef8e"
           },
           {
             "path": "src/guest/math/big_integer_jni.c",

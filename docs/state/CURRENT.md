@@ -45,7 +45,7 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
 | 保卫萝卜 1.1.0 | macOS | Cocos2d 文字位图越过 `Paint.getFontMetricsInt()`，呈现 2 帧 | `nativeRender` 的 JNI `CallStaticObjectMethodV` 返回类型与描述符不符 | DVM-376 |
 | 鳄鱼小顽皮 1.13.1 | macOS | 闹钟登记已越过 `onResume` 的 UOE；库诊断运行 120 秒呈现 23,719 帧，SIGINT 退出 0 | 本次未见新的阻断错误；闹钟到期投递已通过 Probe，原 APK 到期路径和游戏内交互待复验 | DVM-211 |
 | Rayman Fiesta Run 1.4.2 | macOS | 越过 MSDK `http.agent` 的 strlen(NULL)（斜杠类名 findLoadedClass、启动未设 `http.agent` 已修），进入资源包加载；约 100 秒呈现 5659 帧，SIGTERM 退出 0 | 画面与交互未验；缺失报告列出 obb 与 73 个 `casa_gamedata` 路径，是否为正常探测未判定 | — |
-| POPClassic | macOS | `POPDownloaderActivity` 越过非 AUTO_CREATE 绑定和 OBB 校验的 `Posix.sysconf(40)`，呈现下载器 105 帧 | OBB 校验 OOM：`Inflater.setFileInputImpl` 每次分配 64 KiB Java 数组，intrinsic 分配只抬高 GC 目标不触发 GC，垃圾撑满 96 MiB 上限；约 3.9 秒退出 1，游戏 Activity 未到达 | — |
+| POPClassic | macOS | 快速开始并跳过过场，进入第一关，关卡 AAC 环境音已提交非零 PCM 至 SDL。约 190 秒呈现 9,202 帧，SIGTERM 退出 0 | 未见新阻断首错。两次 SoundPool MP3 加载未解出音频帧，后续关卡和跨平台待验 | — |
 
 ## 未闭合问题
 

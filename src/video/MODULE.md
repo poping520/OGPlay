@@ -36,6 +36,9 @@
   不可用时打开抛带原因的 `VideoPlayerError`。
 - `VideoCodecUnsupportedError`（`VideoPlayerError` 子类）：视频或音频轨编码未编入时
   抛出，携带轨道类型与 FFmpeg 编码名，供调用方按编码记账；不静默丢弃音轨。
+- `MakeFfmpegAudioDecoder`：为集成层提供符合 audio 接口的纯音频 ISO BMFF 入口。
+  复用自定义 AVIO 和 S16 PCM 转换，支持有界块读取及回到流首。缺少音轨或解码器时报告封装和编码，
+  存在视频轨的输入继续使用视频入口。FFmpeg 不可用时返回空工厂。
 
 ## 不变量
 

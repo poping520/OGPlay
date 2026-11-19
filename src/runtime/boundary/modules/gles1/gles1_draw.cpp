@@ -14,6 +14,7 @@
 #include <vector>
 #include "gles1_fixed.h"
 #include "gles1_support.h"
+#include "ogplay/core/logger.h"
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/memory/address_space.h"
 #include "runtime/boundary/services/gles_transfer_io.h"
@@ -177,14 +178,9 @@ void BuildFlatPrimitives(const std::uint32_t mode,
 [[nodiscard]] std::int32_t Signed(const std::uint32_t value) noexcept {
     return std::bit_cast<std::int32_t>(value);
 }
-[[nodiscard]] std::vector<std::uint32_t> DrawTextureUnits(
-    const AndroidBoundaryGles1State& core) {
-    auto enabled = core.EnabledTextureUnits();
-    if (enabled.size() > kGles1MaximumDrawTextureUnits) {
-        throw std::runtime_error(
-            "GLES1 fixed draw exceeds its two texture-unit limit");
-    }
-    return enabled;
+
+[[nodiscard]] std::uint32_t SampledTextureTarget(const AndroidBoundaryGles1State& core, std::uint32_t unit) {
+    return core.Capability(unit, kTextureCubeMap) ? kTextureCubeMap : kTexture2d;
 }
 
 // A unit samples whichever of GL_TEXTURE_2D / GL_TEXTURE_CUBE_MAP is enabled,
@@ -197,9 +193,7 @@ SampledTextureTargets(
         kTexture2d, kTexture2d};
     for (std::size_t stage = 0;
          stage < texture_units.size() && stage < targets.size(); ++stage) {
-        if (core.Capability(texture_units[stage], kTextureCubeMap)) {
-            targets[stage] = kTextureCubeMap;
-        }
+        targets[stage] = SampledTextureTarget(core, texture_units[stage]);
     }
     return targets;
 }
@@ -281,12 +275,38 @@ void AndroidBoundaryGles1DrawState::Reset() noexcept {
     }
     programs_ = {};
     current_palette_matrix_ = 0U;
+    warned_incomplete_textures_.clear();
 }
-AndroidBoundaryGles1DrawState::AndroidBoundaryGles1DrawState(
-    const bool allow_single_stage_texcoord_fallback)
-    : allow_single_stage_texcoord_fallback_(
-          allow_single_stage_texcoord_fallback) {
+
+AndroidBoundaryGles1DrawState::AndroidBoundaryGles1DrawState(const bool allow_single_stage_texcoord_fallback,
+                                                             core::Logger* logger)
+    : allow_single_stage_texcoord_fallback_(allow_single_stage_texcoord_fallback), logger_(logger) {
     Reset();
+}
+
+std::vector<std::uint32_t> AndroidBoundaryGles1DrawState::DrawTextureUnits(const gles::AngleFrame& frame,
+                                                                           const AndroidBoundaryGles1State& core,
+                                                                           const bool only_2d) {
+    auto units = core.EnabledTextureUnits();
+    std::erase_if(units, [&](const auto unit) {
+        if (only_2d && !core.Capability(unit, kTexture2d)) return true;
+        const auto target = only_2d ? kTexture2d : SampledTextureTarget(core, unit);
+        if (core.TextureBaseFormat(unit, target)) return false;
+        const auto texture = core.Shared().BoundTexture(unit, target);
+        if (logger_ && warned_incomplete_textures_.emplace(texture, target).second) {
+            logger_->Write(ogplay::core::LogLevel::warn, "runtime.gles1.incomplete_texture",
+                           "Ignoring texture unit with no level-zero image", {},
+                           {{"context", static_cast<std::uint64_t>(frame.NativeContext())},
+                            {"unit", static_cast<std::uint64_t>(unit - kTexture0)},
+                            {"texture", static_cast<std::uint64_t>(texture)},
+                            {"target", static_cast<std::uint64_t>(target)}},
+                           {.mode = ogplay::core::RateLimitMode::none});
+        }
+        return true;
+    });
+    if (units.size() > kGles1MaximumDrawTextureUnits)
+        throw std::runtime_error("GLES1 fixed draw exceeds its two texture-unit limit");
+    return units;
 }
 
 void AndroidBoundaryGles1DrawState::SetEnabled(
@@ -884,15 +904,9 @@ void AndroidBoundaryGles1DrawState::ApplyUniforms(
         }
         frame.Uniform1i(uniform(indexed("u_texture_environment")),
                         static_cast<std::int32_t>(environment));
-        const auto base_format =
-            core.TextureBaseFormat(texture, sampled_targets[stage]);
-        if (!base_format.has_value()) {
-            throw std::runtime_error(
-                "GLES1 textured draw has no level-zero base format");
-        }
-        frame.Uniform1i(
-            uniform(indexed("u_texture_format")),
-            static_cast<std::int32_t>(ClassifyTextureFormat(*base_format)));
+        const auto base_format = core.TextureBaseFormat(texture, sampled_targets[stage]).value();
+        frame.Uniform1i(uniform(indexed("u_texture_format")),
+                        static_cast<std::int32_t>(ClassifyTextureFormat(base_format)));
         const auto value = [&legacy, texture](const std::uint32_t pname) {
             return legacy.TextureEnvironment(texture, pname)[0];
         };
@@ -958,7 +972,7 @@ void AndroidBoundaryGles1DrawState::DrawArrays(
     if (maximum > (std::numeric_limits<std::uint32_t>::max)()) {
         throw std::length_error("GLES1 draw array index overflows");
     }
-    const auto texture_units = DrawTextureUnits(core);
+    const auto texture_units = DrawTextureUnits(frame, core);
     const auto sampled_targets = SampledTextureTargets(core, texture_units);
     auto& program = EnsureProgram(frame, sampled_targets);
     frame.UseProgram(program.name);
@@ -1001,6 +1015,7 @@ void AndroidBoundaryGles1DrawState::DrawElements(
         throw std::runtime_error("GLES1 draw requires GL_VERTEX_ARRAY");
     }
     if (count == 0) return;
+    const auto texture_units = DrawTextureUnits(frame, core);
     const auto guest_element_buffer =
         core.TransferState().Snapshot().element_array_buffer;
     std::uint32_t maximum{};
@@ -1032,7 +1047,6 @@ void AndroidBoundaryGles1DrawState::DrawElements(
                         "GLES1 cannot bound guest client arrays from an opaque element buffer");
                 }
             }
-            const auto texture_units = DrawTextureUnits(core);
             const auto coordinate_units =
                 ResolveTextureCoordinateUnits(texture_units);
             for (const auto coordinate_unit :
@@ -1046,7 +1060,6 @@ void AndroidBoundaryGles1DrawState::DrawElements(
             }
         }
     }
-    const auto texture_units = DrawTextureUnits(core);
     const auto sampled_targets = SampledTextureTargets(core, texture_units);
     auto& program = EnsureProgram(frame, sampled_targets);
     frame.UseProgram(program.name);

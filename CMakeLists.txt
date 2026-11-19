@@ -215,7 +215,7 @@ ogplay_add_module(ogplay_video Video
     src/video/buffered_video_player.cpp
     src/video/rgba_canvas.cpp
 )
-target_link_libraries(ogplay_video PRIVATE OGPlay::Hal)
+target_link_libraries(ogplay_video PRIVATE OGPlay::Audio OGPlay::Hal)
 if(OGPLAY_FFMPEG_FOUND)
     target_sources(ogplay_video PRIVATE src/video/ffmpeg_video_player.cpp)
     target_link_libraries(ogplay_video PRIVATE FFmpeg::FFmpeg)

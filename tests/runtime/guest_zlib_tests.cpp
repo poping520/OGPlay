@@ -10,6 +10,7 @@
 #include <atomic>
 #include "ogplay/runtime/vfs/sandbox_store.h"
 #include "../dexvm/boot_dex.h"
+#include "../dexvm/container_traversal_fixture.h"
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -20,6 +21,7 @@
 #include <thread>
 #include <iterator>
 #include <memory>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -63,40 +65,14 @@ TEST_CASE("DVM-201 CRC32 uses BootDex state and real guest zlib on both backends
         runtime::VirtualFileSystem filesystem;
         core::CapabilityLedger ledger;
         core::Logger logger;
-        std::vector<std::vector<std::byte>> contents;
-        std::vector<runtime::BionicModuleSource> libraries;
-        for (const auto name :
-             {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so", "libcrypto.so", "libssl.so", "libgabi++.so",
-              "libicui18n.so", "libicuuc.so", "libstlport.so", "libogplay_jni.so"}) {
-            contents.push_back(ReadPayloadBytes(std::string("lib/") + name));
-            libraries.push_back({name, contents.back()});
-        }
         auto context = std::make_shared<runtime::DexVmAndroidContext>();
         test::BindBootDexArchive(*context);
-        context->apk_bytes = {std::byte{0x50}, std::byte{0x4b}, std::byte{3}, std::byte{4}};
-        session::AndroidAppProcessRequest request;
-        request.manifest = AppManifest("android.app.Activity");
-        request.system_libraries = libraries;
-        request.dex_bytes = ReadDexFixture("crc32.dex");
-        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-        request.boot_dex_files = test::ReadBootDex();
-        request.context = context;
-        request.dexvm.interpreter.backend = backend;
-        request.surface_width = 64;
-        request.surface_height = 36;
-        request.maximum_ticks_per_call = UINT64_C(100000000);
-#if defined(_WIN32)
-        request.backend = {gles::AngleRenderer::d3d11, gles::AngleDevice::hardware};
-#elif defined(__APPLE__)
-        request.backend = {gles::AngleRenderer::metal, gles::AngleDevice::hardware};
-#else
-        request.backend = {gles::AngleRenderer::vulkan, gles::AngleDevice::hardware};
-#endif
-        request.filesystem = &filesystem;
-        request.ledger = &ledger;
-        request.logger = &logger;
-        auto app = session::AndroidAppProcess::Create(std::move(request));
-        auto& vm = app->DexVm().Vm();
+        context->surface_width = 64;
+        context->surface_height = 36;
+        test::container_traversal::AndroidTestRuntime guest(
+            context, ledger, logger, runtime::AndroidIntrinsicCatalog(context), ReadDexFixture("crc32.dex"),
+            InterpreterConfig{.backend = backend}, &filesystem);
+        auto& vm = guest.bridge->Vm();
         auto& linker = vm.Linker();
         const auto direct = [&](const char* owner, const char* name, const char* descriptor,
                                 std::vector<VmValue> arguments) {
@@ -243,41 +219,14 @@ TEST_CASE("DVM-214 API19 gzip streams use guest zlib and release native state") 
         runtime::VirtualFileSystem filesystem;
         core::CapabilityLedger ledger;
         core::Logger logger;
-        std::vector<std::vector<std::byte>> contents;
-        std::vector<runtime::BionicModuleSource> libraries;
-        for (const auto name :
-             {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so", "libcrypto.so", "libssl.so", "libgabi++.so",
-              "libicui18n.so", "libicuuc.so", "libstlport.so", "libogplay_jni.so"}) {
-            contents.push_back(ReadPayloadBytes(std::string("lib/") + name));
-            libraries.push_back({name, contents.back()});
-        }
         auto context = std::make_shared<runtime::DexVmAndroidContext>();
         test::BindBootDexArchive(*context);
-        context->apk_bytes = {std::byte{0x50}, std::byte{0x4b}, std::byte{3}, std::byte{4}};
-        session::AndroidAppProcessRequest request;
-        request.manifest = AppManifest("android.app.Activity");
-        request.system_libraries = libraries;
-        // Existing minimal APK fixture; compression classes come only from BootDex.
-        request.dex_bytes = ReadDexFixture("crc32.dex");
-        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-        request.boot_dex_files = test::ReadBootDex();
-        request.context = context;
-        request.dexvm.interpreter.backend = backend;
-        request.surface_width = 64;
-        request.surface_height = 36;
-        request.maximum_ticks_per_call = UINT64_C(100000000);
-#if defined(_WIN32)
-        request.backend = {gles::AngleRenderer::d3d11, gles::AngleDevice::hardware};
-#elif defined(__APPLE__)
-        request.backend = {gles::AngleRenderer::metal, gles::AngleDevice::hardware};
-#else
-        request.backend = {gles::AngleRenderer::vulkan, gles::AngleDevice::hardware};
-#endif
-        request.filesystem = &filesystem;
-        request.ledger = &ledger;
-        request.logger = &logger;
-        auto app = session::AndroidAppProcess::Create(std::move(request));
-        auto& vm = app->DexVm().Vm();
+        context->surface_width = 64;
+        context->surface_height = 36;
+        test::container_traversal::AndroidTestRuntime guest(
+            context, ledger, logger, runtime::AndroidIntrinsicCatalog(context), ReadDexFixture("crc32.dex"),
+            InterpreterConfig{.backend = backend}, &filesystem);
+        auto& vm = guest.bridge->Vm();
         auto& linker = vm.Linker();
         const auto direct = [&](const char* owner, const char* name, const char* descriptor,
                                 std::vector<VmValue> arguments) {
@@ -563,41 +512,14 @@ TEST_CASE("ZipInputStream reads guest source bytes and dispatches entry operatio
         runtime::VirtualFileSystem filesystem;
         core::CapabilityLedger ledger;
         core::Logger logger;
-        std::vector<std::vector<std::byte>> contents;
-        std::vector<runtime::BionicModuleSource> libraries;
-        for (const auto name :
-             {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so", "libcrypto.so", "libssl.so", "libgabi++.so",
-              "libicui18n.so", "libicuuc.so", "libstlport.so", "libogplay_jni.so"}) {
-            contents.push_back(ReadPayloadBytes(std::string("lib/") + name));
-            libraries.push_back({name, contents.back()});
-        }
         auto context = std::make_shared<runtime::DexVmAndroidContext>();
         test::BindBootDexArchive(*context);
-        context->apk_bytes = {std::byte{0x50}, std::byte{0x4b}, std::byte{3}, std::byte{4}};
-        session::AndroidAppProcessRequest request;
-        request.manifest = AppManifest("android.app.Activity");
-        request.system_libraries = libraries;
-        // Existing minimal APK fixture; compression classes come only from BootDex.
-        request.dex_bytes = ReadDexFixture("crc32.dex");
-        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-        request.boot_dex_files = test::ReadBootDex();
-        request.context = context;
-        request.dexvm.interpreter.backend = backend;
-        request.surface_width = 64;
-        request.surface_height = 36;
-        request.maximum_ticks_per_call = UINT64_C(100000000);
-#if defined(_WIN32)
-        request.backend = {gles::AngleRenderer::d3d11, gles::AngleDevice::hardware};
-#elif defined(__APPLE__)
-        request.backend = {gles::AngleRenderer::metal, gles::AngleDevice::hardware};
-#else
-        request.backend = {gles::AngleRenderer::vulkan, gles::AngleDevice::hardware};
-#endif
-        request.filesystem = &filesystem;
-        request.ledger = &ledger;
-        request.logger = &logger;
-        auto app = session::AndroidAppProcess::Create(std::move(request));
-        auto& vm = app->DexVm().Vm();
+        context->surface_width = 64;
+        context->surface_height = 36;
+        test::container_traversal::AndroidTestRuntime guest(
+            context, ledger, logger, runtime::AndroidIntrinsicCatalog(context), ReadDexFixture("crc32.dex"),
+            InterpreterConfig{.backend = backend}, &filesystem);
+        auto& vm = guest.bridge->Vm();
         auto& linker = vm.Linker();
         const auto direct = [&](const char* owner, const char* name, const char* descriptor,
                                 std::vector<VmValue> arguments) {
@@ -701,41 +623,14 @@ TEST_CASE("DVM-350 ZipFile reads stored and deflated entries from guest VFS") {
         runtime::VirtualFileSystem filesystem;
         core::CapabilityLedger ledger;
         core::Logger logger;
-        std::vector<std::vector<std::byte>> contents;
-        std::vector<runtime::BionicModuleSource> libraries;
-        for (const auto name :
-             {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so", "libcrypto.so", "libssl.so", "libgabi++.so",
-              "libicui18n.so", "libicuuc.so", "libstlport.so", "libogplay_jni.so"}) {
-            contents.push_back(ReadPayloadBytes(std::string("lib/") + name));
-            libraries.push_back({name, contents.back()});
-        }
         auto context = std::make_shared<runtime::DexVmAndroidContext>();
         test::BindBootDexArchive(*context);
-        context->apk_bytes = {std::byte{0x50}, std::byte{0x4b}, std::byte{3}, std::byte{4}};
-        session::AndroidAppProcessRequest request;
-        request.manifest = AppManifest("android.app.Activity");
-        request.system_libraries = libraries;
-        // Existing minimal APK fixture; compression classes come only from BootDex.
-        request.dex_bytes = ReadDexFixture("crc32.dex");
-        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-        request.boot_dex_files = test::ReadBootDex();
-        request.context = context;
-        request.dexvm.interpreter.backend = backend;
-        request.surface_width = 64;
-        request.surface_height = 36;
-        request.maximum_ticks_per_call = UINT64_C(100000000);
-#if defined(_WIN32)
-        request.backend = {gles::AngleRenderer::d3d11, gles::AngleDevice::hardware};
-#elif defined(__APPLE__)
-        request.backend = {gles::AngleRenderer::metal, gles::AngleDevice::hardware};
-#else
-        request.backend = {gles::AngleRenderer::vulkan, gles::AngleDevice::hardware};
-#endif
-        request.filesystem = &filesystem;
-        request.ledger = &ledger;
-        request.logger = &logger;
-        auto app = session::AndroidAppProcess::Create(std::move(request));
-        auto& vm = app->DexVm().Vm();
+        context->surface_width = 64;
+        context->surface_height = 36;
+        test::container_traversal::AndroidTestRuntime guest(
+            context, ledger, logger, runtime::AndroidIntrinsicCatalog(context), ReadDexFixture("crc32.dex"),
+            InterpreterConfig{.backend = backend}, &filesystem);
+        auto& vm = guest.bridge->Vm();
         auto& linker = vm.Linker();
         const auto direct = [&](const char* owner, const char* name, const char* descriptor,
                                 std::vector<VmValue> arguments) {
@@ -869,6 +764,10 @@ TEST_CASE("DVM-350 ZipFile reads stored and deflated entries from guest VFS") {
         // Successful deflate content and no missing-native ledger hits prove this path is enabled.
         CHECK(ledger.Unimplemented().empty());
 
+        const auto file_input_method = linker.FindDirectMethod(linker.ResolveDescriptor("Ljava/util/zip/Inflater;"),
+                                                               "setFileInputImpl", "(Ljava/io/FileDescriptor;JIJ)I");
+        REQUIRE(file_input_method.has_value());
+        CHECK(linker.Method(*file_input_method).kind == MethodKind::native);
         const auto out = construct("Ljava/io/FileOutputStream;", "(Ljava/lang/String;)V",
                                    {VmValue::Ref(vm.NewStringUtf8("/sdcard/roundtrip.zip"))});
         const auto out_root = vm.ProtectReferences(std::array{out});
@@ -879,17 +778,34 @@ TEST_CASE("DVM-350 ZipFile reads stored and deflated entries from guest VFS") {
         const auto entry = construct("Ljava/util/zip/ZipEntry;", "(Ljava/util/zip/ZipEntry;)V", {VmValue::Ref(stored)});
         invoke(entry, "setMethod", "(I)V", {VmValue::Int(8)});
         invoke(writer, "putNextEntry", "(Ljava/util/zip/ZipEntry;)V", {VmValue::Ref(entry)});
-        const std::vector<std::byte> payload{std::byte{'o'}, std::byte{'k'}, std::byte{0}, std::byte{255}};
+        // Keep the compressed size above the ROM fill cap as well as the decoded size.
+        std::mt19937 random(1234);
+        std::vector<std::byte> payload(128 * 1024);
+        for (auto& value : payload)
+            value = static_cast<std::byte>(random() & 0xff);
         invoke(writer, "write", "([B)V", {VmValue::Ref(byte_array(payload))});
         invoke(writer, "close", "()V");
         const auto file = construct("Ljava/io/File;", "(Ljava/lang/String;)V",
                                     {VmValue::Ref(vm.NewStringUtf8("/sdcard/roundtrip.zip"))});
         const auto round = construct("Ljava/util/zip/ZipFile;", "(Ljava/io/File;)V", {VmValue::Ref(file)});
         const auto round_root = vm.ProtectReferences(std::array{round});
-        const auto input = open(round, get_entry(round, "stored.txt"));
+        const auto round_entry = get_entry(round, "stored.txt");
+        const auto round_entry_root = vm.ProtectReferences(std::array{round_entry});
+        REQUIRE(invoke(round_entry, "getCompressedSize", "()J").AsLong() > 64 * 1024);
+        const auto input = open(round, round_entry);
         const auto input_root = vm.ProtectReferences(std::array{input});
-        for (const auto value : payload)
-            CHECK(invoke(input, "read", "()I").AsInt() == std::to_integer<int>(value));
+        const auto decoded = byte_array(std::vector<std::byte>(payload.size()));
+        const auto decoded_root = vm.ProtectReferences(std::array{decoded});
+        const auto size = static_cast<std::int32_t>(payload.size());
+        std::int32_t offset = 0;
+        while (offset < size) {
+            const auto count = invoke(input, "read", "([BII)I",
+                                      {VmValue::Ref(decoded), VmValue::Int(offset), VmValue::Int(size - offset)})
+                                   .AsInt();
+            REQUIRE(count > 0);
+            offset += count;
+        }
+        CHECK(vm.Model().ReadByteRegion(decoded, 0, size) == payload);
         CHECK(invoke(input, "read", "()I").AsInt() == -1);
         invoke(input, "close", "()V");
         invoke(round, "close", "()V");

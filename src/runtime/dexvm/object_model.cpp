@@ -205,6 +205,7 @@ public:
 
     bool emergency_reserve{};
     std::uint64_t emergency_remaining{};
+    bool gc_requested{};
 
     void Reserve(const std::uint64_t bytes) {
         if (emergency_reserve) {
@@ -221,6 +222,7 @@ public:
                 const auto with_slop =
                     required > UINT64_MAX - config.max_free_bytes ? UINT64_MAX : required + config.max_free_bytes;
                 heap_target_bytes = std::min(config.heap_growth_limit_bytes, std::max(required, with_slop));
+                gc_requested = true;
             }
         }
         if (bytes > heap_target_bytes || allocated_bytes > heap_target_bytes - bytes) {
@@ -1253,8 +1255,12 @@ std::uint64_t JavaObjectModel::NormalHeapGrowthLimitBytes() const noexcept {
     return impl_->normal_growth_limit_bytes;
 }
 
+bool JavaObjectModel::HasPendingGcRequest() const noexcept {
+    return impl_->gc_requested;
+}
+
 bool JavaObjectModel::ShouldCollectFor(const std::uint64_t request_bytes) const noexcept {
-    return request_bytes > impl_->heap_target_bytes ||
+    return HasPendingGcRequest() || request_bytes > impl_->heap_target_bytes ||
            impl_->allocated_bytes > impl_->heap_target_bytes - request_bytes;
 }
 
@@ -1267,6 +1273,7 @@ void JavaObjectModel::AdjustTargetAfterGc() noexcept {
     };
     target = std::clamp(target, add(live, impl_->config.min_free_bytes), add(live, impl_->config.max_free_bytes));
     impl_->heap_target_bytes = std::min(target, impl_->config.heap_growth_limit_bytes);
+    impl_->gc_requested = false;
 }
 
 bool JavaObjectModel::GrowFor(const std::uint64_t request_bytes) noexcept {

@@ -11,6 +11,7 @@
 
 namespace ogplay::gles {
 class AngleFrame;
+struct EglContextTrace;
 using GlesThunkId = std::uint16_t;
 }
 
@@ -31,6 +32,7 @@ inline constexpr std::array<std::string_view, 4> kGuestGlesExtensions{
 [[nodiscard]] std::vector<std::string_view> GuestGlesExtensions(gles::AngleFrame& frame);
 [[nodiscard]] std::vector<std::string_view> GuestGlesExtensions(std::string_view native_extensions);
 void LogCompressedTextureCapabilities(gles::AngleFrame& frame, core::Logger* logger);
+[[nodiscard]] gles::EglContextTrace EglContextLogging(core::Logger* logger, std::string_view purpose) noexcept;
 class GuestGlContext;
 class BufferMappingService;
 class A32CallFrame;

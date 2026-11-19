@@ -12,6 +12,7 @@
 #include <atomic>
 #include <chrono>
 #include <fstream>
+#include <latch>
 #include <string>
 #include <thread>
 #include <vector>
@@ -607,6 +608,67 @@ TEST_CASE("DVM-234 pacer shutdown preserves actual driver blocking facts") {
         CHECK_FALSE(TryEglSwapPacerSnapshot(context)->driver_blocked);
     }
     DetachEglSwapPacer(context, lock);
+}
+
+TEST_CASE("host lock scope defers VM handoff until the next unguarded yield") {
+    VmExecutionLock lock;
+    std::latch starting{1};
+    std::latch acquired{1};
+    std::jthread waiter;
+    {
+        const VmExecutionLockScope execution(lock);
+        waiter = std::jthread([&] {
+            starting.count_down();
+            const VmExecutionLockScope waiting_execution(lock);
+            acquired.count_down();
+        });
+        starting.wait();
+        const auto deadline = ogplay::hal::Clock::SteadyTimestampNs() + 5'000'000'000;
+        while (!lock.HasWaiters() && ogplay::hal::Clock::SteadyTimestampNs() < deadline)
+            std::this_thread::yield();
+        CHECK(lock.HasWaiters());
+        {
+            const VmYieldForbiddenScope outer("outer host lock");
+            {
+                const VmYieldForbiddenScope inner;
+                lock.YieldToWaiter();
+                CHECK_FALSE(acquired.try_wait());
+            }
+            lock.YieldToWaiter();
+            CHECK_FALSE(acquired.try_wait());
+        }
+        CHECK_FALSE(acquired.try_wait());
+        lock.YieldToWaiter();
+        CHECK(acquired.try_wait());
+        CHECK(lock.HeldByCurrentThread());
+    }
+}
+
+TEST_CASE("host lock scope rejects VM release for blocking and reports the held lock") {
+    VmExecutionLock lock;
+    const VmExecutionLockScope execution(lock);
+    const auto check_release = [&](const char* lock_name) {
+        try {
+            const auto depth = lock.ReleaseForBlocking();
+            lock.ReacquireAfterBlocking(depth);
+            FAIL_CHECK("ReleaseForBlocking succeeded while holding a host lock");
+        } catch (const DexVmError& error) {
+            CHECK(error.Reason() == DexVmErrorReason::internal_invariant);
+            CHECK(std::string_view(error.what()).find(lock_name) != std::string_view::npos);
+        }
+        CHECK(lock.HeldByCurrentThread());
+    };
+    {
+        const VmYieldForbiddenScope outer("AssetManager resource lock");
+        {
+            const VmYieldForbiddenScope inner("nested host lock");
+            check_release("nested host lock");
+        }
+        check_release("AssetManager resource lock");
+    }
+    const auto depth = lock.ReleaseForBlocking();
+    lock.ReacquireAfterBlocking(depth);
+    CHECK(depth == 1U);
 }
 
 TEST_CASE("DVM-353 concurrent timed parks converge on elapsed real time and stop catching up on resume") {

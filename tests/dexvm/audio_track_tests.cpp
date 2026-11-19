@@ -911,6 +911,48 @@ TEST_CASE("MediaPlayer transport uses explicit stopped preparing and error phase
     CHECK(fixture.context->media_players.empty());
 }
 
+TEST_CASE("MediaPlayer accepts its current stream after prepare and changes streams while preparing") {
+    using Phase = DexVmAndroidContext::MediaPlayerState::Phase;
+    const auto path = std::filesystem::path{OGPLAY_SOURCE_DIR} / "tests/fixtures/audio/short-vorbis.ogg";
+    std::ifstream input(path, std::ios::binary);
+    REQUIRE(input.good());
+    const std::vector<char> chars{std::istreambuf_iterator<char>(input), {}};
+    const auto bytes = std::as_bytes(std::span(chars));
+    const std::vector<std::byte> encoded(bytes.begin(), bytes.end());
+    AudioTrackVm fixture;
+    ogplay::audio::EncodedMusicMixer music;
+    fixture.context->encoded_music = &music;
+    const auto player = fixture.vm.NewIntrinsicInstance("Landroid/media/MediaPlayer;");
+    fixture.CallDirect(player, "<init>", "()V");
+    const auto& state = fixture.context->media_players.at(player.Value());
+    const auto set_stream = [&](int stream) {
+        return fixture.CallOnOutcome(player, "setAudioStreamType", "(I)V", {VmValue::Int(stream)});
+    };
+    REQUIRE(music.SetEncoded(state.music, encoded));
+    fixture.CallOn(player, "prepare", "()V");
+    CHECK_FALSE(set_stream(3).exception.IsValid());
+    const auto rejected = set_stream(4);
+    REQUIRE(rejected.exception.IsValid());
+    CHECK(fixture.linker.Class(rejected.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+    CHECK(state.audio_stream == 3);
+
+    fixture.CallOn(player, "reset", "()V");
+    REQUIRE(music.SetEncoded(state.music, encoded));
+    fixture.CallOn(player, "prepareAsync", "()V");
+    REQUIRE(state.phase == Phase::preparing);
+    CHECK_FALSE(set_stream(4).exception.IsValid());
+    CHECK(state.audio_stream == 4);
+    CHECK_FALSE(set_stream(-1).exception.IsValid());
+    CHECK(state.audio_stream == -1);
+    fixture.CallOn(player, "reset", "()V");
+    REQUIRE(music.SetEncoded(state.music, encoded));
+    fixture.CallOn(player, "prepare", "()V");
+    fixture.CallOn(player, "start", "()V");
+    std::array<std::int64_t, 128> pcm{};
+    music.MixIntoAccumulator(pcm, 48000);
+    CHECK(std::ranges::any_of(pcm, [](std::int64_t sample) { return sample != 0; }));
+}
+
 TEST_CASE("AudioManager applies stream volume to AudioTrack PCM without cross muting") {
     AudioTrackVm fixture;
     const auto a = fixture.NewTrack(8000, 4, 2, 16, 0, 3);

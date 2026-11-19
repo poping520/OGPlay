@@ -6,6 +6,9 @@
   versioned、允许部分失败的停滞快照。
 - 独立等待 teardown 预算、MCP/CLI 请求和 OS 外部触发；不依赖 SDL 主循环存活。
 - 完整宿主原生栈不在进程内展开，由 playbook 规定的外部 dump 工具获取。
+- `runtime.egl.context` 以 info 记录 guest EGL（含 Java EGL）、托管表面及异步读回的原生
+  context 创建、绑定变更、解绑和销毁调用成功。字段含用途、宿主线程 ID、display 和 context，
+  以及创建时的 share context 或切换前的 context。复绑同一 context 不重复记录。
 
 ## 契约
 

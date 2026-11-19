@@ -11,8 +11,8 @@
 
 namespace ogplay::audio {
 
-JavaSoundPoolMixer::JavaSoundPoolMixer(EncodedResourceLoader loader)
-    : loader_(std::move(loader)) {}
+JavaSoundPoolMixer::JavaSoundPoolMixer(EncodedResourceLoader loader, ExternalAudioDecoder decoder)
+    : loader_(std::move(loader)), external_decoder_(std::move(decoder)) {}
 
 bool JavaSoundPoolMixer::Enabled() const noexcept {
     return static_cast<bool>(loader_);
@@ -125,10 +125,10 @@ bool JavaSoundPoolMixer::Load(const EncodedAudioSource& source) {
         if (encoded.bytes.empty() ||
             encoded.bytes.size() > kMaximumEncodedAudioBytes) {
             std::scoped_lock lock(mutex_);
-            failures_[source] = "encoded audio source is unavailable";
+            failures_[source] = {"encoded audio source is unavailable", {}};
             return false;
         }
-        auto decoded = DecodeEncodedAudio(encoded.bytes);
+        auto decoded = DecodeEncodedAudio(encoded.bytes, external_decoder_);
         std::scoped_lock lock(mutex_);
         if (resources_.contains(source)) return true;
         std::size_t cached = decoded.interleaved_samples.size() * sizeof(std::int16_t);
@@ -136,15 +136,19 @@ bool JavaSoundPoolMixer::Load(const EncodedAudioSource& source) {
             cached += pcm.interleaved_samples.size() * sizeof(std::int16_t);
         }
         if (cached > kMaximumDecodedPcmBytes) {
-            failures_[source] = "decoded audio cache exceeds the process budget";
+            failures_[source] = {"decoded audio cache exceeds the process budget", {}};
             return false;
         }
         resources_.emplace(source, std::move(decoded));
         failures_.erase(source);
         return true;
+    } catch (const AudioDecodeError& error) {
+        std::scoped_lock lock(mutex_);
+        failures_[source] = error.Failure();
+        return false;
     } catch (const std::exception& error) {
         std::scoped_lock lock(mutex_);
-        failures_[source] = error.what();
+        failures_[source] = {error.what(), {}};
         return false;
     }
 }
@@ -582,6 +586,11 @@ std::optional<std::string> JavaSoundPoolMixer::LoadFailure(
 
 std::optional<std::string> JavaSoundPoolMixer::LoadFailure(
     const EncodedAudioSource& source) const {
+    const auto failure = LoadFailureDetails(source);
+    return failure ? std::optional{failure->message} : std::nullopt;
+}
+
+std::optional<AudioDecodeFailure> JavaSoundPoolMixer::LoadFailureDetails(const EncodedAudioSource& source) const {
     std::scoped_lock lock(mutex_);
     const auto found = failures_.find(source);
     return found == failures_.end() ? std::nullopt

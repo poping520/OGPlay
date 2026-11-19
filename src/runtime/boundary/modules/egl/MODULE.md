@@ -6,6 +6,8 @@ share group 与 guest sync/image identity。一个 Context 只拥有一个 nativ
 GraphicsBoundaryContext 显式回调清理 guest map/sync 记录，禁止依赖 GLES 模块内部实现。
 Display terminate 不隐式解绑任何线程；current 资源保留到后续解绑，重复 terminate 成功，
 重新 initialize 后可创建新对象。
+解除 current 和销毁沿用 ANGLE 的提交语义。Metal 的隐式托管回退在 GLES 调用释放共享图形锁前
+以 `glFlush` 提交，使跨线程 EGL context 可继续使用同一 display 的命令队列。
 Java EGL10/EGL14 查询与 native 共用实际扩展字符串；wrapper 参数校验失败也写入同一
 per-thread native error 槽，禁止 Java 层返回失败却让 eglGetError 仍报告成功。
 

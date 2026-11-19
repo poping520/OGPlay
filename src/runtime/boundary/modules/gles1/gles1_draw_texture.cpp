@@ -16,7 +16,7 @@ std::uint32_t Gles1Module::Api19Extension(const A32CallFrame& call, const std::s
     if (symbol != "glBlendEquationOES" && symbol != "glBlendEquationSeparateOES" &&
         symbol != "glBlendFuncSeparateOES" && !symbol.starts_with("glDrawTex"))
         return UnimplementedGl(calls_, call, "libGLESv1_CM.so", symbol);
-    std::scoped_lock execution_lock(graphics_.execution_mutex);
+    const GraphicsBoundaryContext::GlesExecutionScope execution(graphics_, call);
     graphics_.ActivateCurrentContext();
     try {
         auto& frame = graphics_.RequireFrame(symbol);
@@ -98,10 +98,7 @@ void AndroidBoundaryGles1DrawState::DrawTexture(gles::AngleFrame& frame, const A
     const float x1 = x0 + 2.0F * rectangle[3] / static_cast<float>(viewport[2]);
     const float y1 = y0 + 2.0F * rectangle[4] / static_cast<float>(viewport[3]);
     const std::array positions{x0, y0, 0.0F, 1.0F, x1, y0, 0.0F, 1.0F, x0, y1, 0.0F, 1.0F, x1, y1, 0.0F, 1.0F};
-    auto units = core.EnabledTextureUnits();
-    std::erase_if(units, [&core](const auto unit) { return !core.Capability(unit, 0x0DE1U); });
-    if (units.size() > kGles1MaximumDrawTextureUnits)
-        throw std::runtime_error("GLES1 draw texture exceeds fixed texture stage limit");
+    const auto units = DrawTextureUnits(frame, core, true);
     // Prepare every crop before changing native draw state.
     std::array<std::array<float, 16>, kGles1MaximumDrawTextureUnits> coordinates{};
     for (std::size_t stage = 0; stage < units.size(); ++stage) {

@@ -45,14 +45,14 @@ ResourceAssetManager::ResourceAssetManager(std::shared_ptr<const res::AssetPath>
     : core(std::move(framework)), vfs_(vfs) {}
 
 std::shared_ptr<const AndroidAssetSource> ResourceAssetManager::Open(std::string_view name) {
-    std::scoped_lock lock(mutex);
+    AssetManagerLock lock(mutex);
     if (retired) throw std::invalid_argument("AAssetManager is retired");
     auto asset = core.open(name);
     return asset ? std::make_shared<NdkResourceAsset>(std::move(asset), vfs_) : nullptr;
 }
 
 std::vector<AndroidAssetDirectoryEntry> ResourceAssetManager::ListDirectory(std::string_view name) {
-    std::scoped_lock lock(mutex);
+    AssetManagerLock lock(mutex);
     if (retired) throw std::invalid_argument("AAssetManager is retired");
     if (name.ends_with('/') || name.find("//") != std::string_view::npos) return {};
     std::vector<AndroidAssetDirectoryEntry> result;
@@ -71,7 +71,7 @@ std::vector<AndroidAssetDirectoryEntry> ResourceAssetManager::ListDirectory(std:
 }
 
 std::optional<res::ResTable_config> ResourceAssetManager::Configuration() const {
-    std::scoped_lock lock(mutex);
+    AssetManagerLock lock(mutex);
     if (retired) return {};
     return core.resources().parameters();
 }

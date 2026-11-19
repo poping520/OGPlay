@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <span>
 #include <string>
+#include <string_view>
 
 #include "ogplay/gles/angle_backend.h"
 
@@ -14,6 +15,14 @@ namespace ogplay::gles {
 
 using EglHandle = std::uintptr_t;
 enum class EglColorFormat { rgba8888, rgb888, rgb565 };
+
+struct EglContextTrace final {
+    using Sink = void (*)(void* owner, std::string_view action, std::string_view purpose, EglHandle display,
+                          EglHandle context, EglHandle related) noexcept;
+    void* owner{};
+    Sink sink{};
+    std::string_view purpose;
+};
 
 enum class EglOperation {
     unavailable,
@@ -79,7 +88,7 @@ struct EglContextInfo final {
 // their share source, and surfaces are not owned by any particular context.
 class EglDisplayResources final {
 public:
-    static std::shared_ptr<EglDisplayResources> Create(AngleBackend backend);
+    static std::shared_ptr<EglDisplayResources> Create(AngleBackend backend, EglContextTrace trace = {});
     ~EglDisplayResources();
     EglApi& Api() const noexcept { return *api_; }
     EglHandle Display() const noexcept { return display_; }
@@ -204,6 +213,6 @@ private:
 };
 
 [[nodiscard]] bool IsNativeAngleEglAvailable() noexcept;
-[[nodiscard]] std::unique_ptr<EglApi> CreateNativeAngleEglApi();
+[[nodiscard]] std::unique_ptr<EglApi> CreateNativeAngleEglApi(EglContextTrace trace = {});
 
 }  // namespace ogplay::gles

@@ -146,8 +146,9 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   freeMemory 为 total-allocated；VMRuntime 的利用率按 Dalvik 1024 刻度并限制于 0.2..0.8，
   普通设备 memory class 保留初始 growth limit；clearGrowthLimit 将活动上限升至 maximum，native allocation/free 独立计数并按堆配置驱动 GC/
   finalization 水位。不查询宿主剩余内存。
-- 堆按 ADR-0172 采用 API19 1 GiB 设备档位，区分 initial target、growth limit 与 maximum：越过当前目标先 GC，再增长，
+- 堆按 ADR-0172 采用 API19 1 GiB 设备档位，区分 initial target、growth limit 与 maximum：安全分配点越过当前目标先 GC，再增长，
   越过增长上限时执行 before-OOM GC 后才失败；GC 后按 live set、利用率和 min/max free 调整目标。
+  非安全点分配抬高软目标时登记 GC 请求，在分配或字节码轮询安全点执行。
 - Throwable 栈以方法身份与 DEX PC 保存，物化时读取同 DEX unit 的 source/debug_info；无调试信息保留未知位置，真实 native 入口保留 Native Method 帧。check-cast 的 CCE 消息使用可读类名与数组维度。
 - `Interpreter::Call` 返回值或未捕获 Java 异常；寄存器带类别 tag，默认 512 帧。invoke 只有
   interpreted/intrinsic/native bridge 三路；缺实现记账失败。致命故障附有界 guest stack、指令、
@@ -162,9 +163,10 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   与分派无关的语义和性能改动放在共享层；opcode 层的语义修复两个内核同步修改。一致性套件两个内核都要跑。
   默认后端为 threaded，switch 需显式选择（run-apk `--dexvm-interpreter switch`、run-dex `--backend switch`）。
 - `VmExecutionLock` 是可重入全 VM 单写/STW 边界；阻塞按原深度释放/恢复。锁序固定为
-  execution→thread runtime→context table；安全分配点外不得触发 GC。
+  execution→thread runtime→context table；自动堆 GC 只在安全点触发。
   锁竞争按 FIFO 准入；普通字节码每 1024 tick 的稳定安全点可向等待宿主让出，保留
   guest monitor、完整递归深度及 frame roots，不发布真实阻塞或重置总 tick 预算。
+  可嵌套的宿主线程防线作用域 `VmYieldForbiddenScope` 跳过公平性让步，显式阻塞释放则抛出带锁名的 `internal_invariant`。
 
 ### 线程、monitor、时间
 

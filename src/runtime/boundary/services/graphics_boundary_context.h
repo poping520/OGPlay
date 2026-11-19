@@ -52,6 +52,22 @@ struct GraphicsBoundaryContext final {
     BufferMappingService* buffer_mappings{};
     gles::CompressedTextureFamily compressed_texture_family{gles::CompressedTextureFamily::all};
     core::Logger* logger{};
+    void (*submit_implicit_surface)(void*, const A32CallFrame&) noexcept {};
+
+    class GlesExecutionScope final {
+    public:
+        GlesExecutionScope(const GraphicsBoundaryContext& graphics, const A32CallFrame& call)
+            : graphics_(graphics), call_(call), lock_(graphics.execution_mutex) {}
+
+        ~GlesExecutionScope() {
+            if (graphics_.submit_implicit_surface) graphics_.submit_implicit_surface(graphics_.owner, call_);
+        }
+
+    private:
+        const GraphicsBoundaryContext& graphics_;
+        const A32CallFrame& call_;
+        std::lock_guard<std::mutex> lock_;
+    };
 
     [[nodiscard]] gles::AngleFrame& RequireFrame(
         const std::string_view operation) const {

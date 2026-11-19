@@ -23,7 +23,6 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(CoreIntrinsicServices servi
         Declare_java_lang_Math_Natives(),
         Declare_java_lang_ProcessManager_Natives(),
         Declare_java_lang_Runtime_Overrides(services),
-        Declare_libcore_io_IoUtils_Overrides(),
         Declare_java_lang_Class_Natives(services),
         Declare_java_lang_reflect_AccessibleObject_Natives(),
         Declare_java_lang_reflect_Method_Natives(),

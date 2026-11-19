@@ -21,7 +21,7 @@ namespace ogplay::runtime {
 class FrameService final {
 public:
     FrameService(const gles::SupersampleLayout& layout, std::span<const detail::HleThunkDescriptor> descriptors,
-                 bool async_readback = false) noexcept;
+                 bool async_readback, gles::EglContextTrace readback_trace) noexcept;
     ~FrameService();
 
     [[nodiscard]] std::optional<AndroidBoundaryFrame> TakeLatestFrame();
@@ -72,6 +72,7 @@ private:
     bool gpu_render_target_ready_{};
     FrameReadbackFilter readback_filter_;
     bool async_enabled_{};
+    gles::EglContextTrace readback_trace_;
     std::uint64_t readback_epoch_{};
     std::shared_ptr<gles::AsyncAngleReadback> async_readback_;
 };

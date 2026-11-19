@@ -13,7 +13,9 @@ guest 主线程在独立宿主线程持续执行 ROM Looper.loop。session 提�
   是唯一根入口；无 native inventory 保持 Java-capable
   process mode。启动时执行 ROM RuntimeInit.redirectLogStreams，并按 commonInit 用
   getDefaultUserAgent 设置 `http.agent`；commonInit 的崩溃处理器、时区、日志与 socket tagger 不采用。
-  ActivityThread.attach(false) 通过本地 AMS 投递 bindApplication。
+  对应 `ActivityThread.main()` 的进程内引导调用 ROM `CloseGuard.setEnabled(false)`，
+  准备主 Looper、构造 ActivityThread、调用 `attach(false)` 经本地 AMS 投递 bindApplication，
+  设置主 Handler、初始化 AsyncTask 并进入 ROM `Looper.loop()`。
   主队列首次空闲后发布 ROM Application，再允许启动 launcher。SDL 操作归宿主前端。
 
    把同一 sealed Manifest 的 package/version/target SDK/application

@@ -375,8 +375,8 @@ void Interpreter::Impl::StepThreaded(InterpreterExecutionState& execution) {
     do {                                                                                                               \
         if ((ticks & 1023U) == 0U) {                                                                                   \
             OGPLAY_SYNC_EXECUTION();                                                                                   \
-            owner->CheckExecutionDeadline();                                                                           \
-            execution_lock.YieldToWaiter();                                                                            \
+            PollExecutionSafepoint(execution);                                                                         \
+            ticks = execution.ticks;                                                                                   \
         }                                                                                                              \
         insn = &code_ptr->instructions[ip];                                                                            \
         frame_ptr->pc = insn->dex_pc;                                                                                  \

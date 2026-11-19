@@ -163,13 +163,10 @@ ExternalTextureContext AngleFrame::UseExternalTexture(const ExternalTextureCall&
 #endif
 }
 
-AngleFrame AngleFrame::CreatePbuffer(const AngleBackend backend,
-                                     const std::uint32_t width,
-                                     const std::uint32_t height,
-                                     const int client_version,
-                                     const EglHandle share_context,
-                                     const CompressedTextureFamily family) {
-    auto api = CreateNativeAngleEglApi();
+AngleFrame AngleFrame::CreatePbuffer(const AngleBackend backend, const std::uint32_t width, const std::uint32_t height,
+                                     const int client_version, const EglHandle share_context,
+                                     const CompressedTextureFamily family, EglContextTrace trace) {
+    auto api = CreateNativeAngleEglApi(trace);
     auto lifecycle = EglLifecycle::CreatePbuffer(
         *api, backend, width, height, client_version, share_context);
     return AngleFrame(std::move(api), std::move(lifecycle), width, height, family);

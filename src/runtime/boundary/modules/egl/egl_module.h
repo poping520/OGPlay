@@ -167,6 +167,7 @@ private:
     void RestoreStateLocked(std::uint32_t handle);
     [[nodiscard]] bool IsConfig(std::uint32_t handle);
     [[nodiscard]] std::uint32_t ConfigAttributeLocked(std::uint32_t handle, std::uint32_t attribute);
+    void EnsureNativeDisplayLocked();
 
     BoundaryCallServices& calls_;
     EglBoundaryContext& context_;

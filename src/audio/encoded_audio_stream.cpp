@@ -71,32 +71,50 @@ private:
 class EncodedAudioStream::Impl final {
 public:
     struct Close { void operator()(stb_vorbis* value) const { stb_vorbis_close(value); } };
-    enum class Kind { wav, vorbis, mp3 };
+    enum class Kind { wav, vorbis, mp3, external };
 
-    explicit Impl(std::shared_ptr<const EncodedAudioDataSource> input,
-                  const std::stop_token stop)
+    explicit Impl(std::shared_ptr<const EncodedAudioDataSource> input, const std::stop_token stop,
+                  const ExternalAudioDecoder& decoder)
         : source(std::move(input)) {
-        if (!source || source->Size() < 4U ||
-            source->Size() > kMaximumEncodedAudioBytes) {
+        if (!source || !source->Size() || source->Size() > kMaximumEncodedAudioBytes) {
             throw std::invalid_argument("invalid music source");
         }
         std::array<std::byte, 12> header{};
-        ReadExact(0, header, stop);
-        if (Tag(header, 0, "RIFF") && Tag(header, 8, "WAVE")) {
-            kind = Kind::wav;
-            OpenWav(stop);
-        } else if (Tag(header, 0, "OggS")) {
-            kind = Kind::vorbis;
-            OpenVorbis(stop, true);
-        } else {
-            kind = Kind::mp3;
-            ScanMp3(stop);
-            mp3dec_init(&mp3);
+        ReadExact(0, std::span(header).first(std::min<std::uint64_t>(source->Size(), header.size())), stop);
+        std::string_view container;
+        std::string_view codec;
+        try {
+            if (Tag(header, 0, "RIFF") && Tag(header, 8, "WAVE")) {
+                kind = Kind::wav;
+                container = "wav";
+                codec = "pcm";
+                OpenWav(stop);
+            } else if (Tag(header, 0, "OggS")) {
+                kind = Kind::vorbis;
+                container = "ogg";
+                codec = "vorbis";
+                OpenVorbis(stop, true);
+            } else if (LooksLikeMp4(header)) {
+                kind = Kind::external;
+                container = "mp4";
+                external = OpenExternalAudio(decoder, source, stop);
+                rate = external->Rate();
+                channels = external->Channels();
+                frames = external->Frames();
+            } else {
+                kind = Kind::mp3;
+                if (LooksLikeMp3(header)) container = codec = "mp3";
+                ScanMp3(stop);
+                mp3dec_init(&mp3);
+            }
+            if (!rate || !frames || stop.stop_requested())
+                throw std::invalid_argument("empty or cancelled music stream");
+            static_cast<void>(Sample(0, stop));
+        } catch (const AudioDecodeError&) {
+            throw;
+        } catch (const std::exception& error) {
+            throw AudioDecodeError(container, codec, error.what());
         }
-        if (!rate || !frames || stop.stop_requested()) {
-            throw std::invalid_argument("empty or cancelled music stream");
-        }
-        static_cast<void>(Sample(0));
     }
 
     void ReadExact(const std::uint64_t offset, const std::span<std::byte> target,
@@ -295,7 +313,15 @@ public:
         }
     }
 
-    [[nodiscard]] std::array<std::int16_t, 2> Sample(const std::size_t frame) {
+    void DecodeExternalBlock(std::stop_token stop) {
+        begin = next_frame;
+        const auto remaining = std::min(pcm.size() / channels, frames - begin);
+        count = external->ReadPcm(std::span(pcm).first(remaining * channels), stop);
+        if (count == 0 || count > remaining) throw AudioDecodeError("mp4", {}, "truncated decoded PCM");
+        next_frame += count;
+    }
+
+    [[nodiscard]] std::array<std::int16_t, 2> Sample(const std::size_t frame, std::stop_token stop = {}) {
         if (frame >= frames) throw std::out_of_range("music frame past EOF");
         if (kind == Kind::wav) {
             std::array<std::byte, 4> raw{};
@@ -316,10 +342,14 @@ public:
             if (frame < begin) {
                 begin = count = next_frame = 0U;
                 if (kind == Kind::vorbis) OpenVorbis({}, false);
+                else if (kind == Kind::external)
+                    external->Rewind();
                 else { mp3_cursor = 0U; mp3dec_init(&mp3); }
             }
             do {
                 if (kind == Kind::vorbis) DecodeVorbisBlock();
+                else if (kind == Kind::external)
+                    DecodeExternalBlock(stop);
                 else DecodeMp3Block();
             } while (frame >= begin + count);
         }
@@ -328,6 +358,7 @@ public:
     }
 
     std::shared_ptr<const EncodedAudioDataSource> source;
+    std::unique_ptr<ExternalAudioStream> external;
     Kind kind{Kind::mp3};
     std::unique_ptr<stb_vorbis, Close> vorbis;
     std::vector<std::byte> vorbis_buffer;
@@ -336,7 +367,7 @@ public:
     std::uint64_t vorbis_cursor{};
     mp3dec_t mp3{};
     std::uint64_t mp3_cursor{};
-    std::array<std::int16_t, 8192> pcm{};
+    std::array<std::int16_t, kAudioPcmBlockSamples> pcm{};
     std::uint64_t pcm_offset{};
     std::size_t pcm_bytes{};
     std::uint32_t rate{};
@@ -347,9 +378,10 @@ public:
 
 EncodedAudioStream::EncodedAudioStream(Bytes bytes, const std::stop_token stop)
     : EncodedAudioStream(std::make_shared<MemorySource>(std::move(bytes)), stop) {}
-EncodedAudioStream::EncodedAudioStream(
-    std::shared_ptr<const EncodedAudioDataSource> source, const std::stop_token stop)
-    : impl_(std::make_unique<Impl>(std::move(source), stop)) {}
+
+EncodedAudioStream::EncodedAudioStream(std::shared_ptr<const EncodedAudioDataSource> source, const std::stop_token stop,
+                                       const ExternalAudioDecoder& decoder)
+    : impl_(std::make_unique<Impl>(std::move(source), stop, decoder)) {}
 EncodedAudioStream::~EncodedAudioStream() = default;
 std::uint32_t EncodedAudioStream::Rate() const { return impl_->rate; }
 std::uint8_t EncodedAudioStream::Channels() const { return impl_->channels; }

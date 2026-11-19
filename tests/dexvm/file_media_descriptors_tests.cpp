@@ -42,6 +42,7 @@
 #include "ogplay/runtime/integration/dexvm_io_vfs.h"
 #include "ogplay/runtime/vfs/sandbox_store.h"
 #include "ogplay/runtime/vfs/vfs.h"
+#include "ogplay/video/ffmpeg_video_player.h"
 
 #include "file_vfs_fixture.h"
 #include "interpreter_backends.h"
@@ -162,6 +163,62 @@ TEST_CASE("MediaPlayer FD lease survives close and path replacement") {
     CHECK(std::ranges::any_of(pcm, [](const std::int16_t sample) {
         return sample != 0;
     }));
+}
+
+TEST_CASE("MediaPlayer streams M4A PCM and loops back to its first samples") {
+    auto decoder = ogplay::video::MakeFfmpegAudioDecoder();
+    if (!decoder) return;
+
+    ogplay::audio::EncodedMusicMixer music(std::move(decoder));
+    FileVm vm;
+    VmThreadRuntime threads(vm.interpreter);
+    vm.context->threads = &threads;
+    vm.context->encoded_music = &music;
+    vm.vfs.MountHostDirectory("/media", std::filesystem::path{OGPLAY_SOURCE_DIR} / "tests/fixtures/audio");
+    const auto player = vm.interpreter.NewIntrinsicInstance("Landroid/media/MediaPlayer;");
+    const auto roots = vm.interpreter.ProtectReferences(std::array{player});
+    vm.CallOn(player, "<init>", "()V");
+    vm.CallOn(player, "setDataSource", "(Ljava/lang/String;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8("/media/short-aac.m4a"))});
+    vm.CallOn(player, "prepare", "()V");
+    vm.CallOn(player, "setLooping", "(Z)V", {VmValue::Int(1)});
+    vm.CallOn(player, "start", "()V");
+
+    constexpr std::size_t frames = 6144;
+    constexpr std::size_t block = 1024;
+    std::vector<std::int64_t> pcm((frames + block) * 2);
+    music.MixIntoAccumulator(pcm, 16000);
+    const auto beginning = std::span(pcm).first(block * 2);
+    const auto after_loop = std::span(pcm).last(block * 2);
+    CHECK(std::ranges::any_of(beginning, [](auto sample) { return sample != 0; }));
+    // AAC perceptual noise substitution can vary slightly after a decoder flush.
+    CHECK(std::ranges::equal(beginning, after_loop, [](auto a, auto b) { return std::abs(a - b) <= 64; }));
+    CHECK(vm.CallOn(player, "getCurrentPosition", "()I").AsInt() == 64);
+    CHECK(vm.ledger.Unimplemented().empty());
+    vm.CallOn(player, "release", "()V");
+}
+
+TEST_CASE("MediaPlayer reports an unrecognized audio container in IOException and the ledger") {
+    ogplay::audio::EncodedMusicMixer music(ogplay::video::MakeFfmpegAudioDecoder());
+    FileVm vm;
+    VmThreadRuntime threads(vm.interpreter);
+    vm.context->threads = &threads;
+    vm.context->encoded_music = &music;
+    vm.vfs.CreateDirectory("/sdcard");
+    vm.JavaWrite("/sdcard/unsupported", "GIF89a unknown audio container");
+    const auto player = vm.interpreter.NewIntrinsicInstance("Landroid/media/MediaPlayer;");
+    const auto roots = vm.interpreter.ProtectReferences(std::array{player});
+    vm.CallOn(player, "<init>", "()V");
+    vm.CallOn(player, "setDataSource", "(Ljava/lang/String;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/unsupported"))});
+    const auto failure = vm.CallOnOutcome(player, "prepare", "()V");
+    REQUIRE(failure.exception.IsValid());
+    CHECK(vm.linker.Class(failure.exception_class).descriptor == "Ljava/io/IOException;");
+    CHECK(failure.exception_message.find("unrecognized audio container") != std::string::npos);
+    const auto hits = vm.ledger.Unimplemented();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits.front().id == "android.media.audio_container.unknown");
+    vm.CallOn(player, "release", "()V");
 }
 
 TEST_CASE("MediaPlayer resolves a JNI-built FileDescriptor through its guest VFS descriptor") {

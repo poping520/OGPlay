@@ -27,4 +27,8 @@ VideoSourcePlayerFactory MakeFfmpegVideoSourcePlayerFactory() {
     };
 }
 
+audio::ExternalAudioDecoder MakeFfmpegAudioDecoder() {
+    return {};
+}
+
 }  // namespace ogplay::video

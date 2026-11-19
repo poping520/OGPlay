@@ -1,10 +1,13 @@
-/* API19 byte-array Deflater/Inflater ABI. Algorithms execute in guest libz;
+/* API19 Deflater/Inflater ABI. Algorithms execute in guest libz;
  * Java owns public semantics. Tokens never expose native addresses to Java. */
+#include <errno.h>
 #include <jni.h>
 #include <limits.h>
 #include <pthread.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 #include <zlib.h>
 
 typedef struct ZipStream {
@@ -14,6 +17,7 @@ typedef struct ZipStream {
     pthread_mutex_t mutex;
     z_stream z;
     unsigned char *input;
+    size_t input_capacity;
 } ZipStream;
 static pthread_mutex_t registry_mutex = PTHREAD_MUTEX_INITIALIZER;
 static ZipStream *streams;
@@ -129,6 +133,7 @@ static void set_input(JNIEnv *env, jbyteArray array, jint offset, jint count, jl
     if ((*env)->ExceptionCheck(env)) { free(input); return; }
     free(s->input);
     s->input = input;
+    s->input_capacity = count ? (size_t)count : 1;
     s->z.next_in = input;
     s->z.avail_in = (uInt)count;
 }
@@ -209,6 +214,56 @@ JNIEXPORT jint JNICALL INFLATER(inflateImpl)(JNIEnv *env, jobject self, jbyteArr
         jint offset, jint count, jlong token) {
     return process(env, self, array, offset, count, token, 1, Z_SYNC_FLUSH);
 }
+JNIEXPORT jint JNICALL INFLATER(setFileInputImpl)(JNIEnv *env, jobject self, jobject descriptor,
+        jlong offset, jint count, jlong token) {
+    (void)self;
+    if (!descriptor) { fail(env, "java/lang/NullPointerException", "fd == null"); return 0; }
+    if (count < 0) { fail(env, "java/lang/IllegalArgumentException", "byteCount < 0"); return 0; }
+    ZipStream *s __attribute__((cleanup(release))) = acquire(env, token, 1);
+    if (!s) return 0;
+
+    jclass cls = (*env)->FindClass(env, "java/io/FileDescriptor");
+    if (!cls) return 0;
+    jfieldID field = (*env)->GetFieldID(env, cls, "descriptor", "I");
+    (*env)->DeleteLocalRef(env, cls);
+    if (!field) return 0;
+    int fd = (*env)->GetIntField(env, descriptor, field);
+    if ((*env)->ExceptionCheck(env)) return 0;
+
+    if ((size_t)count > s->input_capacity) {
+        unsigned char *input = malloc((size_t)count);
+        if (!input) { fail(env, "java/lang/OutOfMemoryError", "ZIP input allocation"); return 0; }
+        free(s->input);
+        s->input = input;
+        s->input_capacity = (size_t)count;
+    }
+    s->z.next_in = s->input;
+    s->z.avail_in = 0;
+
+    /* API19 lseek uses 32-bit off_t. Reject offsets it cannot represent. */
+    off_t position = (off_t)offset;
+    if ((jlong)position != offset) {
+        fail(env, "java/io/IOException", strerror(EOVERFLOW));
+        return 0;
+    }
+    off_t result;
+    do { result = lseek(fd, position, SEEK_SET); } while (result == -1 && errno == EINTR);
+    if (result == -1) { fail(env, "java/io/IOException", strerror(errno)); return 0; }
+
+    jint total = 0;
+    while (total < count) {
+        ssize_t n = read(fd, s->input + total, (size_t)(count - total));
+        if (n == 0) break;
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            fail(env, "java/io/IOException", strerror(errno));
+            return 0;
+        }
+        total += (jint)n;
+    }
+    s->z.avail_in = (uInt)total;
+    return total;
+}
 #define COMMON(owner, kind) \
 JNIEXPORT void JNICALL owner(setInputImpl)(JNIEnv *env, jobject self, jbyteArray array, jint off, jint n, jlong token) { \
     (void)self; set_input(env, array, off, n, token, kind); \
@@ -223,7 +278,7 @@ JNIEXPORT void JNICALL owner(resetImpl)(JNIEnv *env, jobject self, jlong token) 
     (void)self; STREAM(kind); \
     int error = kind ? inflateReset(&s->z) : deflateReset(&s->z); \
     if (error != Z_OK) zfailure(env, error, "java/lang/IllegalArgumentException"); \
-    else { free(s->input); s->input = NULL; s->z.next_in = NULL; s->z.avail_in = 0; } \
+    else { free(s->input); s->input = NULL; s->input_capacity = 0; s->z.next_in = NULL; s->z.avail_in = 0; } \
 } \
 JNIEXPORT jint JNICALL owner(getAdlerImpl)(JNIEnv *env, jobject self, jlong token) { \
     (void)self; ZipStream *s __attribute__((cleanup(release))) = acquire(env, token, kind); \

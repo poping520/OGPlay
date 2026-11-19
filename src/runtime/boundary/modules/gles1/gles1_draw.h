@@ -4,12 +4,18 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "gles1_query.h"
+
+namespace ogplay::core {
+class Logger;
+}
 
 namespace ogplay::runtime::detail {
 
@@ -33,8 +39,8 @@ struct Gles1ClientArray final {
 
 class AndroidBoundaryGles1DrawState final {
 public:
-    explicit AndroidBoundaryGles1DrawState(
-        bool allow_single_stage_texcoord_fallback = true);
+    explicit AndroidBoundaryGles1DrawState(bool allow_single_stage_texcoord_fallback = true,
+                                           core::Logger* logger = nullptr);
     void Reset() noexcept;
     void SetEnabled(std::uint32_t array, std::uint32_t client_texture,
                     bool enabled);
@@ -83,6 +89,8 @@ private:
 
     [[nodiscard]] static std::uint64_t ArrayKey(
         std::uint32_t array, std::uint32_t client_texture) noexcept;
+    [[nodiscard]] std::vector<std::uint32_t>
+    DrawTextureUnits(const gles::AngleFrame& frame, const AndroidBoundaryGles1State& core, bool only_2d = false);
     [[nodiscard]] Program& EnsureProgram(
         gles::AngleFrame& frame,
         const std::array<std::uint32_t, kGles1MaximumDrawTextureUnits>&
@@ -113,6 +121,8 @@ private:
     std::vector<std::uint32_t> flat_provoking_;
     std::uint32_t current_palette_matrix_{};
     bool allow_single_stage_texcoord_fallback_{true};
+    core::Logger* logger_{};
+    std::set<std::pair<std::uint32_t, std::uint32_t>> warned_incomplete_textures_;
 };
 
 [[nodiscard]] std::optional<bool> Gles1ClientStateEnabled(

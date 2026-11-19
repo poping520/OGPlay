@@ -613,6 +613,29 @@ TEST_CASE("FileInputStream getFD keeps path identity independent of cursor") {
     CHECK_FALSE(vm.BoolOn(fd, "valid"));
 }
 
+TEST_CASE("ROM IoUtils.closeQuietly closes the FileInputStream descriptor") {
+    FileVm vm;
+    vm.vfs.CreateDirectory("/sdcard");
+    vm.JavaWrite("/sdcard/input.dat", "abcdef");
+    const auto input = vm.interpreter.NewIntrinsicInstance("Ljava/io/FileInputStream;");
+    const auto roots = vm.interpreter.ProtectReferences(std::array{input});
+    vm.CallOn(input, "<init>", "(Ljava/lang/String;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/input.dat"))});
+    const auto fd = vm.CallOn(input, "getFD", "()Ljava/io/FileDescriptor;").ref;
+    const auto descriptor = vm.CallOn(fd, "getInt$", "()I").AsInt();
+    REQUIRE(descriptor >= 0);
+    CHECK(vm.vfs.Seek(descriptor, 0, VfsSeekWhence::current) == 0);
+
+    const auto owner = vm.linker.ResolveDescriptor("Llibcore/io/IoUtils;");
+    const auto close = vm.linker.FindDirectMethod(owner, "closeQuietly", "(Ljava/lang/AutoCloseable;)V");
+    REQUIRE(close.has_value());
+    const auto result = vm.interpreter.Call(*close, std::array{VmValue::Ref(input)});
+    REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+    CHECK(vm.CallOn(fd, "getInt$", "()I").AsInt() == -1);
+    CHECK_THROWS_AS(vm.vfs.Seek(descriptor, 0, VfsSeekWhence::current), VfsError);
+    CHECK(vm.ledger.Unimplemented().empty());
+}
+
 TEST_CASE("DataOutputStream and wrapped FileOutputStream share one close state") {
     FileVm vm;
     const auto output =

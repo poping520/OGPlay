@@ -10,10 +10,10 @@
 namespace ogplay::runtime {
 
 FrameService::FrameService(const gles::SupersampleLayout& layout,
-                           const std::span<const detail::HleThunkDescriptor> descriptors,
-                           const bool async_readback) noexcept
+                           const std::span<const detail::HleThunkDescriptor> descriptors, const bool async_readback,
+                           gles::EglContextTrace readback_trace) noexcept
     : layout_(layout), descriptors_(descriptors), composed_width_(layout.logical_width),
-      composed_height_(layout.logical_height), async_enabled_(async_readback) {}
+      composed_height_(layout.logical_height), async_enabled_(async_readback), readback_trace_(readback_trace) {}
 
 FrameService::~FrameService() {
     try {
@@ -138,10 +138,9 @@ void FrameService::PublishAngleFrame(gles::AngleFrame& angle_frame) {
         current_epoch = epoch == readback_epoch_;
     }
     if (async_enabled_ && current_epoch) {
-        auto new_pipeline =
-            gles::AsyncAngleReadback::Create(angle_frame, [this, epoch](std::vector<std::uint8_t> pixels) {
-                PublishReadback(std::move(pixels), epoch);
-            });
+        auto new_pipeline = gles::AsyncAngleReadback::Create(
+            angle_frame, [this, epoch](std::vector<std::uint8_t> pixels) { PublishReadback(std::move(pixels), epoch); },
+            readback_trace_);
         std::scoped_lock lock(mutex_);
         if (epoch == readback_epoch_) async_readback_ = std::move(new_pipeline);
     }

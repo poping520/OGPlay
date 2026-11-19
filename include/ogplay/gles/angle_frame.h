@@ -75,12 +75,10 @@ public:
                                    CompressedTextureFamily family = CompressedTextureFamily::all);
     void BindSurfaces(std::shared_ptr<EglSurfaceResources> draw,
                       std::shared_ptr<EglSurfaceResources> read);
-    static AngleFrame CreatePbuffer(AngleBackend backend,
-                                    std::uint32_t width,
-                                    std::uint32_t height,
-                                    int client_version = 2,
-                                    EglHandle share_context = 0,
-                                    CompressedTextureFamily family = CompressedTextureFamily::all);
+    static AngleFrame CreatePbuffer(AngleBackend backend, std::uint32_t width, std::uint32_t height,
+                                    int client_version = 2, EglHandle share_context = 0,
+                                    CompressedTextureFamily family = CompressedTextureFamily::all,
+                                    EglContextTrace trace = {});
 
     ~AngleFrame();
     AngleFrame(const AngleFrame&) = delete;

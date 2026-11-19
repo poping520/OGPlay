@@ -110,6 +110,7 @@ constexpr EGLint kPbufferRenderableTypes[]{EGL_OPENGL_ES2_BIT | kEs3RenderableBi
 
 class NativeAngleEglApi final : public EglApi {
 public:
+    explicit NativeAngleEglApi(EglContextTrace trace) noexcept : trace_(trace) {}
     EglHandle GetPlatformDisplay(const AngleBackend backend) override {
         if (driver_environment_.has_value()) {
             throw std::logic_error(
@@ -225,10 +226,12 @@ public:
                             const EglHandle share_context) override {
         const EGLint attributes[]{EGL_CONTEXT_CLIENT_VERSION, client_version,
                                   EGL_NONE};
-        return ReinterpretHandle<EglHandle>(eglCreateContext(
-            ReinterpretHandle<EGLDisplay>(display),
-            ReinterpretHandle<EGLConfig>(config),
-            ReinterpretHandle<EGLContext>(share_context), attributes));
+        const auto context = ReinterpretHandle<EglHandle>(
+            eglCreateContext(ReinterpretHandle<EGLDisplay>(display), ReinterpretHandle<EGLConfig>(config),
+                             ReinterpretHandle<EGLContext>(share_context), attributes));
+        if (context && trace_.sink)
+            trace_.sink(trace_.owner, "create", trace_.purpose, display, context, share_context);
+        return context;
     }
 
     EglHandle CreatePbufferSurface(const EglHandle display,
@@ -246,10 +249,19 @@ public:
     bool MakeCurrent(const EglHandle display, const EglHandle draw_surface,
                      const EglHandle read_surface,
                      const EglHandle context) override {
-        return eglMakeCurrent(ReinterpretHandle<EGLDisplay>(display),
-                              ReinterpretHandle<EGLSurface>(draw_surface),
-                              ReinterpretHandle<EGLSurface>(read_surface),
-                              ReinterpretHandle<EGLContext>(context)) == EGL_TRUE;
+        const auto previous = trace_.sink ? ReinterpretHandle<EglHandle>(eglGetCurrentContext()) : 0;
+        const auto previous_display = previous ? ReinterpretHandle<EglHandle>(eglGetCurrentDisplay()) : 0;
+        const bool bound =
+            eglMakeCurrent(ReinterpretHandle<EGLDisplay>(display), ReinterpretHandle<EGLSurface>(draw_surface),
+                           ReinterpretHandle<EGLSurface>(read_surface),
+                           ReinterpretHandle<EGLContext>(context)) == EGL_TRUE;
+        if (bound && trace_.sink) {
+            if (context && (context != previous || display != previous_display))
+                trace_.sink(trace_.owner, "make-current", trace_.purpose, display, context, previous);
+            else if (!context && previous)
+                trace_.sink(trace_.owner, "release-current", trace_.purpose, previous_display, previous, 0);
+        }
+        return bound;
     }
 
     bool DestroySurface(const EglHandle display,
@@ -260,8 +272,10 @@ public:
 
     bool DestroyContext(const EglHandle display,
                         const EglHandle context) override {
-        return eglDestroyContext(ReinterpretHandle<EGLDisplay>(display),
-                                 ReinterpretHandle<EGLContext>(context)) == EGL_TRUE;
+        const bool destroyed = eglDestroyContext(ReinterpretHandle<EGLDisplay>(display),
+                                                 ReinterpretHandle<EGLContext>(context)) == EGL_TRUE;
+        if (destroyed && trace_.sink) trace_.sink(trace_.owner, "destroy", trace_.purpose, display, context, 0);
+        return destroyed;
     }
 
     bool Terminate(const EglHandle display) override {
@@ -279,6 +293,7 @@ public:
     }
 
 private:
+    EglContextTrace trace_;
     std::optional<hal::ScopedHostEnvironment> driver_environment_;
 };
 
@@ -302,9 +317,9 @@ std::uint32_t EglLifecycleError::NativeError() const noexcept {
 EglLifecycle::EglLifecycle(EglApi& api, EglContextInfo info) noexcept
     : api_(&api), info_(std::move(info)) {}
 
-std::shared_ptr<EglDisplayResources> EglDisplayResources::Create(const AngleBackend backend) {
+std::shared_ptr<EglDisplayResources> EglDisplayResources::Create(const AngleBackend backend, EglContextTrace trace) {
     auto result = std::shared_ptr<EglDisplayResources>(new EglDisplayResources);
-    result->api_ = CreateNativeAngleEglApi();
+    result->api_ = CreateNativeAngleEglApi(trace);
     result->info_.backend = backend;
     result->display_ = result->api_->GetPlatformDisplay(backend);
     if (!result->display_) ThrowLastError(*result->api_, EglOperation::get_platform_display);
@@ -937,10 +952,11 @@ bool IsNativeAngleEglAvailable() noexcept {
 #endif
 }
 
-std::unique_ptr<EglApi> CreateNativeAngleEglApi() {
+std::unique_ptr<EglApi> CreateNativeAngleEglApi(EglContextTrace trace) {
 #if OGPLAY_HAS_ANGLE
-    return std::make_unique<NativeAngleEglApi>();
+    return std::make_unique<NativeAngleEglApi>(trace);
 #else
+    static_cast<void>(trace);
     throw EglLifecycleError(EglOperation::unavailable, 0);
 #endif
 }

@@ -22,8 +22,8 @@ class EncodedAudioStream final {
 public:
     using Bytes = std::shared_ptr<const std::vector<std::byte>>;
     explicit EncodedAudioStream(Bytes bytes, std::stop_token stop = {});
-    explicit EncodedAudioStream(std::shared_ptr<const EncodedAudioDataSource> source,
-                                std::stop_token stop = {});
+    explicit EncodedAudioStream(std::shared_ptr<const EncodedAudioDataSource> source, std::stop_token stop = {},
+                                const ExternalAudioDecoder& decoder = {});
     ~EncodedAudioStream();
     EncodedAudioStream(const EncodedAudioStream&) = delete;
     EncodedAudioStream& operator=(const EncodedAudioStream&) = delete;

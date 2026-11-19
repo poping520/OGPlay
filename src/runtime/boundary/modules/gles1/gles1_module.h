@@ -60,7 +60,7 @@ public:
 private:
     template <gles::GlesApi Api, gles::GlesThunkId Id>
     std::uint32_t InvokeBound(const A32CallFrame& call) {
-        std::scoped_lock execution_lock(graphics_.execution_mutex);
+        const GraphicsBoundaryContext::GlesExecutionScope execution(graphics_, call);
         graphics_.ActivateCurrentContext();
         constexpr bool draw_call = Api == gles::GlesApi::gles1 &&
                                    (Id == 35U || Id == 36U);

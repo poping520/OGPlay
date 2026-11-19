@@ -14,8 +14,8 @@
 #include <utility>
 #include <vector>
 
+#include "ogplay/audio/encoded_audio.h"
 #include "ogplay/audio/java_sound_pool.h"
-#include "ogplay/audio/ogg_vorbis.h"
 
 namespace ogplay::audio {
 
@@ -55,7 +55,7 @@ public:
     using EncodedResourceLoader = std::function<EncodedResource(
         const EncodedAudioSource& source)>;
 
-    explicit JavaSoundPoolMixer(EncodedResourceLoader loader = {});
+    explicit JavaSoundPoolMixer(EncodedResourceLoader loader = {}, ExternalAudioDecoder decoder = {});
     [[nodiscard]] bool Enabled() const noexcept;
     [[nodiscard]] std::uint32_t CreatePool(std::int32_t max_streams, std::int32_t stream = 3);
     void SetStreamGain(std::int32_t stream, float gain);
@@ -127,6 +127,7 @@ public:
         std::int32_t resource) const;
     [[nodiscard]] std::optional<std::string> LoadFailure(
         const EncodedAudioSource& source) const;
+    [[nodiscard]] std::optional<AudioDecodeFailure> LoadFailureDetails(const EncodedAudioSource& source) const;
     [[nodiscard]] std::size_t LoadedResourceCount() const;
     [[nodiscard]] std::size_t ActiveVoiceCount() const;
 
@@ -162,9 +163,10 @@ private:
     void CollectUnusedResourcesLocked();
 
     EncodedResourceLoader loader_;
+    ExternalAudioDecoder external_decoder_;
     mutable std::mutex mutex_;
     std::map<EncodedAudioSource, Pcm16Audio> resources_;
-    std::map<EncodedAudioSource, std::string> failures_;
+    std::map<EncodedAudioSource, AudioDecodeFailure> failures_;
     std::map<std::uint32_t, Pool> pools_;
     std::vector<Voice> voices_;
     std::array<float, 10> stream_gains_{1,1,1,1,1,1,1,1,1,1};

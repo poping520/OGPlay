@@ -1,0 +1,11 @@
+.class public Lgc/AllocationLoop;
+.super Ljava/lang/Object;
+
+.method static public run(I)V
+.registers 1
+:loop
+    invoke-static {}, Lgc/IntrinsicAllocator;->allocate()V
+    add-int/lit8 v0, v0, -1
+    if-gtz v0, :loop
+    return-void
+.end method

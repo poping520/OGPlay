@@ -15,8 +15,8 @@ namespace ogplay::gles {
 class AsyncAngleReadback final {
 public:
     using Publish = std::function<void(std::vector<std::uint8_t>)>;
-    [[nodiscard]] static std::shared_ptr<AsyncAngleReadback> Create(
-        const AngleFrame& source, Publish publish);
+    [[nodiscard]] static std::shared_ptr<AsyncAngleReadback> Create(const AngleFrame& source, Publish publish,
+                                                                    EglContextTrace trace = {});
     ~AsyncAngleReadback();
     AsyncAngleReadback(const AsyncAngleReadback&) = delete;
     AsyncAngleReadback& operator=(const AsyncAngleReadback&) = delete;

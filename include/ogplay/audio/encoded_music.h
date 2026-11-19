@@ -20,6 +20,7 @@ public:
     static constexpr std::size_t kMaximumPlayers = 16;
     static constexpr std::size_t kMaximumMusicBytes = 128U * 1024U * 1024U;
     enum class PrepareStatus { pending, ready, failed };
+    explicit EncodedMusicMixer(ExternalAudioDecoder decoder = {});
     [[nodiscard]] std::uint32_t Create();
     void Destroy(std::uint32_t player);
     void Reset(std::uint32_t player);
@@ -31,6 +32,7 @@ public:
     [[nodiscard]] bool Prepare(std::uint32_t player);
     [[nodiscard]] bool BeginPrepare(std::uint32_t player);
     [[nodiscard]] PrepareStatus PollPrepare(std::uint32_t player);
+    [[nodiscard]] std::optional<AudioDecodeFailure> PrepareFailure(std::uint32_t player) const;
     void Start(std::uint32_t player);
     void Pause(std::uint32_t player);
     void Stop(std::uint32_t player);
@@ -56,6 +58,7 @@ private:
         std::mutex mutex;
         std::condition_variable ready;
         std::unique_ptr<EncodedAudioStream> stream;
+        std::optional<AudioDecodeFailure> failure;
         bool done{};
         // Declared last: stop and join before destroying task data.
         std::jthread worker;
@@ -83,9 +86,11 @@ private:
         std::int32_t audio_stream{3};
         std::uint64_t generation{};
         std::shared_ptr<PrepareTask> prepare_task;
+        std::optional<AudioDecodeFailure> prepare_failure;
     };
 
     mutable std::mutex mutex_;
+    ExternalAudioDecoder external_decoder_;
     std::map<std::uint32_t, Player> players_;
     std::array<float, 10> stream_gains_{1,1,1,1,1,1,1,1,1,1};
     std::uint32_t next_{1};

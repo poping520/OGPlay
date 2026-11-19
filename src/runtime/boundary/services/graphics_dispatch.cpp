@@ -17,6 +17,7 @@
 #include "ogplay/cpu/cpu.h"
 #include "ogplay/core/logger.h"
 #include "ogplay/gles/angle_frame.h"
+#include "ogplay/hal/diagnostic_trigger.h"
 #include "ogplay/gles/atc.h"
 #include "ogplay/gles/gles_call_preparation.h"
 #include "ogplay/gles/gles_dispatch.h"
@@ -187,6 +188,29 @@ std::vector<std::string_view> GuestGlesExtensions(const std::string_view native_
         if (supports("GL_OES_texture_float_linear")) values.push_back("GL_OES_texture_float_linear");
     }
     return values;
+}
+
+gles::EglContextTrace EglContextLogging(core::Logger* logger, std::string_view purpose) noexcept {
+    if (!logger) return {};
+    return {
+        logger,
+        [](void* owner, std::string_view action, std::string_view purpose, gles::EglHandle display,
+           gles::EglHandle context, gles::EglHandle related) noexcept {
+            try {
+                static_cast<core::Logger*>(owner)->Write(core::LogLevel::info, "runtime.egl.context",
+                                                         "EGL context lifecycle", {},
+                                                         {{"action", std::string(action)},
+                                                          {"purpose", std::string(purpose)},
+                                                          {"host_tid", hal::CurrentNativeThreadId()},
+                                                          {"display", static_cast<std::uint64_t>(display)},
+                                                          {"context", static_cast<std::uint64_t>(context)},
+                                                          {"related_context", static_cast<std::uint64_t>(related)}},
+                                                         {.mode = core::RateLimitMode::none});
+            } catch (...) {  // Diagnostics must not alter the result of an EGL operation.
+            }
+        },
+        purpose,
+    };
 }
 
 void LogCompressedTextureCapabilities(gles::AngleFrame& frame, core::Logger* logger) {

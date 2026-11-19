@@ -14,8 +14,7 @@ Deflater/Inflater 的公开方法、流头尾、CRC/长度校验和 Java 字段�
 API19 边界。end 显式释放；NativeZip.release 是幂等 GC/teardown 释放入口，库析构兜底。
 Java streamHandle 使用原版 -1 关闭标记；不得发布宿主或 guest 原始指针。
 
-Inflater.setFileInputImpl 不导出，由 core 按能力缺口记账并抛 UnsupportedOperationException。
-仅支持字节数组及其 GZIP/DeflaterOutputStream/InflaterInputStream 组合；RAFStream 只作为
-原版类型依赖，不声明 ZipFile 或完整 ZIP/JAR 能力。
-验证入口：`tests/runtime/guest_zlib_tests.cpp`的双解释器用例，
-以及 BootDex build/check、guest JNI 可重复构建和 payload 校验。
+`Inflater.setFileInputImpl` 按 API19 的文件输入路径复用容量足够的 native 缓冲区，直接对
+`FileDescriptor.descriptor` 对应的 guest VFS fd 定位并读取。它返回实际读取长度，I/O 错误
+以 errno 对应的消息抛出 IOException。原版 ZipFile 经此路径读取 ZIP32 DEFLATED 条目。
+验证入口为 `tests/runtime/guest_zlib_tests.cpp`、guest JNI 可重复构建和 payload 校验。

@@ -81,9 +81,10 @@ public:
           symbols_(detail::BuildAndroidBoundarySymbols()),
           descriptors_(detail::BuildAndroidBoundaryDescriptors(symbols_)), provider_(symbols_),
           thunk_arena_(address_space_), fast_router_(thunk_arena_),
-          frame_service_(layout_, descriptors_, options.async_present_readback),
+          frame_service_(layout_, descriptors_, options.async_present_readback,
+                         EglContextLogging(options.logger, "frame-readback")),
           gles_dispatch_(address_space, gl_context_), gles1_state_(gl_context_.Shared()),
-          gles1_draw_state_(options.allow_gles1_single_stage_texcoord_fallback),
+          gles1_draw_state_(options.allow_gles1_single_stage_texcoord_fallback, options.logger),
           call_services_{address_space_, fault_store_, this, &ServiceRecordGpuCall, options.logger, options.ledger},
           android_services_{address_space_}, graphics_context_{backend_,
                                                                layout_,
@@ -147,6 +148,7 @@ public:
           libc_override_module_(call_services_), libdl_override_module_(call_services_, options.dynamic_link) {
         graphics_context_.compressed_texture_family = options.compressed_texture_family;
         graphics_context_.logger = options.logger;
+        graphics_context_.submit_implicit_surface = &ServiceSubmitImplicitManagedSurface;
         detail::BindAndroidBoundaryGles1Core(
             gles1_dispatch_, gles1_state_, address_space_, layout_.factor,
             [this](const std::string_view operation) -> gles::AngleFrame& { return RequireFrame(operation); });
@@ -279,8 +281,9 @@ public:
         if (angle_frame_.has_value()) {
             throw std::logic_error("Android boundary already has a current ANGLE frame");
         }
-        angle_frame_.emplace(gles::AngleFrame::CreatePbuffer(backend_, layout_.render_width, layout_.render_height, 2,
-                                                             0, graphics_context_.compressed_texture_family));
+        angle_frame_.emplace(gles::AngleFrame::CreatePbuffer(
+            backend_, layout_.render_width, layout_.render_height, 2, 0, graphics_context_.compressed_texture_family,
+            EglContextLogging(graphics_context_.logger, "managed-surface")));
         LogCompressedTextureCapabilities(*angle_frame_, graphics_context_.logger);
         gl_owner_ = std::this_thread::get_id();
         InitializeGuestGlDefaults();
@@ -288,7 +291,10 @@ public:
         frame_service_.SetRenderTargetReady(true);
     }
 
-    void BindManagedSurfaceOnCallingThread() { static_cast<void>(RequireFrame("bind managed surface")); }
+    void BindManagedSurfaceOnCallingThread() {
+        auto& frame = RequireFrame("bind managed surface");
+        if (angle_frame_ && &frame == &*angle_frame_) implicit_managed_current_ = false;
+    }
 
     void ReleaseManagedSurfaceFromCallingThread() {
         if (!angle_frame_.has_value()) {
@@ -302,6 +308,7 @@ public:
         }
         angle_frame_->ReleaseCurrent();
         gl_owner_.reset();
+        implicit_managed_current_ = false;
     }
 
     [[nodiscard]] bool ManagedSurfaceIsOpen() const noexcept { return managed_surface_ && angle_frame_.has_value(); }
@@ -412,6 +419,7 @@ public:
         }
         frame_service_.SetRenderTargetReady(false);
         gl_owner_.reset();
+        implicit_managed_current_ = false;
         angle_frame_.reset();
         managed_surface_ = false;
         buffer_mappings_.RetireShareGroup(gl_context_.ShareGroup());
@@ -601,6 +609,20 @@ private:
 
     static void ServiceReleaseManagedSurface(void* owner) {
         static_cast<Impl*>(owner)->ReleaseManagedSurfaceFromCallingThread();
+    }
+
+    static void ServiceSubmitImplicitManagedSurface(void* owner, const A32CallFrame& call) noexcept {
+        auto& self = *static_cast<Impl*>(owner);
+        if (self.backend_.renderer != gles::AngleRenderer::metal || !self.implicit_managed_current_ ||
+            self.gl_owner_ != std::this_thread::get_id() || !self.angle_frame_->IsCurrentOnCallingThread())
+            return;
+        // This fallback can be left current on a thread that never swaps. Submit before
+        // another context can enter ANGLE and wait on this display's command buffer.
+        try {
+            self.angle_frame_->Flush();
+        } catch (const gles::GlesApiError& error) {
+            self.graphics_context_.SetGuestError(call, error.Code());
+        }
     }
 
     static void ServicePublishFrame(void* owner) { static_cast<Impl*>(owner)->PublishFrame(); }
@@ -1014,6 +1036,7 @@ private:
         if (!gl_owner_.has_value()) {
             angle_frame_->BindCurrentOnCallingThread();
             gl_owner_ = caller;
+            implicit_managed_current_ = true;
         } else if (*gl_owner_ != caller) {
             throw std::runtime_error(std::string(operation) + " violates GL context thread affinity");
         }
@@ -1056,6 +1079,7 @@ private:
     BoundaryFaultStore fault_store_;
     std::optional<gles::AngleFrame> angle_frame_;
     std::optional<std::thread::id> gl_owner_;
+    bool implicit_managed_current_{};
     bool managed_surface_{};
     std::atomic<bool> guest_graphics_retired_{false};
     std::mutex graphics_execution_mutex_;

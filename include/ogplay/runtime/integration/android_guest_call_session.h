@@ -240,6 +240,8 @@ struct AndroidGuestApplicationModuleSource final {
 struct AndroidGuestApplicationLoad final {
     std::size_t root_module_index{};
     std::vector<std::string> initialized_modules;
+    memory::GuestAddress load_bias{};
+    std::optional<memory::GuestRange> mapped_range;
 };
 
 class AndroidGuestProcess final : public core::GpuStateProvider {
@@ -264,6 +266,7 @@ public:
     void WakeThreadLooper(std::uint64_t thread_id);
     void NotifyLooperPollers();
     [[nodiscard]] dexvm::GuestMemoryAccess GuestMemoryAccess() const;
+    [[nodiscard]] const GuestMemoryMappings& MemoryMappings() const noexcept;
     void ProtectGuestReadOnly(memory::GuestAddress address, std::uint32_t size);
     void SetBitmapHooks(AndroidBitmapHooks hooks);
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks);

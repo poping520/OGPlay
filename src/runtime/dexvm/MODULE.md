@@ -190,6 +190,7 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   生产 bridge 还将默认 root execution 绑定到创建宿主，空闲时也禁止由后台借用。
   Java worker 的 run 与未捕获异常分派共用其 execution scope；分派期间的异常引用
   显式保活，处理器中的 Java/native 调用不回落到默认 root。
+  `Thread.run` 的目标异常保留 throwable 身份，未处理的 worker 故障报告附 cause 链和每层可用的首帧。
 - stop 每指令检查；shutdown 先 stop/join 再展开 context。class init 对同 context 重入，其他
   context 释放执行锁等待，完成/失败/teardown 均唤醒。
 - host lifecycle 的 worker-progress 等待使用显式 wall-time 上限，且不获取 execution lock；
@@ -205,7 +206,7 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
 
 - `Runtime.availableProcessors` 与 `Posix.sysconf` 的 API19 核数 selector 96/97 消费同一
   `CoreIntrinsicServices.cpu_cores`（由 bridge 注入进程配置）；不从 VM 锁或宿主硬件推导。
-  其他 Java sysconf selector 仍记账并明确失败；不宣称完整 Posix sysconf 支持。
+  页大小 selector 39/40 返回 API19 的 4096 字节，其余 selector 记账并明确失败。
 
 - `CoreIntrinsicCatalog(services)` 按 family TU 聚合拥有型 handler；非 Android 类只能在 core，
   平台事实只经 `CoreIntrinsicServices` 注入。Builder 只声明 own members，override 必须显式，字段
@@ -252,7 +253,8 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
 - NIO Buffer、类型化数组/字节视图、MemoryBlock、ByteOrder、NIOAccess/NioUtils 与 Memory
   的字段、普通方法和构造器原样运行 API19 ROM。只绑定 ByteOrder 与 Memory 原版 native；
   不再有 NioRuntime 或 Buffer 状态侧表。MemoryBlock.allocate 的 byte[] 是普通 GC 强边，
-  外部 DirectByteBuffer(long,int) 是非拥有借用。FileChannel.map 所需 mmap/munmap/msync 仍明确失败。
+  外部 DirectByteBuffer(long,int) 是非拥有借用。FileChannel.map 经 Posix 与 native 共用文件映射，
+  ROM MemoryBlock 使用原有 direct memory 读写入口。
 - NioBufferAccess 只缓存链接后的字段槽，按 ROM 字段取得 cursor、字节序、只读性、backing 与
   当前 guest 地址。宿主同步借用数组 payload，调用者保证 reachability 和 VM/映射寿命；
   primitive array 的 Bytes 不复制、不 pin，不允许跨 VM 解锁或 GC 保存跨度。

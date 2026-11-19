@@ -622,13 +622,19 @@ private:
             entry.loading_thread = {};
             condition_.notify_all();
             if (logger_ != nullptr) {
-                logger_->Write(
-                    core::LogLevel::info, "runtime.native_library", "explicit native load completed", {},
-                    {{"sequence", handle},
-                     {"soname", library.module_name},
-                     {"initialized_modules", static_cast<std::uint64_t>(application.initialized_modules.size())},
-                     {"jni_on_load_calls", static_cast<std::uint64_t>(jni_version.has_value() ? 1U : 0U)}},
-                    {.mode = core::RateLimitMode::none});
+                std::vector<core::LogField> fields{
+                    {"sequence", handle},
+                    {"soname", library.module_name},
+                    {"initialized_modules", static_cast<std::uint64_t>(application.initialized_modules.size())},
+                    {"jni_on_load_calls", static_cast<std::uint64_t>(jni_version.has_value() ? 1U : 0U)}};
+                if (application.mapped_range) {
+                    fields.push_back({"load_bias", core::GuestAddress{application.load_bias.Value()}});
+                    fields.push_back({"mapped_start", core::GuestAddress{application.mapped_range->Start().Value()}});
+                    fields.push_back(
+                        {"mapped_end_exclusive", core::GuestAddress{application.mapped_range->EndExclusive()}});
+                }
+                logger_->Write(core::LogLevel::info, "runtime.native_library", "explicit native load completed", {},
+                               std::move(fields), {.mode = core::RateLimitMode::none});
             }
             return {handle,
                     canonical_path,

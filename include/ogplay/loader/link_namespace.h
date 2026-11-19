@@ -28,6 +28,9 @@ struct Elf32LinkNamespace final {
     std::vector<std::size_t> lookup_scope;
 };
 
+[[nodiscard]] std::string DescribeElf32ModuleAddress(const Elf32LinkNamespace& link_namespace,
+                                                     memory::GuestAddress address);
+
 struct Elf32SymbolLocation final {
     std::size_t module_index{};
     std::size_t symbol_index{};

@@ -3,6 +3,7 @@
 #include "guest_path_reader.h"
 #include "file_transfer.h"
 #include "poll_syscalls.h"
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <chrono>
@@ -83,6 +84,7 @@ constexpr std::array kAndroidArmBaseline{
     Declaration{140, "llseek", SyscallGroup::file},
     Declaration{141, "getdents", SyscallGroup::file},
     Declaration{143, "flock", SyscallGroup::file},
+    Declaration{144, "msync", SyscallGroup::memory},
     Declaration{145, "readv", SyscallGroup::file},
     Declaration{146, "writev", SyscallGroup::file},
     Declaration{148, "fdatasync", SyscallGroup::file},
@@ -494,20 +496,21 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
         return result;
     };
 
-    dispatcher.Implement(192, [&address_space, state, binding = dispatcher.filesystem_binding,
-                               rejected = dispatcher.MappingMutationRecorder(), page_size, aligned_size,
-                               protection](const A32SyscallFrame& frame) {
+    auto& mappings = dispatcher.memory_mappings;
+    mappings.map = [&address_space, state, binding = dispatcher.filesystem_binding,
+                    rejected = dispatcher.MappingMutationRecorder(), page_size, aligned_size,
+                    protection](const GuestMmapRequest& request) -> std::int64_t {
         std::scoped_lock lock(state->mapping_mutex);
         try {
-            const auto size = aligned_size(frame.arguments[1]);
-            const auto flags = frame.arguments[3];
-            const auto prot = frame.arguments[2];
+            const auto size = aligned_size(request.size);
+            const auto flags = request.flags;
+            const auto prot = request.protection;
             const auto permissions = protection(prot);
             const auto kind = flags & 3U;
             if (kind != 1U && kind != kMapPrivate) return -kEinval;
             if ((flags & ~(3U | kMapFixed | kMapAnonymous | kMapHints)) != 0) return -kLinuxEnosys;
             const bool fixed = (flags & kMapFixed) != 0;
-            std::uint32_t address = frame.arguments[0];
+            std::uint32_t address = request.address.Value();
             if (fixed) {
                 if (address % page_size != 0) return -kEinval;
                 if (address < memory::kGuestLowGuardSize) return -kEperm;
@@ -517,20 +520,19 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
             std::shared_ptr<const VfsResourceReservation> reservation;
             std::vector<std::byte> snapshot;
             if ((flags & kMapAnonymous) != 0) {
-                if (kind != kMapPrivate || frame.arguments[5] != 0) return -kLinuxEnosys;
+                if (kind != kMapPrivate || request.page_offset != 0) return -kLinuxEnosys;
             } else {
                 auto* vfs = *binding;
                 if (!vfs) return -9;
-                const auto fd = std::bit_cast<std::int32_t>(frame.arguments[4]);
                 // Guard first, then inspect size/copy: VFS mutations serialize
                 // on its metadata lock. Private snapshots release at return.
-                const auto source = vfs->CaptureMappingSource(fd, rejected);
+                const auto source = vfs->CaptureMappingSource(request.fd, rejected);
                 guard = source.lease;
                 if (kind == 1U && (prot & 2U) != 0) return source.writable ? -kLinuxEnosys : -13;
                 if (!source.readable) return -13;
                 if ((prot & 4U) != 0 || (prot != 1U && prot != 3U)) return -kLinuxEnosys;
                 if (kind == 1U && source.writable) return -kLinuxEnosys;
-                const auto offset = std::uint64_t{frame.arguments[5]} * 4096U;
+                const auto offset = std::uint64_t{request.page_offset} * kApi19MmapPageSize;
                 if (source.lease->Size() == 0 || offset + size - page_size >= source.lease->Size())
                     return -kLinuxEnosys;
                 const auto count = std::min<std::uint64_t>(size, source.lease->Size() - offset);
@@ -556,8 +558,9 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
             if ((flags & kMapAnonymous) == 0)
                 next.push_back(
                     {address, std::uint64_t{address} + size, kind == 1U ? std::move(guard) : nullptr, kind == 1U});
+            std::ranges::sort(next, {}, &State::Mapping::begin);
             state->mappings.swap(next);
-            return std::bit_cast<std::int32_t>(address);
+            return address;
         } catch (const VfsError& error) {
             return -error.ErrorNumber();
         } catch (const memory::ProtectedMappingError&) {
@@ -569,14 +572,15 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
         } catch (const std::exception&) {
             return -kEnomem;
         }
-    });
-    dispatcher.Implement(91, [&address_space, state, page_size, aligned_size](const A32SyscallFrame& frame) {
+    };
+    mappings.unmap = [&address_space, state, page_size, aligned_size](memory::GuestAddress address,
+                                                                      std::uint32_t count) {
         std::scoped_lock lock(state->mapping_mutex);
         try {
-            if (frame.arguments[0] % page_size != 0) return -kEinval;
-            const auto size = aligned_size(frame.arguments[1]);
-            auto next = state->Without(frame.arguments[0], std::uint64_t{frame.arguments[0]} + size);
-            address_space.Unmap({memory::GuestAddress{frame.arguments[0]}, size});
+            if (!address.IsAligned(page_size)) return -kEinval;
+            const memory::GuestRange range{address, aligned_size(count)};
+            auto next = state->Without(address.Value(), range.EndExclusive());
+            address_space.Unmap(range);
             state->mappings.swap(next);
             return 0;
         } catch (const memory::ProtectedMappingError&) {
@@ -584,6 +588,44 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
         } catch (const std::exception&) {
             return -kEinval;
         }
+    };
+    mappings.sync = [&address_space, state, page_size, aligned_size](memory::GuestAddress address, std::uint32_t count,
+                                                                     std::uint32_t flags, std::uint64_t thread_id) {
+        constexpr std::uint32_t kMsAsync = 1U, kMsInvalidate = 2U, kMsSync = 4U;
+        if (!address.IsAligned(page_size) || (flags & ~(kMsAsync | kMsInvalidate | kMsSync)) != 0 ||
+            (flags & (kMsAsync | kMsSync)) == (kMsAsync | kMsSync))
+            return -kEinval;
+        if ((flags & kMsInvalidate) != 0) return -kLinuxEnosys;
+        if (count == 0) return 0;
+        std::scoped_lock lock(state->mapping_mutex);
+        try {
+            const memory::GuestRange range{address, aligned_size(count)};
+            address_space.ValidateMapped(range, thread_id);
+            std::uint64_t cursor = address.Value();
+            for (const auto& mapping : state->mappings) {
+                if (mapping.end <= cursor) continue;
+                if (mapping.begin > cursor) break;
+                cursor = mapping.end;
+                if (cursor >= range.EndExclusive()) return 0;
+            }
+            return -kLinuxEnosys;
+        } catch (const memory::MemoryFault&) {
+            return -kEnomem;
+        } catch (const std::overflow_error&) {
+            return -kEnomem;
+        }
+    };
+    dispatcher.Implement(192, [map = mappings.map](const A32SyscallFrame& frame) {
+        const auto& a = frame.arguments;
+        const auto result =
+            map({memory::GuestAddress{a[0]}, a[1], a[2], a[3], std::bit_cast<std::int32_t>(a[4]), a[5]});
+        return std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(result));
+    });
+    dispatcher.Implement(91, [unmap = mappings.unmap](const A32SyscallFrame& frame) {
+        return unmap(memory::GuestAddress{frame.arguments[0]}, frame.arguments[1]);
+    });
+    dispatcher.Implement(144, [sync = mappings.sync](const A32SyscallFrame& frame) {
+        return sync(memory::GuestAddress{frame.arguments[0]}, frame.arguments[1], frame.arguments[2], frame.thread_id);
     });
     dispatcher.Implement(
         125, [&address_space, state, page_size, aligned_size, protection](const A32SyscallFrame& frame) {

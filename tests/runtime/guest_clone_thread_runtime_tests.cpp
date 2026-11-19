@@ -245,8 +245,8 @@ TEST_CASE("guest clone failure interrupts parent wait and preserves original exc
     clone.cpu_state->SetRegister(cpu::CoreRegister::pc, code.Value());
     REQUIRE(dispatcher.Dispatch(clone) == 2);
     CHECK(futex.Wait(bus, word, 0, 1, std::chrono::seconds(3)) == cpu::FutexWaitResult::interrupted_after_wait);
-    CHECK_THROWS_WITH(runtime.RethrowFailure(), "fixture native child failure");
-    CHECK_THROWS_WITH(static_cast<void>(runtime.Join(2)), "fixture native child failure");
+    CHECK_THROWS_WITH(runtime.RethrowFailure(), doctest::Contains("fixture native child failure\n  stop:"));
+    CHECK_THROWS_WITH(static_cast<void>(runtime.Join(2)), doctest::Contains("fixture native child failure\n  stop:"));
     CHECK(notified.load());
     CHECK(lifecycle.State(2).status == GuestThreadStatus::exited);
     CHECK(lifecycle.State(1).status == GuestThreadStatus::exit_requested);

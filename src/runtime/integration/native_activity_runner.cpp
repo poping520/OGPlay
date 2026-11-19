@@ -129,7 +129,9 @@ public:
         BindSyscalls();
         clone_runtime_ = std::make_unique<GuestCloneThreadRuntime>(
             threads_, dispatcher_, lifecycle_, address_space_, memory_bus_, futex_table_, 2, 100000,
-            [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) { return HandleBoundary(cpu, stopped); });
+            [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) { return HandleBoundary(cpu, stopped); },
+            std::shared_ptr<debug::DiagnosticState>{}, std::function<void()>{}, std::function<bool()>{},
+            fault_context_.locate_module);
         root_cpu_ = std::make_unique<cpu::DynarmicCpu>(memory_bus_, execution_context_);
         root_cpu_->SetHostCallHook(boundary_.FastHostCallHook());
         cpu::A32State root_state;
@@ -355,12 +357,13 @@ private:
             }
             ThrowIfChildFailed();
             if (TryDeliverSynchronousCpuSignal(*root_cpu_, stopped, dispatcher_)) continue;
-            if (ConsumeAndroidArmSupervisorCall(*root_cpu_, stopped, dispatcher_,
-                                                [this](cpu::Cpu& cpu, const cpu::RunResult& trap) {
-                                                    return HandleBoundary(cpu, trap);
-                                                }) == SupervisorCallProgress::not_handled) {
-                throw NativeActivityRunError("NativeActivity guest stopped outside a handled boundary:\n" +
-                                             DescribeA32GuestStop(stopped, root_cpu_->GetState(), address_space_));
+            if (ConsumeAndroidArmSupervisorCall(
+                    *root_cpu_, stopped, dispatcher_,
+                    [this](cpu::Cpu& cpu, const cpu::RunResult& trap) { return HandleBoundary(cpu, trap); },
+                    fault_context_) == SupervisorCallProgress::not_handled) {
+                throw NativeActivityRunError(
+                    "NativeActivity guest stopped outside a handled boundary:\n" +
+                    DescribeA32GuestStop(stopped, root_cpu_->GetState(), address_space_, fault_context_.locate_module));
             }
             ThrowIfChildFailed();
             auto updated = root_cpu_->GetState();
@@ -387,10 +390,14 @@ private:
     std::exception_ptr child_failure_;
     std::shared_ptr<cpu::DynarmicExecutionContext> execution_context_ =
         std::make_shared<cpu::DynarmicExecutionContext>(64);
+    loader::Elf32LoadedNamespace loaded_;
     cpu::GuestThreadGroup threads_;
+    const A32GuestFaultContext fault_context_{&address_space_, [this](memory::GuestAddress address) {
+                                                  return loader::DescribeElf32ModuleAddress(loaded_.link_namespace,
+                                                                                            address);
+                                              }};
     std::unique_ptr<GuestCloneThreadRuntime> clone_runtime_;
     std::unique_ptr<cpu::DynarmicCpu> root_cpu_;
-    loader::Elf32LoadedNamespace loaded_;
     Api19GuestProcessMemory process_memory_;
     std::vector<GuestLifecycleModule> lifecycle_modules_;
     std::vector<std::size_t> guest_load_order_;

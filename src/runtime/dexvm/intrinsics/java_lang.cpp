@@ -1557,7 +1557,8 @@ void InitializeFields(const IntrinsicCall& call, const ThreadFields& fields, con
 
 void PropagateOutcome(Interpreter& vm, const VmCallOutcome& outcome) {
     if (!outcome.exception.IsValid()) return;
-    throw VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message};
+    throw VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
+                      outcome.exception};
 }
 
 [[nodiscard]] std::int64_t RoundedMillis(const std::int64_t millis, const std::int32_t nanos) {

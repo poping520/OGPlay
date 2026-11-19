@@ -76,6 +76,19 @@ void SetShortField(Interpreter& vm, const VmObjectRef object, const std::string&
                       detail.empty() ? std::string(function) + " failed" : std::string(detail), exception};
 }
 
+std::uint32_t MappingWord(IntrinsicContext& call, std::size_t index, std::string_view function) {
+    const auto value = call.arguments[index].AsLong();
+    if (value < 0 || value > std::numeric_limits<std::uint32_t>::max()) ThrowErrno(call.vm, function, 22);
+    return static_cast<std::uint32_t>(value);
+}
+
+std::int64_t CheckMappingResult(Interpreter& vm, std::string_view function, std::int64_t result) {
+    constexpr int kEnosys = 38;
+    if (result >= 0) return result;
+    if (result == -kEnosys && vm.Ledger()) vm.Ledger()->RecordUnimplemented("dexvm.posix." + std::string(function), 0);
+    ThrowErrno(vm, function, static_cast<std::int32_t>(-result));
+}
+
 std::span<std::byte> PosixBytes(IntrinsicContext& call, VmObjectRef object, int offset, int count, bool write) {
     if (!object.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "buffer == null"};
     if (call.vm.Buffers().IsBuffer(object)) {
@@ -969,12 +982,56 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
 
     posix.VirtualMethod("sysconf", "(I)J", [cores = services.cpu_cores](IntrinsicContext& call) {
         const auto selector = call.arguments[0].AsInt();
+        if (selector == 39 || selector == 40) return VmValue::Long(kApi19MmapPageSize);
         if (selector == 96 || selector == 97) return VmValue::Long(cores);
         if (auto* ledger = call.vm.Ledger())
             ledger->RecordUnimplemented("dexvm.posix.sysconf." + std::to_string(selector), 0);
         throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                           "Posix.sysconf selector is not implemented: " + std::to_string(selector)};
     });
+    posix.VirtualMethod(
+        "mmap", "(JJIILjava/io/FileDescriptor;J)J",
+        [provider = services.memory_mappings](IntrinsicContext& call) {
+            const auto address = memory::GuestAddress{MappingWord(call, 0, "mmap")};
+            const auto size = MappingWord(call, 1, "mmap");
+            const auto offset = call.arguments[5].AsLong();
+            if (offset < 0 || offset % kApi19MmapPageSize != 0) ThrowErrno(call.vm, "mmap", 22);
+            const auto pages = offset / kApi19MmapPageSize;
+            if (pages > std::numeric_limits<std::uint32_t>::max()) ThrowErrno(call.vm, "mmap", 75);
+            const auto fd = FileDescriptorHandle(call, call.arguments[4].ref);
+            const auto* mappings = provider ? provider() : nullptr;
+            const auto result =
+                mappings && mappings->map
+                    ? mappings->map({address, size, static_cast<std::uint32_t>(call.arguments[2].AsInt()),
+                                     static_cast<std::uint32_t>(call.arguments[3].AsInt()), fd,
+                                     static_cast<std::uint32_t>(pages)})
+                    : -38;
+            return VmValue::Long(CheckMappingResult(call.vm, "mmap", result));
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "munmap", "(JJ)V",
+        [provider = services.memory_mappings](IntrinsicContext& call) {
+            const auto address = memory::GuestAddress{MappingWord(call, 0, "munmap")};
+            const auto size = MappingWord(call, 1, "munmap");
+            const auto* mappings = provider ? provider() : nullptr;
+            CheckMappingResult(call.vm, "munmap", mappings && mappings->unmap ? mappings->unmap(address, size) : -38);
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "msync", "(JJI)V",
+        [provider = services.memory_mappings, thread_id = services.current_thread_id](IntrinsicContext& call) {
+            const auto address = memory::GuestAddress{MappingWord(call, 0, "msync")};
+            const auto size = MappingWord(call, 1, "msync");
+            const auto flags = static_cast<std::uint32_t>(call.arguments[2].AsInt());
+            const auto* mappings = provider ? provider() : nullptr;
+            const auto tid = thread_id ? static_cast<std::uint64_t>(thread_id(call.vm)) : call.vm.CurrentContextToken();
+            CheckMappingResult(call.vm, "msync",
+                               mappings && mappings->sync ? mappings->sync(address, size, flags, tid) : -38);
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
     posix.VirtualMethod(
         "open", "(Ljava/lang/String;II)Ljava/io/FileDescriptor;",
         [](IntrinsicContext& call) {

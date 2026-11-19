@@ -497,7 +497,7 @@ note = "ADR-0020/：run-apk 默认按 package 打开持久沙盒，--sandbox-dir
 [dexvm.file_io_vfs]
 status = "complete"
 test = "tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp"
-note = "File/流/RAF/FileChannel、PFD 与 native 共用 VFS。stat UID/GID、mode 与 mtime 同源；setLastModified、chmod/fchmod 更新进程内元数据。dup 独立关闭且共享 offset；支持 F_GETFL 与单进程 fcntlFlock。跨进程锁、mmap、fcntl 状态变化、Java pipe 与 volume UUID 仍失败。"
+note = "File/流/RAF/FileChannel、PFD 与 native 共用 VFS。stat UID/GID、mode 与 mtime 同源；setLastModified、chmod/fchmod 更新进程内元数据。dup 独立关闭且共享 offset；支持 F_GETFL 与单进程 fcntlFlock。FileChannel.map 经同一进程文件映射账本支持 PRIVATE R/RW 和只读 fd 的 SHARED R。跨进程锁、共享映射回写、fcntl 状态变化、Java pipe 与 volume UUID 仍失败。"
 
 [runtime.preferences_persistence]
 status = "complete"
@@ -506,8 +506,8 @@ note = "ROM SharedPreferencesImpl/EditorImpl 使用同一沙盒 VFS 存储 XML�
 
 [runtime.syscall_anonymous_mapping]
 status = "partial"
-test = "tests/memory/address_space_tests.cpp; tests/runtime/syscall_tests.cpp"
-note = "匿名私有 mmap2 原子 first-fit/MAP_FIXED、空洞复用与失败无副作用；brk 串行化。文件 mmap2 支持非零 4096 字节页偏移、PRIVATE R/RW 和只读 fd 的 SHARED R 快照，尾页补零；共享节点写入/截断/rename 返回 EBUSY 并记账，区间释放后解除。匿名/文件映射接受 NORESERVE/STACK 等无语义提示位；文件执行、共享回写、整页超 EOF 与文件区间 DONTNEED 返回 ENOSYS；SIGBUS/msync/mremap 未支持。"
+test = "tests/memory/address_space_tests.cpp; tests/runtime/syscall_tests.cpp; tests/dexvm/file_vfs_tests.cpp#ROM FileChannel maps"
+note = "匿名私有 mmap2 支持原子 first-fit/MAP_FIXED 与空洞复用；brk 串行化。Java 与 native 共用文件映射账本，支持 4096 字节页偏移、PRIVATE R/RW 和只读 fd 的 SHARED R 快照，尾页补零。共享节点写入/截断/rename 返回 EBUSY 并记账，区间释放后解除。msync 校验文件映射范围，无写回；文件执行、共享回写、整页超 EOF、MS_INVALIDATE、文件区间 DONTNEED、SIGBUS/mremap 未支持。"
 
 [runtime.syscall_large_file_io]
 status = "complete"
@@ -2012,7 +2012,7 @@ note = "ADR-0079：ARM legacy/RT 帧支持 ARM/Thumb/VFP、备用栈、嵌套及
 [runtime.guest_cpu_facts]
 status = "partial"
 test = "tests/runtime/guest_cpu_environment_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp#BND-42; tests/frontend/gui_launch_tests.cpp#BND-42"
-note = "ADR-0080：冻结 1..32 核、1..10000 MHz（默认 1/1000）；cpuinfo、CPU sysfs、sysconf 96/97 与 Java 核数同源，可由 CLI/单游戏配置。cpuinfo 按 Linux 3.4 ARM SMP 格式，虚拟 Cortex-A9 r0p0 匹配既有 Features，BogoMIPS=2×MHz；板级 Revision/Serial 为零。其他 Java selector 明确失败；proc/stat、负载统计及全局预设未实现。执行配额见 cpu.execution_budget。"
+note = "ADR-0080：冻结 1..32 核、1..10000 MHz（默认 1/1000）；cpuinfo、CPU sysfs、sysconf 96/97 与 Java 核数同源，可由 CLI/单游戏配置。cpuinfo 按 Linux 3.4 ARM SMP 格式，虚拟 Cortex-A9 r0p0 匹配既有 Features，BogoMIPS=2×MHz；板级 Revision/Serial 为零。Java sysconf 39/40 返回 4096，其余 selector 明确失败；proc/stat、负载统计及全局预设未实现。执行配额见 cpu.execution_budget。"
 
 [cpu.execution_budget]
 status = "complete"

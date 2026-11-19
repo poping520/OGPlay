@@ -193,7 +193,7 @@ void WriteRunReport(core::Logger& logger, const std::filesystem::path& file, con
 }  // namespace
 
 static int RunGameSession(GameRunOptions options, core::Logger& logger, bool status_to_stderr,
-                          RunApkExitState& exit_state, SessionOutcome& outcome) {
+                          RunApkExitState& exit_state, SessionOutcome& outcome, core::CapabilityLedger& dexvm_ledger) {
     const auto Write = [stream = status_to_stderr ? stderr : stdout](std::string_view text) {
         static_cast<void>(std::fwrite(text.data(), sizeof(char), text.size(), stream));
         static_cast<void>(std::fflush(stream));
@@ -544,7 +544,6 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         };
 
         LifecycleDriver driver;
-        core::CapabilityLedger dexvm_ledger;
         const auto dex_entry = loader::ReadApkEntry(dex_context->apk_bytes, archive, "classes.dex");
         std::vector<std::uint8_t> dex_bytes(dex_entry.size());
         std::memcpy(dex_bytes.data(), dex_entry.data(), dex_entry.size());
@@ -1251,6 +1250,18 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
 int RunGame(GameRunOptions options, core::Logger& logger, bool status_to_stderr) {
     RunApkExitState exit_state;
     SessionOutcome outcome;
+    core::CapabilityLedger dexvm_ledger;
+    const auto log_unimplemented = [&] {
+        try {
+            for (const auto& hit : dexvm_ledger.Unimplemented()) {
+                std::vector<core::LogField> fields{{"count", hit.count}};
+                if (hit.first_lr != 0) fields.push_back({"first_lr", core::GuestAddress{hit.first_lr}});
+                logger.Write(core::LogLevel::warn, "frontend.run_apk.unimplemented", hit.id, {}, std::move(fields),
+                             kUnrestrictedLog);
+            }
+        } catch (...) { /* logging must not replace the session outcome */
+        }
+    };
     // GUI-23: an unfinished report first, so a process that dies mid-run still leaves one.
     const auto report_path = options.preflight ? std::nullopt : options.run_report;
     app::LastRunReport report{.started_at = hal::Clock::UtcTimestamp()};
@@ -1276,14 +1287,24 @@ int RunGame(GameRunOptions options, core::Logger& logger, bool status_to_stderr)
         WriteRunReport(logger, *report_path, report);
     };
     try {
-        const auto code = RunGameSession(std::move(options), logger, status_to_stderr, exit_state, outcome);
+        const auto code =
+            RunGameSession(std::move(options), logger, status_to_stderr, exit_state, outcome, dexvm_ledger);
+        log_unimplemented();
         finish(code, nullptr);
         return code;
     } catch (...) {
         const auto failure = std::current_exception();
+        log_unimplemented();
         // Native invocation may wrap its exit exception. Use the original
         // process facts captured before teardown, never parse error text.
         if (!exit_state.termination_signal && !exit_state.native_exit_code) {
+            if (!outcome.fault && !outcome.exit_error) {
+                try {
+                    logger.Write(core::LogLevel::error, "frontend.run_apk.fault", DescribeFailure(failure), {}, {},
+                                 kUnrestrictedLog);
+                } catch (...) { /* logging must not replace the original fault */
+                }
+            }
             finish(std::nullopt, failure);
             throw;
         }

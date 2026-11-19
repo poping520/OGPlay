@@ -23,18 +23,14 @@ struct GuestCloneThreadJoin final {
 
 class GuestCloneThreadRuntime final {
 public:
-    GuestCloneThreadRuntime(cpu::GuestThreadGroup& threads,
-                            A32SyscallDispatcher& dispatcher,
-                            GuestThreadLifecycle& lifecycle,
-                            memory::AddressSpace& address_space,
-                            memory::MemoryBus& memory_bus,
-                            cpu::FutexTable& futex_table,
-                            std::uint64_t first_child_thread_id = 2,
-                            std::uint64_t tick_slice = 100000,
+    GuestCloneThreadRuntime(cpu::GuestThreadGroup& threads, A32SyscallDispatcher& dispatcher,
+                            GuestThreadLifecycle& lifecycle, memory::AddressSpace& address_space,
+                            memory::MemoryBus& memory_bus, cpu::FutexTable& futex_table,
+                            std::uint64_t first_child_thread_id = 2, std::uint64_t tick_slice = 100000,
                             GuestSupervisorCallHandler hle_handler = {},
                             std::shared_ptr<debug::DiagnosticState> diagnostics = {},
-                            std::function<void()> failure_notifier = {},
-                            std::function<bool()> spawn_allowed = {});
+                            std::function<void()> failure_notifier = {}, std::function<bool()> spawn_allowed = {},
+                            GuestModuleLocator locate_module = {});
 
     void RethrowFailure() const;
     [[nodiscard]] bool OwnsThread(std::uint64_t thread_id) const;
@@ -59,6 +55,7 @@ private:
     std::shared_ptr<debug::DiagnosticState> diagnostics_;
     std::function<void()> failure_notifier_;
     std::function<bool()> spawn_allowed_;
+    A32GuestFaultContext fault_context_;
     mutable std::mutex failure_mutex_;
     std::exception_ptr failure_;
     mutable std::mutex outcomes_mutex_;

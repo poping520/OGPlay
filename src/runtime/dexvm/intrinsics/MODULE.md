@@ -93,6 +93,10 @@
 Posix 的 getpid/getuid/gettid 仅消费 CoreIntrinsicServices 显式注入的进程/当前线程身份，
 不读取宿主进程号或 UID；没有 provider 时保持未实现。平台 Process 的原版 Java 经同一
 Libcore.os 接口查询，JNI 附加线程与 Java 线程的 TID 映射由 integration 负责。
+Posix.sysconf 支持 39/40（4096 字节页）及 96/97（会话配置核数），其他 selector 记账失败。
+Posix.mmap/munmap/msync 经 CoreIntrinsicServices 接入进程的 syscall 映射入口，字节偏移校验后换算为页偏移。
+文件映射支持 PRIVATE R/RW 和只读 fd 的 SHARED R，msync 按同一账本校验有效的文件映射区间，
+失败按 libcore ErrnoException 传播，ENOSYS 记账。mlock、munlock、mincore 尚未实现。
 
 ## 类加载、反射、集合与并发
 
@@ -137,7 +141,7 @@ Libcore.os 接口查询，JNI 附加线程与 Java 线程的 TID 映射由 integ
   dup 经 VFS Duplicate 返回独立 fd 并共享 offset。fcntl 仅 F_GETFL 查询与 F_SETFL 未变状态受检，
   状态变化及其余选择子记账并以 ENOSYS 失败；不扩展 pipe。fcntlFlock 按 Linux cmd/type/whence、
   64 位范围与访问模式受检；每沙盒只运行一个 guest 进程，进程记录锁不与自身冲突，
-  SETLK/SETLKW 成功、GETLK 返回 F_UNLCK；不承诺跨进程锁或 mmap。Posix.socket 仅接受
+  SETLK/SETLKW 成功、GETLK 返回 F_UNLCK；跨进程文件锁待实现。Posix.socket 仅接受
   AF_INET/AF_INET6、SOCK_DGRAM、protocol 0，产生 IoRuntime 管理的本地接口查询描述符，
   只支持三项 IPv4 地址 ioctl 与幂等 close；其他操作记账并明确失败。
   FileChannel 当前受检的 size/position/transferTo/close 复用同一状态；transferTo 以有界缓冲

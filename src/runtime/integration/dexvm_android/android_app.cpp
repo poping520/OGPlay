@@ -749,7 +749,7 @@ Decl Declare_local_ActivityService_Class(const Context& context) {
                 slots[ActivityFactSlot(vm, info, name, type)] = {value, tag};
             };
             set("service", "Landroid/content/ComponentName;", service.component.Value(), dx::SlotTag::ref);
-            set("pid", "I", kGuestProcessId, dx::SlotTag::cat1);
+            set("pid", "I", service.token.IsValid() ? kGuestProcessId : 0, dx::SlotTag::cat1);
             set("uid", "I", context->application_uid, dx::SlotTag::cat1);
             set("started", "Z", service.started ? 1U : 0U, dx::SlotTag::cat1);
             set("clientCount", "I", static_cast<std::uint32_t>(service.connections.size()), dx::SlotTag::cat1);

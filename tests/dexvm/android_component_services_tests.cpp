@@ -652,7 +652,9 @@ TEST_CASE("ROM ActivityThread initializes its application thread and instrumenta
 TEST_CASE("ROM ActivityThread attaches to the local activity service and binds an APK") {
     int received = 0;
     int sticky_received = 0;
-    int created = 0, started = 0, destroyed = 0, bound = 0, unbound = 0, connected = 0;
+    int created = 0, started = 0, destroyed = 0, bound = 0, unbound = 0, connected = 0, disconnected = 0;
+    int start_id = 0;
+    std::vector<std::string_view> service_events;
     auto service_class = IntrinsicClassBuilder::Class("Ltest/RomService;", "Landroid/app/Service;");
     service_class.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
     service_class.OverrideMethod("onCreate", "()V", [&](IntrinsicContext& call) {
@@ -665,19 +667,25 @@ TEST_CASE("ROM ActivityThread attaches to the local activity service and binds a
         REQUIRE_FALSE(outcome.exception.IsValid());
         CHECK(call.vm.Linker().Class(call.vm.Model().ObjectClass(outcome.value.ref)).descriptor ==
               "Landroid/app/ContextImpl;");
+        service_events.push_back("onCreate");
+        start_id = 0;
         ++created;
         return VmValue::Void();
     });
     service_class.OverrideMethod("onStartCommand", "(Landroid/content/Intent;II)I", [&](IntrinsicContext& call) {
-        CHECK(call.arguments[2].AsInt() == ++started);
+        service_events.push_back("onStartCommand");
+        CHECK(call.arguments[2].AsInt() == ++start_id);
+        ++started;
         return VmValue::Int(2);
     });
     service_class.OverrideMethod("onDestroy", "()V", [&](IntrinsicContext&) {
+        service_events.push_back("onDestroy");
         ++destroyed;
         return VmValue::Void();
     });
     service_class.OverrideMethod(
         "onBind", "(Landroid/content/Intent;)Landroid/os/IBinder;", [&](IntrinsicContext& call) {
+            service_events.push_back("onBind");
             ++bound;
             const auto binder = call.vm.NewIntrinsicInstance("Landroid/os/Binder;");
             const auto root = call.vm.ProtectReferences(std::array{binder});
@@ -688,6 +696,7 @@ TEST_CASE("ROM ActivityThread attaches to the local activity service and binds a
             return VmValue::Ref(binder);
         });
     service_class.OverrideMethod("onUnbind", "(Landroid/content/Intent;)Z", [&](IntrinsicContext&) {
+        service_events.push_back("onUnbind");
         ++unbound;
         return VmValue::Int(0);
     });
@@ -697,6 +706,12 @@ TEST_CASE("ROM ActivityThread attaches to the local activity service and binds a
                                    [&](IntrinsicContext& call) {
                                        CHECK(call.arguments[1].ref.IsValid());
                                        ++connected;
+                                       return VmValue::Void();
+                                   });
+    connection_class.VirtualMethod("onServiceDisconnected", "(Landroid/content/ComponentName;)V",
+                                   [&](IntrinsicContext&) {
+                                       service_events.push_back("onServiceDisconnected");
+                                       ++disconnected;
                                        return VmValue::Void();
                                    });
     auto receiver_class = IntrinsicClassBuilder::Class("Ltest/RomReceiver;", "Landroid/content/BroadcastReceiver;");
@@ -746,7 +761,7 @@ TEST_CASE("ROM ActivityThread attaches to the local activity service and binds a
     provider_class.OverrideMethod("getType", "(Landroid/net/Uri;)Ljava/lang/String;", [](IntrinsicContext& call) {
         return VmValue::Ref(call.vm.NewStringUtf8("vnd.android.cursor.item/vnd.test"));
     });
-    AndroidValueVm f(InterpreterBackend::switch_dispatch,
+    AndroidValueVm f(InterpreterBackend::threaded,
                      {std::move(receiver_class).Build(), std::move(service_class).Build(),
                       std::move(provider_class).Build(), std::move(connection_class).Build()});
     f.context->package_name = "test.application";
@@ -874,35 +889,86 @@ TEST_CASE("ROM ActivityThread attaches to the local activity service and binds a
     const auto request_root = f.vm.ProtectReferences(std::array{request});
     f.On(request, "setComponent", "(Landroid/content/ComponentName;)Landroid/content/Intent;",
          {VmValue::Ref(component)});
-    for (int i = 0; i < 2; ++i)
-        CHECK(f.On(application, "startService", "(Landroid/content/Intent;)Landroid/content/ComponentName;",
-                   {VmValue::Ref(request)})
-                  .ref.IsValid());
+    const auto start_service = [&] {
+        REQUIRE(f.On(application, "startService", "(Landroid/content/Intent;)Landroid/content/ComponentName;",
+                     {VmValue::Ref(request)})
+                    .ref.IsValid());
+    };
+    const auto stop_service = [&] {
+        REQUIRE(f.On(application, "stopService", "(Landroid/content/Intent;)Z", {VmValue::Ref(request)}).AsInt() == 1);
+    };
+    const auto bind_service = [&](VmObjectRef connection, int flags) {
+        REQUIRE(f.On(application, "bindService", "(Landroid/content/Intent;Landroid/content/ServiceConnection;I)Z",
+                     {VmValue::Ref(request), VmValue::Ref(connection), VmValue::Int(flags)})
+                    .AsInt() == 1);
+    };
+    const auto unbind_service = [&](VmObjectRef connection) {
+        f.On(application, "unbindService", "(Landroid/content/ServiceConnection;)V", {VmValue::Ref(connection)});
+    };
+    const auto dispatch_service_messages = [&] {
+        const auto error = ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context);
+        REQUIRE_MESSAGE(!error.has_value(), error.value_or(""));
+    };
+    constexpr int bind_auto_create = 1;
+    constexpr int bind_debug_unbind = 2;
+    const auto connection = f.vm.NewIntrinsicInstance("Ltest/RomConnection;");
+    const auto connection_root = f.vm.ProtectReferences(std::array{connection});
+    const auto observer = f.vm.NewIntrinsicInstance("Ltest/RomConnection;");
+    const auto observer_root = f.vm.ProtectReferences(std::array{observer});
+
+    bind_service(observer, bind_debug_unbind);
+    dispatch_service_messages();
+    REQUIRE(f.context->rom_services.size() == 1);
+    CHECK_FALSE(f.context->rom_services.begin()->second.token.IsValid());
+    CHECK(service_events.empty());
+    CHECK(connected == 0);
+    unbind_service(observer);
+    dispatch_service_messages();
+    CHECK(f.context->rom_services.empty());
+    CHECK(service_events.empty());
+    CHECK(connected == 0);
+
+    start_service();
+    start_service();
     const auto pending_service =
         f.Static(pending_intent, "getService", create_pending,
                  {VmValue::Ref(application), VmValue::Int(2), VmValue::Ref(request), VmValue::Int(0)})
             .ref;
     f.On(pending_service, "send", "()V");
-    const auto starts = ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context);
-    REQUIRE_MESSAGE(!starts.has_value(), starts.value_or(""));
+    dispatch_service_messages();
     CHECK(created == 1);
     CHECK(started == 3);
-    const auto connection = f.vm.NewIntrinsicInstance("Ltest/RomConnection;");
-    const auto connection_root = f.vm.ProtectReferences(std::array{connection});
-    CHECK(f.On(application, "bindService", "(Landroid/content/Intent;Landroid/content/ServiceConnection;I)Z",
-               {VmValue::Ref(request), VmValue::Ref(connection), VmValue::Int(1)})
-              .AsInt() == 1);
-    const auto binding = ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context);
-    REQUIRE_MESSAGE(!binding.has_value(), binding.value_or(""));
+    bind_service(connection, bind_auto_create);
+    dispatch_service_messages();
     CHECK(bound == 1);
     CHECK(connected == 1);
-    CHECK(f.On(application, "stopService", "(Landroid/content/Intent;)Z", {VmValue::Ref(request)}).AsInt() == 1);
-    const auto stop = ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context);
-    REQUIRE_MESSAGE(!stop.has_value(), stop.value_or(""));
+    bind_service(observer, bind_debug_unbind);
+    dispatch_service_messages();
+    CHECK(bound == 1);
+    CHECK(connected == 2);
+    stop_service();
+    dispatch_service_messages();
     CHECK(destroyed == 0);
-    f.On(application, "unbindService", "(Landroid/content/ServiceConnection;)V", {VmValue::Ref(connection)});
-    const auto unbinding = ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context);
-    REQUIRE_MESSAGE(!unbinding.has_value(), unbinding.value_or(""));
+    unbind_service(connection);
+    dispatch_service_messages();
     CHECK(unbound == 1);
     CHECK(destroyed == 1);
+    CHECK(disconnected == 1);
+    CHECK(f.context->rom_services.empty());
+    unbind_service(observer);
+
+    service_events.clear();
+    bind_service(observer, 0);
+    start_service();
+    dispatch_service_messages();
+    CHECK(service_events == std::vector<std::string_view>{"onCreate", "onBind", "onStartCommand"});
+    CHECK(connected == 3);
+
+    service_events.clear();
+    stop_service();
+    dispatch_service_messages();
+    CHECK(service_events == std::vector<std::string_view>{"onServiceDisconnected", "onUnbind", "onDestroy"});
+    CHECK(disconnected == 2);
+    CHECK(f.context->rom_services.empty());
+    unbind_service(observer);
 }

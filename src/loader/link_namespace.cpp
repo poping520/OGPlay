@@ -9,6 +9,7 @@
 #include <optional>
 #include <queue>
 #include <set>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -218,6 +219,17 @@ using ModuleNames = std::map<std::string, std::size_t, std::less<>>;
 }
 
 }  // namespace
+
+std::string DescribeElf32ModuleAddress(const Elf32LinkNamespace& link_namespace, memory::GuestAddress address) {
+    for (const auto& module : link_namespace.modules) {
+        if (!std::ranges::any_of(module.load_ranges, [&](const auto& range) { return range.Contains(address); }))
+            continue;
+        std::ostringstream label;
+        label << CanonicalName(module) << "+0x" << std::hex << module.load_bias.OffsetTo(address);
+        return label.str();
+    }
+    return {};
+}
 
 Elf32LinkNamespace BuildElf32LinkNamespace(
     const std::string_view root_name,

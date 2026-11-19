@@ -31,6 +31,7 @@
 #include "ogplay/memory/bus.h"
 #include "ogplay/loader/link_namespace.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
+#include "ogplay/runtime/execution/guest_thread_runner.h"
 #include "runtime/boundary/core/a32_call_frame.h"
 #include "runtime/boundary/modules/gles1/gles1_dispatch.h"
 #include "runtime/boundary/modules/gles1/gles1_draw.h"
@@ -138,6 +139,41 @@ TEST_CASE("Android boundary fast and slow failures preserve memory fault identit
         CHECK(std::string(error.what()) == slow_message);
         CHECK(error.Address() == ogplay::memory::GuestAddress{0x12345000U});
         CHECK(error.ThreadId() == 1U);
+    }
+
+    using namespace ogplay;
+    using namespace runtime;
+    const memory::GuestAddress caller{0x12000U};
+    state.SetRegister(cpu::CoreRegister::lr, caller.Value() | 1U);
+    cpu.SetState(state);
+    loader::Elf32LinkModule module;
+    module.name = "apk-native-name.so";
+    module.dynamic.soname = "libcaller.so";
+    module.load_bias = memory::GuestAddress{0x10000U};
+    module.load_ranges.emplace_back(caller, 4096);
+    loader::Elf32LinkNamespace modules;
+    modules.modules.push_back(std::move(module));
+    const A32GuestFaultContext diagnostics{
+        &fixture.memory, [&](memory::GuestAddress pc) { return loader::DescribeElf32ModuleAddress(modules, pc); }};
+    auto dispatcher = CreateAndroidArmSyscallDispatcher(fixture.ledger);
+    GuestThreadLifecycle lifecycle;
+    lifecycle.Register(1);
+    cpu::FutexTable futex;
+    try {
+        static_cast<void>(RunAndroidArmGuestThread(
+            cpu, dispatcher, lifecycle, fixture.bus, futex, 4U,
+            [&](cpu::Cpu& active, const cpu::RunResult& trap) {
+                return fixture.boundary.HandleWithProgress(active, trap);
+            },
+            diagnostics));
+        FAIL("guest runner did not report the host call fault");
+    } catch (const A32GuestHostCallError& report) {
+        const std::string_view message = report.what();
+        CHECK(message.find("pc=0x") != std::string_view::npos);
+        CHECK(message.find("lr=0x00012001 (libcaller.so+0x2000)") != std::string_view::npos);
+        CHECK(message.find("fault:     address=0x12345000") != std::string_view::npos);
+        CHECK(message.find("thread:    guest=1") != std::string_view::npos);
+        REQUIRE_THROWS_AS(std::rethrow_if_nested(report), memory::MemoryFault);
     }
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ogplay/runtime/common/api19_identity.h"
+#include "ogplay/runtime/common/guest_memory_mappings.h"
 
 #include <array>
 #include <chrono>
@@ -162,6 +163,7 @@ public:
     std::shared_ptr<GuestSignalBinding> signal_binding{std::make_shared<GuestSignalBinding>()};
     AndroidProcessIdentity identity;
     std::shared_ptr<VirtualFileSystem*> filesystem_binding{std::make_shared<VirtualFileSystem*>(nullptr)};
+    GuestMemoryMappings memory_mappings;
     [[nodiscard]] std::function<void()> MappingMutationRecorder() const;
 
 private:

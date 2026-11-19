@@ -469,6 +469,8 @@ public:
     // Read-only ROM override fields, then Throwable.cause; never invokes guest getCause.
     [[nodiscard]] VmObjectRef DiagnosticThrowableCause(VmObjectRef throwable) const;
     // Diagnostic-only ROM cause/target fields and captured first frames; no guest calls.
+    // Renders the throwable's own captured frames (stackState, else stackTrace), capped; one per line.
+    [[nodiscard]] std::string DescribeThrowableStack(VmObjectRef throwable, std::string_view indent) const;
     [[nodiscard]] std::string DescribeThrowableCauses(VmObjectRef throwable) const;
     void SetThrowableMessage(VmObjectRef throwable, VmObjectRef message);
     [[nodiscard]] VmObjectRef ThrowableMessage(VmObjectRef throwable) const;

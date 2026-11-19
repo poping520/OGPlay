@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <string>
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include <unordered_map>
 #include <unordered_set>
@@ -11,6 +12,11 @@
 #include <vector>
 
 namespace ogplay::runtime::dexvm {
+namespace {
+// Carries the budget detail across the payload store's std::bad_alloc boundary.
+thread_local std::string last_payload_budget_failure;
+}  // namespace
+
 namespace {
 
 [[noreturn]] void Fail(const DexVmErrorReason reason, const char* message) {
@@ -269,7 +275,10 @@ JavaObjectModel::JavaObjectModel(JniPrimitiveArrayStore& arrays, JavaObjectModel
             try {
                 state->Reserve(bytes);
             } catch (const DexVmError& e) {
-                if (e.Reason() == DexVmErrorReason::heap_budget_exhausted) throw std::bad_alloc();
+                if (e.Reason() == DexVmErrorReason::heap_budget_exhausted) {
+                    last_payload_budget_failure = e.what();
+                    throw std::bad_alloc();
+                }
                 throw;
             }
             return undo;
@@ -880,10 +889,17 @@ VmObjectRef JavaObjectModel::NewPrimitiveArray(const DexClassId array_class, con
     }
     const auto bytes = 32ULL + static_cast<std::uint64_t>(length) * PrimitiveWidth(kind);
     JniObjectIdentity identity;
+    last_payload_budget_failure.clear();
     try {
         identity = impl_->arrays->New(kind, length);
     } catch (const std::bad_alloc&) {
-        Fail(DexVmErrorReason::heap_budget_exhausted, "primitive payload allocation failed");
+        // Keep the VM budget figures; an empty detail means the payload provider itself refused.
+        throw DexVmError(DexVmErrorReason::heap_budget_exhausted,
+                         "primitive payload allocation failed: length " + std::to_string(length) + ", element width " +
+                             std::to_string(PrimitiveWidth(kind)) + "; " +
+                             (last_payload_budget_failure.empty()
+                                  ? std::string("payload provider refused the allocation")
+                                  : last_payload_budget_failure));
     }
     try {
         Impl::Record record;

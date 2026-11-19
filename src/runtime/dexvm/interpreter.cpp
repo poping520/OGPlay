@@ -1372,6 +1372,52 @@ VmObjectRef Interpreter::DiagnosticThrowableCause(VmObjectRef object) const {
     return ThrowableCause(object);
 }
 
+std::string Interpreter::DescribeThrowableStack(VmObjectRef throwable, std::string_view indent) const {
+    if (!throwable.IsValid()) return {};
+    constexpr std::size_t kMaxFrames = 32;
+    std::string rendered;
+    const auto omitted = [&](std::size_t total) {
+        if (total > kMaxFrames)
+            rendered += "\n" + std::string(indent) + "... " + std::to_string(total - kMaxFrames) + " more";
+    };
+    const auto snapshot =
+        VmObjectRef{ThrowableField(*impl_->owner, throwable, "stackState", "Ljava/lang/Object;").bits};
+    if (snapshot.IsValid() && impl_->model->ArrayLength(snapshot) >= 2) {
+        const auto frames = static_cast<std::size_t>(impl_->model->ArrayLength(snapshot)) / 2U;
+        for (std::size_t i = 0; i < frames && i < kMaxFrames; ++i) {
+            const auto& method = impl_->linker->Method(VmMethodId{
+                static_cast<std::uint32_t>(impl_->model->GetPrimitiveElement(snapshot, static_cast<JniSize>(2 * i)))});
+            rendered += "\n" + std::string(indent) + "at " + impl_->linker->Class(method.owner).descriptor + "." +
+                        method.name + " (pc " +
+                        std::to_string(impl_->model->GetPrimitiveElement(snapshot, static_cast<JniSize>(2 * i + 1))) +
+                        ")";
+        }
+        omitted(frames);
+        return rendered;
+    }
+    const auto trace =
+        VmObjectRef{ThrowableField(*impl_->owner, throwable, "stackTrace", "[Ljava/lang/StackTraceElement;").bits};
+    if (!trace.IsValid()) return rendered;
+    const auto frames = static_cast<std::size_t>(impl_->model->ArrayLength(trace));
+    for (std::size_t i = 0; i < frames && i < kMaxFrames; ++i) {
+        const auto element = impl_->model->GetObjectElement(trace, static_cast<JniSize>(i));
+        if (!element.IsValid()) continue;
+        const auto text = [&](const char* name) {
+            const auto field =
+                impl_->linker->FindFieldRecursive(impl_->model->ObjectClass(element), name, "Ljava/lang/String;");
+            if (!field) return std::string{};
+            const auto value =
+                VmObjectRef{impl_->model->InstanceSlots(element)[impl_->linker->Field(*field).slot].bits};
+            return value.IsValid() ? impl_->owner->StringUtf8(value) : std::string{};
+        };
+        auto owner = text("declaringClass");
+        std::replace(owner.begin(), owner.end(), '.', '/');
+        rendered += "\n" + std::string(indent) + "at L" + owner + ";." + text("methodName") + " (pc unavailable)";
+    }
+    omitted(frames);
+    return rendered;
+}
+
 std::string Interpreter::DescribeThrowableCauses(VmObjectRef throwable) const {
     if (!throwable.IsValid()) return {};
     std::string rendered;
@@ -1386,27 +1432,7 @@ std::string Interpreter::DescribeThrowableCauses(VmObjectRef throwable) const {
         rendered += "\nCaused by: " + impl_->linker->Class(impl_->model->ObjectClass(cause)).descriptor;
         const auto message = ThrowableMessage(cause);
         if (message.IsValid()) rendered += ": " + impl_->owner->StringUtf8(message);
-        const auto snapshot =
-            VmObjectRef{ThrowableField(*impl_->owner, cause, "stackState", "Ljava/lang/Object;").bits};
-        const auto trace =
-            VmObjectRef{ThrowableField(*impl_->owner, cause, "stackTrace", "[Ljava/lang/StackTraceElement;").bits};
-        if (snapshot.IsValid() && impl_->model->ArrayLength(snapshot) >= 2) {
-            const auto method = VmMethodId{static_cast<std::uint32_t>(impl_->model->GetPrimitiveElement(snapshot, 0))};
-            const auto& first = impl_->linker->Method(method);
-            rendered += "\nCaused by:   at " + impl_->linker->Class(first.owner).descriptor + "." + first.name +
-                        " (pc " + std::to_string(impl_->model->GetPrimitiveElement(snapshot, 1)) + ")";
-        } else if (trace.IsValid() && impl_->model->ArrayLength(trace) > 0) {
-            const auto first = impl_->model->GetObjectElement(trace, 0);
-            const auto text = [&](const char* name) {
-                const auto field =
-                    impl_->linker->FindFieldRecursive(impl_->model->ObjectClass(first), name, "Ljava/lang/String;");
-                return impl_->owner->StringUtf8(
-                    VmObjectRef{impl_->model->InstanceSlots(first)[impl_->linker->Field(*field).slot].bits});
-            };
-            auto owner = text("declaringClass");
-            std::replace(owner.begin(), owner.end(), '.', '/');
-            rendered += "\nCaused by:   at L" + owner + ";." + text("methodName") + " (pc unavailable)";
-        }
+        rendered += DescribeThrowableStack(cause, "Caused by:   ");
         cause = DiagnosticThrowableCause(cause);
     }
     if (cause.IsValid()) rendered += "\nCaused by: [cause chain truncated]";

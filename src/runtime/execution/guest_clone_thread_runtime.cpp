@@ -9,29 +9,19 @@
 
 namespace ogplay::runtime {
 
-GuestCloneThreadRuntime::GuestCloneThreadRuntime(
-    cpu::GuestThreadGroup& threads, A32SyscallDispatcher& dispatcher,
-    GuestThreadLifecycle& lifecycle, memory::AddressSpace& address_space,
-    memory::MemoryBus& memory_bus, cpu::FutexTable& futex_table,
-    const std::uint64_t first_child_thread_id,
-    const std::uint64_t tick_slice,
-    GuestSupervisorCallHandler hle_handler,
-    std::shared_ptr<debug::DiagnosticState> diagnostics,
-    std::function<void()> failure_notifier,
-    std::function<bool()> spawn_allowed)
-    : threads_(threads),
-      dispatcher_(dispatcher),
-      lifecycle_(lifecycle),
-      address_space_(address_space),
-      memory_bus_(memory_bus),
-      futex_table_(futex_table),
-      committer_(lifecycle, address_space),
-      next_thread_id_(first_child_thread_id),
-      tick_slice_(tick_slice),
-      hle_handler_(std::move(hle_handler)),
-      diagnostics_(std::move(diagnostics)),
-      failure_notifier_(std::move(failure_notifier)),
-      spawn_allowed_(std::move(spawn_allowed)) {
+GuestCloneThreadRuntime::GuestCloneThreadRuntime(cpu::GuestThreadGroup& threads, A32SyscallDispatcher& dispatcher,
+                                                 GuestThreadLifecycle& lifecycle, memory::AddressSpace& address_space,
+                                                 memory::MemoryBus& memory_bus, cpu::FutexTable& futex_table,
+                                                 const std::uint64_t first_child_thread_id,
+                                                 const std::uint64_t tick_slice, GuestSupervisorCallHandler hle_handler,
+                                                 std::shared_ptr<debug::DiagnosticState> diagnostics,
+                                                 std::function<void()> failure_notifier,
+                                                 std::function<bool()> spawn_allowed, GuestModuleLocator locate_module)
+    : threads_(threads), dispatcher_(dispatcher), lifecycle_(lifecycle), address_space_(address_space),
+      memory_bus_(memory_bus), futex_table_(futex_table), committer_(lifecycle, address_space),
+      next_thread_id_(first_child_thread_id), tick_slice_(tick_slice), hle_handler_(std::move(hle_handler)),
+      diagnostics_(std::move(diagnostics)), failure_notifier_(std::move(failure_notifier)),
+      spawn_allowed_(std::move(spawn_allowed)), fault_context_{&address_space, std::move(locate_module)} {
     if (first_child_thread_id == 0 || tick_slice == 0) {
         throw std::invalid_argument(
             "clone runtime requires non-zero thread id and tick slice");
@@ -139,9 +129,8 @@ void GuestCloneThreadRuntime::RunChildBody(const std::uint64_t thread_id,
     }
     for (;;) {
         try {
-            outcome = RunAndroidArmGuestThread(
-                cpu, dispatcher_, lifecycle_, memory_bus_, futex_table_,
-                tick_slice_, hle_handler_);
+            outcome = RunAndroidArmGuestThread(cpu, dispatcher_, lifecycle_, memory_bus_, futex_table_, tick_slice_,
+                                               hle_handler_, fault_context_);
         } catch (const A32GuestCallCancelled& cancelled) {
             if (cancelled.ThreadId() != thread_id) throw;
             // Intentional cancellation from nested JNI must not poison the
@@ -167,8 +156,9 @@ void GuestCloneThreadRuntime::RunChildBody(const std::uint64_t thread_id,
     }
     if (outcome.reason != GuestThreadRunStop::guest_exit) {
         if (lifecycle_.State(thread_id).status != GuestThreadStatus::exit_requested) {
-            throw A32GuestCallError("Android guest clone thread stopped unexpectedly:\n" +
-                DescribeA32GuestStop(outcome.cpu_stop, cpu.GetState(), address_space_));
+            throw A32GuestCallError(
+                "Android guest clone thread stopped unexpectedly:\n" +
+                DescribeA32GuestStop(outcome.cpu_stop, cpu.GetState(), address_space_, fault_context_.locate_module));
         }
         // A concurrent process cancellation remains an orderly exit.
         outcome.reason = GuestThreadRunStop::guest_exit;

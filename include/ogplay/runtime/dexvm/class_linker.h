@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ogplay/runtime/common/guest_network_interface.h"
+#include "ogplay/runtime/common/guest_memory_mappings.h"
 
 #include <array>
 #include <compare>
@@ -62,6 +63,7 @@ struct CoreIntrinsicServices final {
     std::function<std::int32_t()> process_id;
     std::function<std::int32_t()> process_uid;
     std::function<std::int32_t(Interpreter&)> current_thread_id;
+    std::function<const GuestMemoryMappings*()> memory_mappings;
     std::function<const std::vector<GuestNetworkInterface>&(Interpreter&)> network_interfaces;
 
     // Location names a sealed guest archive, never a host filesystem path.

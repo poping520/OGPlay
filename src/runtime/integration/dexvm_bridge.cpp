@@ -154,8 +154,8 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRo
     for (const auto& [_, service] : context.rom_services) {
         for (const auto ref : {service.thread, service.token, service.component, service.bind_intent, service.binder})
             root(ref);
-        for (const auto connection : service.connections)
-            root(connection);
+        for (const auto& connection : service.connections)
+            root(connection.dispatcher);
     }
     for (const auto& [key, receiver] : context.location_registrations.receivers) {
         root(key.second);

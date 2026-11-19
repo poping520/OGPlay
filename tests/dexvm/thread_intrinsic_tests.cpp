@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <fstream>
 #include <limits>
+#include <span>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -54,10 +55,11 @@ struct ThreadVm final {
     std::atomic<std::int32_t> default_uncaught_calls{};
     std::atomic<std::int32_t> throwing_uncaught_calls{};
 
-    explicit ThreadVm(const InterpreterBackend backend = InterpreterBackend::threaded)
+    explicit ThreadVm(const InterpreterBackend backend = InterpreterBackend::threaded,
+                      std::span<const IntrinsicClassDecl> extra_intrinsics = {})
         : model(arrays), linker(),
           interpreter(
-              [this]() -> DexClassLinker& {
+              [this, extra_intrinsics]() -> DexClassLinker& {
                   auto catalog = CoreIntrinsicCatalog(ogplay::test::CoreBootFixtureServices());
                   auto handler = IntrinsicClassBuilder::Class("LThreadUncaughtHandler;", "Ljava/lang/Object;",
                                                               {"Ljava/lang/Thread$UncaughtExceptionHandler;"});
@@ -86,6 +88,7 @@ struct ThreadVm final {
                                                                        "handler failure"};
                                                  });
                   catalog.push_back(std::move(throwing_handler).Build());
+                  catalog.insert(catalog.end(), extra_intrinsics.begin(), extra_intrinsics.end());
                   linker.RegisterIntrinsics(std::move(catalog));
                   ogplay::test::RegisterBootDex(linker);
                   linker.RegisterDex(ReadFixture("interp.dex"));
@@ -967,10 +970,24 @@ TEST_CASE("WU7-3 interrupt wakes a parked sleeper in both backends and clears it
 
 TEST_CASE("WU7-3 APK-style worker without a handler retains process-fatal failure") {
     for (const auto backend : ogplay::test::InterpreterBackends()) {
-        ThreadVm vm(backend);
-        const auto runnable = vm.Runnable("LThreadThrower;");
+        VmObjectRef original;
+        auto target =
+            IntrinsicClassBuilder::Class("LThreadCauseThrower;", "Ljava/lang/Object;", {"Ljava/lang/Runnable;"});
+        target.VirtualMethod("run", "()V", [&](IntrinsicContext&) -> VmValue {
+            throw VmJavaThrow{"Ljava/lang/RuntimeException;", "worker failed", original};
+        });
+        const std::array additional{std::move(target).Build()};
+        ThreadVm vm(backend, additional);
+        original = vm.interpreter.MakeThrowable("Ljava/lang/RuntimeException;", "worker failed");
+        const auto original_root = vm.interpreter.ProtectReferences(std::array{original});
+        vm.interpreter.InitThrowableCause(
+            original, vm.interpreter.MakeThrowable("Ljava/lang/UnsupportedOperationException;", "worker cause"));
+        const auto runnable = vm.New("LThreadCauseThrower;");
+        const auto runnable_root = vm.interpreter.ProtectReferences(std::array{runnable});
         const auto thread = vm.New("Ljava/lang/Thread;");
+        const auto thread_root = vm.interpreter.ProtectReferences(std::array{thread});
         RequireOk(vm.Construct(thread, "Ljava/lang/Thread;", "(Ljava/lang/Runnable;)V", {VmValue::Ref(runnable)}));
+        CHECK(vm.Virtual(thread, "run", "()V").exception == original);
         RequireOk(vm.Virtual(thread, "start", "()V"));
         REQUIRE(WaitFor([&] {
             const auto states = vm.threads.Snapshot();
@@ -981,6 +998,6 @@ TEST_CASE("WU7-3 APK-style worker without a handler retains process-fatal failur
         const auto failure = vm.threads.TakeFailure();
         REQUIRE(failure.has_value());
         CHECK(failure->find("uncaught exception on Java thread") != std::string::npos);
-        CHECK(failure->find("LMyError;") != std::string::npos);
+        CHECK(failure->find("Caused by: Ljava/lang/UnsupportedOperationException;: worker cause") != std::string::npos);
     }
 }

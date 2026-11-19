@@ -34,6 +34,7 @@
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/dexvm/nio_buffer_access.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/object_model.h"
@@ -49,6 +50,60 @@
 using namespace ogplay::test::file_vfs;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
+
+TEST_CASE("ROM FileChannel maps an unaligned read-only VFS slice in the native mapping ledger") {
+    FileVm f;
+    constexpr auto page = kApi19MmapPageSize;
+    const std::array payload{std::byte{0x12}, std::byte{0x34}, std::byte{0x56}};
+    std::vector<std::byte> file(page + 3 + payload.size());
+    std::ranges::copy(payload, file.begin() + page + 3);
+    f.vfs.PutFile("/mapped-input", file, false);
+    const auto input = f.interpreter.NewIntrinsicInstance("Ljava/io/FileInputStream;");
+    const auto input_root = f.interpreter.ProtectReferences(std::array{input});
+    f.CallOn(input, "<init>", "(Ljava/lang/String;)V", {VmValue::Ref(f.interpreter.NewStringUtf8("/mapped-input"))});
+    const auto channel = f.CallOn(input, "getChannel", "()Ljava/nio/channels/FileChannel;").ref;
+    const auto channel_root = f.interpreter.ProtectReferences(std::array{channel});
+    const auto read_only = VmObjectRef{static_cast<std::uint32_t>(f.StaticField(
+        "Ljava/nio/channels/FileChannel$MapMode;", "READ_ONLY", "Ljava/nio/channels/FileChannel$MapMode;"))};
+    const auto os =
+        VmObjectRef{static_cast<std::uint32_t>(f.StaticField("Llibcore/io/Libcore;", "os", "Llibcore/io/Os;"))};
+    for (const int selector : {39, 40})
+        CHECK(f.CallOn(os, "sysconf", "(I)J", {VmValue::Int(selector)}).AsLong() == page);
+
+    const auto map = [&] {
+        return f
+            .CallOn(channel, "map", "(Ljava/nio/channels/FileChannel$MapMode;JJ)Ljava/nio/MappedByteBuffer;",
+                    {VmValue::Ref(read_only), VmValue::Long(page + 3), VmValue::Long(payload.size())})
+            .ref;
+    };
+    const auto buffer = map();
+    const auto buffer_root = f.interpreter.ProtectReferences(std::array{buffer});
+    for (std::size_t i = 0; i < payload.size(); ++i)
+        CHECK(f.CallOn(buffer, "get", "(I)B", {VmValue::Int(static_cast<int>(i))}).AsInt() ==
+              std::to_integer<int>(payload[i]));
+    const auto address = f.interpreter.Buffers().Read(buffer, false).direct_address;
+    REQUIRE(address);
+    const auto base = address->Subtract(3);
+    REQUIRE(base.IsAligned(page));
+    f.CallOn(os, "msync", "(JJI)V", {VmValue::Long(base.Value()), VmValue::Long(page), VmValue::Int(4)});
+
+    auto& process = f.runtime->session->Process();
+    const auto native_msync = process.FindLibraryExport("libc.so", "msync");
+    const auto native_mprotect = process.FindLibraryExport("libc.so", "mprotect");
+    REQUIRE(native_msync);
+    REQUIRE(native_mprotect);
+    CHECK(process.Invoke({.target = *native_msync, .registers = {base.Value(), page, 4}}).return_value == 0);
+    CHECK(process.Invoke({.target = *native_mprotect, .registers = {base.Value(), page, 3}}).return_value ==
+          UINT32_MAX);
+    f.CallOn(buffer, "free", "()V");
+    CHECK(process.Invoke({.target = *native_msync, .registers = {base.Value(), page, 4}}).return_value == UINT32_MAX);
+
+    const auto remapped = map();
+    const auto remapped_root = f.interpreter.ProtectReferences(std::array{remapped});
+    CHECK(f.interpreter.Buffers().Read(remapped, false).direct_address == address);
+    f.CallOn(remapped, "free", "()V");
+    f.CallOn(input, "close", "()V");
+}
 
 namespace {
 

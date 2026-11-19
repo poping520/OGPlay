@@ -861,7 +861,8 @@ public:
         clone_runtime_ = std::make_unique<GuestCloneThreadRuntime>(
             threads_, dispatcher_, lifecycle_, address_space_, memory_bus_, futex_table_, 2, 100000,
             [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) { return HandleBoundary(cpu, stopped); }, diagnostics_,
-            [this] { BeginTeardown(); }, [this] { return !cleanup_requested_.load(std::memory_order_acquire); });
+            [this] { BeginTeardown(); }, [this] { return !cleanup_requested_.load(std::memory_order_acquire); },
+            module_locator_);
         root_cpu_ = std::make_unique<cpu::DynarmicCpu>(memory_bus_, execution_context_);
         ConfigureFastHostCalls(*root_cpu_);
         cpu::A32State root_state;
@@ -1010,8 +1011,8 @@ public:
             auto result = InvokeA32GuestCall(
                 *target, dispatcher_, lifecycle_, address_space_, admitted_frame, stack_top,
                 process_memory_.return_trap, cleanup ? cleanup_ticks_remaining_ : maximum_ticks_,
-                [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) { return HandleBoundary(cpu, stopped); },
-                observer);
+                [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) { return HandleBoundary(cpu, stopped); }, observer,
+                module_locator_);
             charge(result.ticks_consumed);
             if (frame.renewable_native_frame || cleanup) ConfigureFastHostCalls(*target);
             if (previous.cpu != nullptr)
@@ -1964,6 +1965,8 @@ public:
 
     dexvm::GuestMemoryAccess GuestMemoryAccess() const { return direct_memory_access_; }
 
+    const GuestMemoryMappings& MemoryMappings() const noexcept { return dispatcher_.memory_mappings; }
+
     void ProtectGuestReadOnly(memory::GuestAddress address, std::uint32_t size) {
         const auto page = address_space_.PageSize();
         const auto mapped = (static_cast<std::uint64_t>(size) + page - 1U) & ~(page - 1U);
@@ -2440,7 +2443,15 @@ public:
         }
 
         InitializeDynamicModule(root_module_index, thread_id, initialization_names);
-        return {root_module_index, std::move(initialization_names)};
+        std::scoped_lock lock(dynamic_link_mutex_);
+        const auto& module = loaded_.link_namespace.modules.at(root_module_index);
+        std::optional<memory::GuestRange> range;
+        if (!module.load_ranges.empty()) {
+            const auto start = std::ranges::min(module.load_ranges, {}, &memory::GuestRange::Start).Start();
+            const auto end = std::ranges::max(module.load_ranges, {}, &memory::GuestRange::EndExclusive).EndExclusive();
+            range.emplace(start, end - start.Value());
+        }
+        return {root_module_index, std::move(initialization_names), module.load_bias, range};
     }
 
     std::optional<std::uint32_t> InitializeExplicitJniLibrary(const std::string_view root_module) {
@@ -2568,6 +2579,10 @@ private:
     GuestJniAbi guest_jni_;
     core::CapabilityLedger ledger_;
     A32SyscallDispatcher dispatcher_;
+    const GuestModuleLocator module_locator_ = [this](memory::GuestAddress address) {
+        std::scoped_lock lock(dynamic_link_mutex_);
+        return loader::DescribeElf32ModuleAddress(loaded_.link_namespace, address);
+    };
     JniGuestCallDispatcher jni_dispatcher_;
     JniEnvironment environment_;
     JniClassRegistry classes_;
@@ -2702,6 +2717,8 @@ std::unique_ptr<AndroidGuestProcess> AndroidGuestProcess::Start(const AndroidGue
         throw;
     } catch (const A32GuestCallExit&) {
         throw;
+    } catch (const A32GuestHostCallError&) {
+        throw;
     } catch (const AndroidGuestProcessError&) {
         throw;
     } catch (const std::exception& error) {
@@ -2725,6 +2742,8 @@ A32GuestCallResult AndroidGuestProcess::Invoke(const A32GuestCallFrame& frame) {
         throw;
     } catch (const A32GuestCallExit&) {
         throw;
+    } catch (const A32GuestHostCallError&) {
+        throw;
     } catch (const AndroidGuestProcessError&) {
         throw;
     } catch (const std::exception& error) {
@@ -2742,6 +2761,8 @@ std::optional<A32GuestCallResult> AndroidGuestProcess::TryInvokeRegisteredNative
     } catch (const A32GuestCallCancelled&) {
         throw;
     } catch (const A32GuestCallExit&) {
+        throw;
+    } catch (const A32GuestHostCallError&) {
         throw;
     } catch (const std::exception& error) {
         throw AndroidGuestProcessError("registered JNI native invocation failed:\n"
@@ -2794,6 +2815,10 @@ void AndroidGuestProcess::ReleaseDexVmThread(const std::uint64_t thread_id) noex
 
 dexvm::GuestMemoryAccess AndroidGuestProcess::GuestMemoryAccess() const {
     return impl_->GuestMemoryAccess();
+}
+
+const GuestMemoryMappings& AndroidGuestProcess::MemoryMappings() const noexcept {
+    return impl_->MemoryMappings();
 }
 
 void AndroidGuestProcess::ProtectGuestReadOnly(memory::GuestAddress address, std::uint32_t size) {
@@ -3159,6 +3184,8 @@ A32GuestCallResult AndroidGuestCallSession::Invoke(const A32GuestCallFrame& fram
         throw;
     } catch (const A32GuestCallExit&) {
         throw;
+    } catch (const A32GuestHostCallError&) {
+        throw;
     } catch (const AndroidGuestCallSessionError&) {
         throw;
     } catch (const std::exception& error) {
@@ -3175,6 +3202,8 @@ std::optional<A32GuestCallResult> AndroidGuestCallSession::TryInvokeRegisteredNa
     } catch (const A32GuestCallCancelled&) {
         throw;
     } catch (const A32GuestCallExit&) {
+        throw;
+    } catch (const A32GuestHostCallError&) {
         throw;
     } catch (const AndroidGuestCallSessionError&) {
         throw;

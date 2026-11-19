@@ -32,8 +32,11 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
   文件执行映射、整页超 EOF、共享回写与其他未支持组合返回 ENOSYS，由 dispatcher 记账；
   SHARED WRITE 的只读 fd 返回 EACCES，非普通文件 ENODEV，坏 fd EBADF。
   文件绑定通过 dispatcher 共享间接状态提供同一个 VFS，先后绑定次序均支持。
-  syscall 串行维护文件映射区间，munmap/固定覆盖先准备拆分，再提交内存与区间账本；
+  Java Posix.mmap/munmap/msync 和 native syscall 经同一进程映射入口使用相同地址空间、VFS fd 和区间账本。
+  munmap/固定覆盖先准备拆分，再提交内存与区间账本；
   共享 R 区间持有 VFS 节点读保护，最后区间释放或进程 owner 退役时解除。
+  msync 校验页对齐、标志及整个映射范围，PRIVATE 和 SHARED R 文件快照校验后成功，无需回写。
+  未映射范围返回 ENOMEM，匿名等其他区间及 MS_INVALIDATE 返回 ENOSYS 并记账。
   mprotect 不允许共享 R 增加写入，也不允许文件映射增加执行权限，返回 ENOSYS 并记账。
   mmap2 接受本模型无可观察差异的提示位 DENYWRITE/EXECUTABLE/LOCKED/NORESERVE/POPULATE/
   NONBLOCK/STACK（bionic pthread 栈带 NORESERVE）；GROWSDOWN、HUGETLB 与未知位 ENOSYS 记账。

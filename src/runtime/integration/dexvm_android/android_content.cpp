@@ -2577,6 +2577,15 @@ Decl Declare_local_PackageService_Class(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 namespace {
 using RomService = DexVmAndroidContext::RomServiceRecord;
+constexpr int kBindAutoCreate = 0x0001;
+constexpr int kBindDebugUnbind = 0x0002;
+// ContextImpl adds this flag to legacy non-activity bindings.
+constexpr int kBindWaivePriority = 0x0020;
+
+auto FindRomServiceByToken(DexVmAndroidContext& context, dx::VmObjectRef token) {
+    if (!token.IsValid()) return context.rom_services.end();
+    return std::ranges::find(context.rom_services, token, [](const auto& entry) { return entry.second.token; });
+}
 
 dx::VmObjectRef ServiceIntentCopy(dx::Interpreter& vm, dx::VmObjectRef intent) {
     return NewPlatformObject(vm, "Landroid/content/Intent;", "(Landroid/content/Intent;)V", {dx::VmValue::Ref(intent)});
@@ -2584,7 +2593,8 @@ dx::VmObjectRef ServiceIntentCopy(dx::Interpreter& vm, dx::VmObjectRef intent) {
 
 RomService& EnsureRomService(dx::IntrinsicContext& call, const Context& context, dx::VmObjectRef thread,
                              dx::VmObjectRef intent, const loader::AndroidManifestServiceComponent& declaration) {
-    if (const auto found = context->rom_services.find(declaration.name); found != context->rom_services.end())
+    if (const auto found = context->rom_services.find(declaration.name);
+        found != context->rom_services.end() && found->second.token.IsValid())
         return found->second;
     auto& vm = call.vm;
     const auto token = NewPlatformObject(vm, "Landroid/os/Binder;", "()V", {});
@@ -2599,8 +2609,8 @@ RomService& EnsureRomService(dx::IntrinsicContext& call, const Context& context,
     if (!field) throw std::logic_error("CompatibilityInfo default is unavailable");
     const auto compat = dx::VmObjectRef{vm.Linker().Class(type).static_storage[vm.Linker().Field(*field).slot]};
     const auto component = CallAndroidMethod(vm, intent, "getComponent", "()Landroid/content/ComponentName;").ref;
-    const auto [entry, inserted] =
-        context->rom_services.try_emplace(declaration.name, RomService{thread, token, component});
+    const auto component_root = vm.ProtectReferences(std::array{component});
+    const auto [entry, inserted] = context->rom_services.try_emplace(declaration.name);
     try {
         static_cast<void>(CallAndroidMethod(
             vm, thread, "scheduleCreateService",
@@ -2610,16 +2620,23 @@ RomService& EnsureRomService(dx::IntrinsicContext& call, const Context& context,
         if (inserted) context->rom_services.erase(entry);
         throw;
     }
-    return entry->second;
+    auto& service = entry->second;
+    service.thread = thread;
+    service.token = token;
+    service.component = component;
+    return service;
 }
 
-void RetireRomService(dx::Interpreter& vm, DexVmAndroidContext& context,
-                      std::map<std::string, RomService, std::less<>>::iterator service) {
-    if (service->second.started || !service->second.connections.empty()) return;
-    const auto& record = service->second;
-    static_cast<void>(CallAndroidMethod(vm, record.thread, "scheduleStopService", "(Landroid/os/IBinder;)V",
-                                        {dx::VmValue::Ref(record.token)}));
-    context.rom_services.erase(service);
+void BindRomService(dx::Interpreter& vm, RomService& service, dx::VmObjectRef intent) {
+    if (service.bound) return;
+    static_cast<void>(CallAndroidMethod(vm, service.thread, "scheduleBindService",
+                                        "(Landroid/os/IBinder;Landroid/content/Intent;ZI)V",
+                                        {dx::VmValue::Ref(service.token), dx::VmValue::Ref(intent),
+                                         dx::VmValue::Int(service.rebind), dx::VmValue::Int(2)}));
+    service.bound = true;
+    service.bind_intent = intent;
+    if (!service.rebind) service.published = false;
+    service.rebind = false;
 }
 
 void UnbindRomService(dx::Interpreter& vm, RomService& service) {
@@ -2630,11 +2647,54 @@ void UnbindRomService(dx::Interpreter& vm, RomService& service) {
     service.bound = false;
 }
 
-void PublishRomServiceConnection(dx::Interpreter& vm, const RomService& service, dx::VmObjectRef connection) {
-    if (!service.binder.IsValid()) return;
-    static_cast<void>(CallAndroidMethod(vm, connection, "connected",
-                                        "(Landroid/content/ComponentName;Landroid/os/IBinder;)V",
-                                        {dx::VmValue::Ref(service.component), dx::VmValue::Ref(service.binder)}));
+void NotifyRomServiceConnection(dx::Interpreter& vm, dx::VmObjectRef connection, dx::VmObjectRef component,
+                                dx::VmObjectRef binder) {
+    try {
+        static_cast<void>(CallAndroidMethod(vm, connection, "connected",
+                                            "(Landroid/content/ComponentName;Landroid/os/IBinder;)V",
+                                            {dx::VmValue::Ref(component), dx::VmValue::Ref(binder)}));
+    } catch (const dx::VmJavaThrow& error) {
+        if (auto* logger = vm.Log()) logger->Write(core::LogLevel::warn, "runtime.android.service", error.message);
+    }
+}
+
+void NotifyRomServiceConnections(dx::Interpreter& vm, const RomService& service, dx::VmObjectRef binder) {
+    const auto component = service.component;
+    const auto service_roots = vm.ProtectReferences(std::array{component, binder});
+    std::vector<dx::VmObjectRef> connections;
+    connections.reserve(service.connections.size());
+    for (const auto& connection : service.connections)
+        connections.push_back(connection.dispatcher);
+    const auto roots = vm.ProtectReferences(connections);
+    for (const auto connection : connections)
+        NotifyRomServiceConnection(vm, connection, component, binder);
+}
+
+void RetireRomService(dx::Interpreter& vm, DexVmAndroidContext& context,
+                      std::map<std::string, RomService, std::less<>>::iterator service, bool shutdown = false) {
+    const auto& record = service->second;
+    if (!record.token.IsValid()) {
+        if (shutdown || record.connections.empty()) context.rom_services.erase(service);
+        return;
+    }
+    if (!shutdown && (record.started || std::ranges::any_of(record.connections, &RomService::Connection::auto_create)))
+        return;
+
+    const auto roots = vm.ProtectReferences(
+        std::array{record.thread, record.token, record.component, record.bind_intent, record.binder});
+    auto retired = context.rom_services.extract(service);
+    auto& stopping = retired.mapped();
+    try {
+        // Process teardown takes the same-process clients down too; no disconnect callback is observable.
+        if (!shutdown) NotifyRomServiceConnections(vm, stopping, dx::VmObjectRef{});
+        stopping.connections.clear();
+        UnbindRomService(vm, stopping);
+        static_cast<void>(CallAndroidMethod(vm, stopping.thread, "scheduleStopService", "(Landroid/os/IBinder;)V",
+                                            {dx::VmValue::Ref(stopping.token)}));
+    } catch (...) {
+        context.rom_services.insert(std::move(retired));
+        throw;
+    }
 }
 
 void RequireRomServiceRequest(dx::IntrinsicContext& call, dx::VmObjectRef type, std::int32_t user) {
@@ -2963,8 +3023,7 @@ void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder& builder, const Co
     builder.VirtualMethod(
         "setServiceForeground", "(Landroid/content/ComponentName;Landroid/os/IBinder;ILandroid/app/Notification;Z)V",
         [context](dx::IntrinsicContext& call) {
-            const auto found = std::ranges::find_if(
-                context->rom_services, [&](const auto& entry) { return entry.second.token == call.arguments[1].ref; });
+            const auto found = FindRomServiceByToken(*context, call.arguments[1].ref);
             if (found == context->rom_services.end()) return dx::VmValue::Void();
             const auto component = found->second.component;
             if (CallAndroidMethod(call.vm, component, "equals", "(Ljava/lang/Object;)Z", {call.arguments[0]}).AsInt() ==
@@ -3166,6 +3225,7 @@ void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder& builder, const Co
             auto& service = EnsureRomService(call, context, thread, copy, *target.declaration);
             if (service.start_id == std::numeric_limits<std::int32_t>::max())
                 UnsupportedLocalService(call.vm, "service start ID exhausted");
+            if (!service.connections.empty()) BindRomService(call.vm, service, service.bind_intent);
             const auto next_id = service.start_id + 1;
             static_cast<void>(CallAndroidMethod(
                 call.vm, thread, "scheduleServiceArgs", "(Landroid/os/IBinder;ZIILandroid/content/Intent;)V",
@@ -3190,9 +3250,7 @@ void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder& builder, const Co
         });
     builder.VirtualMethod("stopServiceToken", "(Landroid/content/ComponentName;Landroid/os/IBinder;I)Z",
                           [context](dx::IntrinsicContext& call) {
-                              const auto found = std::ranges::find_if(context->rom_services, [&](const auto& entry) {
-                                  return entry.second.token == call.arguments[1].ref;
-                              });
+                              const auto found = FindRomServiceByToken(*context, call.arguments[1].ref);
                               const auto id = call.arguments[2].AsInt();
                               if (found == context->rom_services.end() || !found->second.started ||
                                   (id != -1 && id != found->second.start_id))
@@ -3225,71 +3283,73 @@ void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder& builder, const Co
                 RecordSecondaryProcessService(vm, "bindService", *target.declaration);
                 return dx::VmValue::Int(0);
             }
-            if (vm.CurrentContextToken() != 1 || call.arguments[5].AsInt() != 1)
-                UnsupportedLocalService(vm, "local bind requires main thread and BIND_AUTO_CREATE");
+            if (vm.CurrentContextToken() != 1) UnsupportedLocalService(vm, "local bind requires the main thread");
+            const auto flags = call.arguments[5].AsInt();
+            if ((flags & ~(kBindAutoCreate | kBindDebugUnbind | kBindWaivePriority)) != 0)
+                UnsupportedLocalService(vm, "unsupported local bind flags");
+            const bool auto_create = (flags & kBindAutoCreate) != 0;
             const auto thread = dx::IntrinsicCall(call).NonNullRef(0, "application thread");
             const auto connection = dx::IntrinsicCall(call).NonNullRef(4, "connection");
-            for (const auto& [name, service] : context->rom_services) {
-                if (std::ranges::find(service.connections, connection) == service.connections.end()) continue;
+            RomService::Connection* existing = nullptr;
+            for (auto& [name, service] : context->rom_services) {
+                const auto found =
+                    std::ranges::find(service.connections, connection, &RomService::Connection::dispatcher);
+                if (found == service.connections.end()) continue;
                 if (name != target.declaration->name)
                     UnsupportedLocalService(vm, "one connection cannot bind multiple components");
-                return dx::VmValue::Int(1);
+                if (!auto_create || found->auto_create) return dx::VmValue::Int(1);
+                existing = &*found;
+                break;
             }
             const auto copy = ServiceIntentCopy(vm, intent);
             const auto root = vm.ProtectReferences(std::array{copy});
-            auto& service = EnsureRomService(call, context, thread, copy, *target.declaration);
-            if (!service.bound) {
-                static_cast<void>(CallAndroidMethod(vm, thread, "scheduleBindService",
-                                                    "(Landroid/os/IBinder;Landroid/content/Intent;ZI)V",
-                                                    {dx::VmValue::Ref(service.token), dx::VmValue::Ref(copy),
-                                                     dx::VmValue::Int(service.rebind), dx::VmValue::Int(2)}));
-                service.bound = true;
+            auto& service = auto_create ? EnsureRomService(call, context, thread, copy, *target.declaration)
+                                        : context->rom_services[target.declaration->name];
+            if (service.token.IsValid()) {
+                BindRomService(vm, service, service.connections.empty() ? copy : service.bind_intent);
+            } else if (service.connections.empty()) {
+                service.component = component;
                 service.bind_intent = copy;
-                if (!service.rebind) service.published = false;
-                service.rebind = false;
             }
-            service.connections.push_back(connection);
-            if (service.published) PublishRomServiceConnection(vm, service, connection);
+            if (existing) {
+                existing->auto_create = true;
+            } else {
+                service.connections.push_back({connection, auto_create});
+                if (service.published) NotifyRomServiceConnection(vm, connection, service.component, service.binder);
+            }
             return dx::VmValue::Int(1);
         });
     builder.VirtualMethod("publishService", "(Landroid/os/IBinder;Landroid/content/Intent;Landroid/os/IBinder;)V",
                           [context](dx::IntrinsicContext& call) {
-                              const auto found = std::ranges::find_if(context->rom_services, [&](const auto& entry) {
-                                  return entry.second.token == call.arguments[0].ref;
-                              });
+                              const auto found = FindRomServiceByToken(*context, call.arguments[0].ref);
                               if (found == context->rom_services.end() || !found->second.bound)
                                   return dx::VmValue::Void();
                               auto& service = found->second;
                               service.binder = call.arguments[2].ref;
                               service.published = true;
-                              const auto connections = service.connections;
-                              const auto roots = call.vm.ProtectReferences(connections);
-                              for (const auto connection : connections)
-                                  PublishRomServiceConnection(call.vm, service, connection);
+                              NotifyRomServiceConnections(call.vm, service, service.binder);
                               return dx::VmValue::Void();
                           });
     builder.VirtualMethod(
         "unbindService", "(Landroid/app/IServiceConnection;)Z", [context](dx::IntrinsicContext& call) {
             const auto connection = dx::IntrinsicCall(call).NonNullRef(0, "connection");
             const auto found = std::ranges::find_if(context->rom_services, [&](const auto& entry) {
-                return std::ranges::find(entry.second.connections, connection) != entry.second.connections.end();
+                const auto& connections = entry.second.connections;
+                return std::ranges::find(connections, connection, &RomService::Connection::dispatcher) !=
+                       connections.end();
             });
             if (found == context->rom_services.end()) return dx::VmValue::Int(0);
             if (call.vm.CurrentContextToken() != 1)
                 UnsupportedLocalService(call.vm, "local unbind requires the main thread");
             auto& service = found->second;
-            std::erase(service.connections, connection);
-            if (service.connections.empty()) {
-                UnbindRomService(call.vm, service);
-                RetireRomService(call.vm, *context, found);
-            }
+            std::erase_if(service.connections, [&](const auto& record) { return record.dispatcher == connection; });
+            if (service.connections.empty()) UnbindRomService(call.vm, service);
+            RetireRomService(call.vm, *context, found);
             return dx::VmValue::Int(1);
         });
     builder.VirtualMethod("unbindFinished", "(Landroid/os/IBinder;Landroid/content/Intent;Z)V",
                           [context](dx::IntrinsicContext& call) {
-                              const auto found = std::ranges::find_if(context->rom_services, [&](const auto& entry) {
-                                  return entry.second.token == call.arguments[0].ref;
-                              });
+                              const auto found = FindRomServiceByToken(*context, call.arguments[0].ref);
                               if (found != context->rom_services.end() && !found->second.bound)
                                   found->second.rebind = call.arguments[2].AsInt() != 0;
                               return dx::VmValue::Void();
@@ -3306,14 +3366,11 @@ void ShutdownLocalServices(dexvm::Interpreter& vm, DexVmAndroidContext& context)
     std::exception_ptr failure;
     while (!context.rom_services.empty()) {
         const auto service = context.rom_services.begin();
-        auto& record = service->second;
+        const auto name = service->first;
         try {
-            android_intrinsics::UnbindRomService(vm, record);
-            record.connections.clear();
-            record.started = false;
-            android_intrinsics::RetireRomService(vm, context, service);
+            android_intrinsics::RetireRomService(vm, context, service, true);
         } catch (...) {
-            context.rom_services.erase(service);
+            context.rom_services.erase(name);
             if (!failure) failure = std::current_exception();
         }
     }

@@ -191,6 +191,10 @@ public:
                             failure_text += "\n  at " + entry.class_descriptor + "." + entry.method_name + " (pc " +
                                             std::to_string(entry.pc) + ")";
                         }
+                        // A rethrown original keeps its frames on the throwable, not in the outcome.
+                        if (outcome.exception_stack.empty())
+                            failure_text += vm->DescribeThrowableStack(outcome.exception, "  ");
+                        failure_text += vm->DescribeThrowableCauses(outcome.exception);
                     }
                 }
             });

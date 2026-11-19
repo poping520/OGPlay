@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <iomanip>
 #include <limits>
 #include <optional>
@@ -28,11 +29,11 @@ namespace {
     return result;
 }
 
-[[nodiscard]] std::string DescribeGuestCallStop(
-    const cpu::RunResult& stopped, const cpu::A32State& state,
-    const memory::AddressSpace& address_space) {
+[[nodiscard]] std::string DescribeGuestCallStop(const cpu::RunResult& stopped, const cpu::A32State& state,
+                                                const memory::AddressSpace& address_space,
+                                                const GuestModuleLocator& locate_module) {
     return "A32 guest call stopped outside a handled boundary:\n" +
-           DescribeA32GuestStop(stopped, state, address_space);
+           DescribeA32GuestStop(stopped, state, address_space, locate_module);
 }
 
 [[nodiscard]] std::string_view ExitOriginName(
@@ -47,11 +48,11 @@ namespace {
     return "unknown";
 }
 
-[[nodiscard]] std::string DescribeGuestCallExit(
-    const A32GuestCallFrame& frame, const std::uint64_t consumed,
-    const cpu::RunResult& stopped, const cpu::A32State& state,
-    const GuestThreadRuntimeState& lifecycle_state,
-    const memory::AddressSpace& address_space) {
+[[nodiscard]] std::string DescribeGuestCallExit(const A32GuestCallFrame& frame, const std::uint64_t consumed,
+                                                const cpu::RunResult& stopped, const cpu::A32State& state,
+                                                const GuestThreadRuntimeState& lifecycle_state,
+                                                const memory::AddressSpace& address_space,
+                                                const GuestModuleLocator& locate_module) {
     const auto& request = lifecycle_state.exit_request;
     std::ostringstream out;
     out << "A32 guest call terminated by a guest thread exit request:\n"
@@ -75,7 +76,7 @@ namespace {
             << request.program_counter << " lr=0x" << std::setw(8)
             << request.link_register << "\n";
     }
-    out << DescribeA32GuestStop(stopped, state, address_space);
+    out << DescribeA32GuestStop(stopped, state, address_space, locate_module);
     return out.str();
 }
 
@@ -93,38 +94,47 @@ bool TryDeliverSynchronousCpuSignal(cpu::Cpu& cpu, const cpu::RunResult& stopped
            binding.runtime->DeliverSynchronousSigill(cpu, stopped.pc);
 }
 
-SupervisorCallProgress ConsumeAndroidArmSupervisorCall(
-    cpu::Cpu& cpu, const cpu::RunResult& stopped,
-    A32SyscallDispatcher& dispatcher,
-    const GuestSupervisorCallHandler& hle_handler) {
+SupervisorCallProgress ConsumeAndroidArmSupervisorCall(cpu::Cpu& cpu, const cpu::RunResult& stopped,
+                                                       A32SyscallDispatcher& dispatcher,
+                                                       const GuestSupervisorCallHandler& hle_handler,
+                                                       const A32GuestFaultContext& fault_context) {
     // A fast host call deliberately exits the backend with a structured stop
     // after its noexcept callback captured the original C++ exception.  Give
     // the owning boundary first chance to restore that exception identity.
-    if (stopped.reason == cpu::RunStopReason::host_call_fault) {
-        return hle_handler
-                   ? hle_handler(cpu, stopped)
-                   : SupervisorCallProgress::not_handled;
-    }
-    if (stopped.reason != cpu::RunStopReason::supervisor_call) {
+    if (stopped.reason != cpu::RunStopReason::supervisor_call &&
+        stopped.reason != cpu::RunStopReason::host_call_fault) {
         return SupervisorCallProgress::not_handled;
     }
-    if (const auto syscall =
-            DispatchAndroidArmSupervisorCall(cpu, stopped, dispatcher)) {
-        return syscall->progress;
+    if (stopped.reason == cpu::RunStopReason::supervisor_call) {
+        if (const auto syscall = DispatchAndroidArmSupervisorCall(cpu, stopped, dispatcher)) return syscall->progress;
     }
-    return hle_handler
-               ? hle_handler(cpu, stopped)
-               : SupervisorCallProgress::not_handled;
+    if (!hle_handler) return SupervisorCallProgress::not_handled;
+    try {
+        return hle_handler(cpu, stopped);
+    } catch (const A32GuestCallCancelled&) {
+        throw;
+    } catch (const A32GuestCallExit&) {
+        throw;
+    } catch (const A32GuestCallError&) {
+        throw;
+    } catch (const std::exception& error) {
+        if (!fault_context.address_space) throw;
+        auto fault = stopped;
+        if (const auto* memory_fault = dynamic_cast<const memory::MemoryFault*>(&error))
+            fault.fault = cpu::CpuFault{memory_fault->Address(), memory_fault->Access(), memory_fault->Reason(),
+                                        memory_fault->ThreadId()};
+        std::throw_with_nested(A32GuestHostCallError(
+            std::string(error.what()) + '\n' +
+            DescribeA32GuestStop(fault, cpu.GetState(), *fault_context.address_space, fault_context.locate_module)));
+    }
 }
 
-A32GuestCallResult InvokeA32GuestCall(
-    cpu::Cpu& cpu, A32SyscallDispatcher& dispatcher,
-    GuestThreadLifecycle& lifecycle, memory::AddressSpace& address_space,
-    const A32GuestCallFrame& frame, const memory::GuestAddress stack_top,
-    const memory::GuestAddress return_trap,
-    const std::uint64_t tick_budget,
-    const GuestSupervisorCallHandler& hle_handler,
-    const A32GuestCallSliceObserver& slice_observer) {
+A32GuestCallResult InvokeA32GuestCall(cpu::Cpu& cpu, A32SyscallDispatcher& dispatcher, GuestThreadLifecycle& lifecycle,
+                                      memory::AddressSpace& address_space, const A32GuestCallFrame& frame,
+                                      const memory::GuestAddress stack_top, const memory::GuestAddress return_trap,
+                                      const std::uint64_t tick_budget, const GuestSupervisorCallHandler& hle_handler,
+                                      const A32GuestCallSliceObserver& slice_observer,
+                                      const GuestModuleLocator& locate_module) {
     if (frame.target.IsNull()) {
         throw A32GuestCallError("A32 guest call target is null");
     }
@@ -152,6 +162,7 @@ A32GuestCallResult InvokeA32GuestCall(
     const auto stack_bytes =
         static_cast<std::uint32_t>(frame.stack_words.size() *
                                    sizeof(std::uint32_t));
+    const A32GuestFaultContext fault_context{&address_space, locate_module};
     if (stack_bytes > stack_top.Value()) {
         throw A32GuestCallError("A32 guest call stack address underflowed");
     }
@@ -194,8 +205,8 @@ A32GuestCallResult InvokeA32GuestCall(
         if (current_before_run.status != GuestThreadStatus::running) {
             const cpu::RunResult interrupted{0, cpu::RunStopReason::halt_requested,
                 memory::GuestAddress{cpu.GetState().Register(cpu::CoreRegister::pc)}, 0, 0, std::nullopt};
-            const auto message = DescribeGuestCallExit(frame, consumed, interrupted,
-                cpu.GetState(), current_before_run, address_space);
+            const auto message = DescribeGuestCallExit(frame, consumed, interrupted, cpu.GetState(), current_before_run,
+                                                       address_space, locate_module);
             if (current_before_run.exit_request.origin == GuestThreadExitOrigin::syscall_exit ||
                 current_before_run.exit_request.origin == GuestThreadExitOrigin::syscall_exit_group)
                 throw A32GuestCallExit(message, current_before_run);
@@ -228,16 +239,15 @@ A32GuestCallResult InvokeA32GuestCall(
             continue;
         }
         if (TryDeliverSynchronousCpuSignal(cpu, stopped, dispatcher)) continue;
-        const auto boundary_progress = ConsumeAndroidArmSupervisorCall(
-            cpu, stopped, dispatcher, hle_handler);
+        const auto boundary_progress =
+            ConsumeAndroidArmSupervisorCall(cpu, stopped, dispatcher, hle_handler, fault_context);
         if (boundary_progress == SupervisorCallProgress::not_handled) {
-            throw A32GuestCallFault(
-                DescribeGuestCallStop(stopped, cpu.GetState(), address_space));
+            throw A32GuestCallFault(DescribeGuestCallStop(stopped, cpu.GetState(), address_space, locate_module));
         }
         const auto current = lifecycle.State(state.ThreadId());
         if (current.status != GuestThreadStatus::running) {
-            const auto message = DescribeGuestCallExit(
-                frame, consumed, stopped, cpu.GetState(), current, address_space);
+            const auto message =
+                DescribeGuestCallExit(frame, consumed, stopped, cpu.GetState(), current, address_space, locate_module);
             if (current.exit_request.origin == GuestThreadExitOrigin::syscall_exit ||
                 current.exit_request.origin == GuestThreadExitOrigin::syscall_exit_group)
                 throw A32GuestCallExit(message, current);
@@ -263,11 +273,11 @@ A32GuestCallResult InvokeA32GuestCall(
             exhausted.Register(cpu::CoreRegister::lr)));
 }
 
-GuestThreadRunOutcome RunAndroidArmGuestThread(
-    cpu::Cpu& cpu, A32SyscallDispatcher& dispatcher,
-    GuestThreadLifecycle& lifecycle, memory::MemoryBus& memory_bus,
-    cpu::FutexTable& futex_table, const std::uint64_t tick_budget,
-    const GuestSupervisorCallHandler& hle_handler) {
+GuestThreadRunOutcome RunAndroidArmGuestThread(cpu::Cpu& cpu, A32SyscallDispatcher& dispatcher,
+                                               GuestThreadLifecycle& lifecycle, memory::MemoryBus& memory_bus,
+                                               cpu::FutexTable& futex_table, const std::uint64_t tick_budget,
+                                               const GuestSupervisorCallHandler& hle_handler,
+                                               const A32GuestFaultContext& fault_context) {
     const auto initial = cpu.GetState();
     if (initial.ThreadId() == 0) {
         throw GuestThreadLifecycleError(
@@ -303,8 +313,7 @@ GuestThreadRunOutcome RunAndroidArmGuestThread(
             return {consumed, GuestThreadRunStop::cpu_stop, last,
                     std::nullopt};
         }
-        if (ConsumeAndroidArmSupervisorCall(
-                cpu, last, dispatcher, hle_handler) ==
+        if (ConsumeAndroidArmSupervisorCall(cpu, last, dispatcher, hle_handler, fault_context) ==
             SupervisorCallProgress::not_handled) {
             return {consumed, GuestThreadRunStop::unhandled_supervisor_call,
                     last, std::nullopt};
@@ -324,26 +333,31 @@ GuestThreadRunOutcome RunAndroidArmGuestThread(
             std::nullopt};
 }
 
-std::string DescribeA32GuestStop(const cpu::RunResult& stopped,
-                                 const cpu::A32State& state,
-                                 const memory::AddressSpace& address_space) {
+std::string DescribeA32GuestStop(const cpu::RunResult& stopped, const cpu::A32State& state,
+                                 const memory::AddressSpace& address_space, const GuestModuleLocator& locate_module) {
     const auto hex32 = [](const std::uint32_t value) {
         std::ostringstream encoded;
         encoded << std::hex << std::nouppercase << std::setw(8)
                 << std::setfill('0') << value;
         return "0x" + encoded.str();
     };
+    const auto location = [&](const std::uint32_t address) {
+        auto result = hex32(address);
+        if (locate_module) {
+            if (auto module = locate_module(memory::GuestAddress{address & ~1U}); !module.empty())
+                result += " (" + module + ')';
+        }
+        return result;
+    };
     const auto numeric =
         [](const std::string_view name, const std::uint8_t value) {
             return std::string{name} + "(" +
                    std::to_string(static_cast<unsigned>(value)) + ")";
         };
-    auto result = "  stop:      pc=" + hex32(stopped.pc.Value()) + " state=" +
-                  std::string{cpu::ToString(state.State())} + " reason=" +
-                  numeric(cpu::ToString(stopped.reason),
-                          static_cast<std::uint8_t>(stopped.reason)) +
-                  " immediate=" + std::to_string(stopped.immediate) +
-                  " instruction=" + hex32(stopped.instruction);
+    auto result = "  stop:      pc=" + location(stopped.pc.Value()) +
+                  " state=" + std::string{cpu::ToString(state.State())} +
+                  " reason=" + numeric(cpu::ToString(stopped.reason), static_cast<std::uint8_t>(stopped.reason)) +
+                  " immediate=" + std::to_string(stopped.immediate) + " instruction=" + hex32(stopped.instruction);
     if (stopped.reason == cpu::RunStopReason::unsupported_instruction) {
         const auto word = stopped.instruction;
         if ((word & 0x0f000010U) == 0x0e000010U) {
@@ -370,21 +384,24 @@ std::string DescribeA32GuestStop(const cpu::RunResult& stopped,
                   numeric(memory::ToString(stopped.fault->reason),
                           static_cast<std::uint8_t>(stopped.fault->reason));
     }
-    result += "\n  thread:    guest=" + std::to_string(state.ThreadId()) +
-              "\n  registers: r0=" +
-              hex32(state.Register(cpu::CoreRegister::r0)) + " r1=" +
-              hex32(state.Register(cpu::CoreRegister::r1)) + " r2=" +
-              hex32(state.Register(cpu::CoreRegister::r2)) + " r3=" +
-              hex32(state.Register(cpu::CoreRegister::r3)) +
-              "\n             r12=" +
-              hex32(state.Register(cpu::CoreRegister::r12)) + " sp=" +
-              hex32(state.Register(cpu::CoreRegister::sp)) + " lr=" +
-              hex32(state.Register(cpu::CoreRegister::lr));
+    result +=
+        "\n  thread:    guest=" + std::to_string(state.ThreadId()) +
+        "\n  registers: r0=" + hex32(state.Register(cpu::CoreRegister::r0)) +
+        " r1=" + hex32(state.Register(cpu::CoreRegister::r1)) + " r2=" + hex32(state.Register(cpu::CoreRegister::r2)) +
+        " r3=" + hex32(state.Register(cpu::CoreRegister::r3)) +
+        "\n             r4=" + hex32(state.Register(cpu::CoreRegister::r4)) +
+        " r5=" + hex32(state.Register(cpu::CoreRegister::r5)) + " r6=" + hex32(state.Register(cpu::CoreRegister::r6)) +
+        " r7=" + hex32(state.Register(cpu::CoreRegister::r7)) +
+        "\n             r8=" + hex32(state.Register(cpu::CoreRegister::r8)) +
+        " r9=" + hex32(state.Register(cpu::CoreRegister::r9)) +
+        " r10=" + hex32(state.Register(cpu::CoreRegister::r10)) +
+        " r11=" + hex32(state.Register(cpu::CoreRegister::r11)) +
+        "\n             r12=" + hex32(state.Register(cpu::CoreRegister::r12)) +
+        " sp=" + hex32(state.Register(cpu::CoreRegister::sp)) +
+        " lr=" + location(state.Register(cpu::CoreRegister::lr));
     const auto initial_fp = state.Register(cpu::CoreRegister::r11);
-    result += "\n  backtrace: #0 pc=" +
-              hex32(state.Register(cpu::CoreRegister::pc)) + " lr=" +
-              hex32(state.Register(cpu::CoreRegister::lr)) + " fp=" +
-              hex32(initial_fp);
+    result += "\n  backtrace: #0 pc=" + location(state.Register(cpu::CoreRegister::pc)) +
+              " lr=" + location(state.Register(cpu::CoreRegister::lr)) + " fp=" + hex32(initial_fp);
     auto frame_pointer = initial_fp;
     constexpr std::size_t kMaximumFrames = 16;
     for (std::size_t frame = 1; frame < kMaximumFrames && frame_pointer != 0U;
@@ -411,9 +428,8 @@ std::string DescribeA32GuestStop(const cpu::RunResult& stopped,
                 result += "\n             stop=end_of_frame_chain";
                 break;
             }
-            result += "\n             #" + std::to_string(frame) +
-                      " pc=" + hex32(saved_lr & ~1U) +
-                      " lr=" + hex32(saved_lr) + " fp=" + hex32(previous);
+            result += "\n             #" + std::to_string(frame) + " pc=" + location(saved_lr & ~1U) +
+                      " lr=" + location(saved_lr) + " fp=" + hex32(previous);
             if (previous == 0U) break;
             if (previous <= frame_pointer || previous - frame_pointer > 1024U * 1024U) {
                 result += " stop=non_monotonic";

@@ -100,7 +100,7 @@ key 仍必须存在，NUL/孤立 surrogate 保留 Java code units；resource 保
 | queryIntentActivities/resolveIntent/queryIntentContentProviders | 当前 APK 显式组件及隐式过滤器。ROM IntentFilter 匹配 action/category、MIME、scheme、authority 与路径模式，按优先级、DEFAULT 与匹配分排序；resolveIntent 取首项 |
 | queryBroadcastReceivers | 支持显式组件；隐式查询要求非空 action、同一 filter category 子集、无 selector/data/type，按启用状态过滤并稳定排序。候选 data 条件无法解析时记账失败 |
 | queryIntentServices/resolveService | 支持显式组件。隐式支持 action-only 下可确定无候选的查询；应用/组件启用状态及 MATCH_DEFAULT_ONLY 参与筛选。潜在匹配或未知条件记账失败 |
-| bindService/unbindService | 缺席查询沿原规则；主线程 BIND_AUTO_CREATE、component-only、当前 APK 启用的同进程服务；独立进程/isolated 返回 false，仍登记连接且可解绑，无回调（[ADR-0170](../../../../docs/adr/runtime.md#adr-0170)） |
+| bindService/unbindService | 缺席查询沿原规则；主线程、component-only、当前 APK 启用的同进程服务。仅 BIND_AUTO_CREATE 触发创建，其他连接可挂起，服务创建后先调度 onBind、再调度 onStartCommand。started 或存在 AUTO_CREATE 连接时保持存活；停止时先通知剩余连接断开并移除，再调度 onUnbind 和 onDestroy；会话关闭只调度 onUnbind/onDestroy，不发断开回调。BIND_DEBUG_UNBIND 和旧版 ContextImpl 使用的 BIND_WAIVE_PRIORITY 不影响存活；其他 flag 记账拒绝。独立进程/isolated 返回 false，仍登记连接且可解绑，无回调（[ADR-0170](../../../../docs/adr/runtime.md#adr-0170)） |
 
 本地 PMS 按 API19 各入口实际消费的 flag 掩码处理，忽略其余位。GET_UNINSTALLED_PACKAGES 在当前已安装的单 APK 清单下结果相同。
 GET_DISABLED_UNTIL_USED_COMPONENTS 按应用启用设置生效。GET_GIDS 按固定 API19 AOSP platform.xml、AID 定义和会话已授予权限生成。

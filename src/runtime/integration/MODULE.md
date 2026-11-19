@@ -138,6 +138,7 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   registry：同 loader 幂等、同线程递归返回现有 handle、跨 loader 拒绝、Failed 重试稳定失败。
   app resolver 只用 selected-ABI inventory，basename 为身份，DT_SONAME 为受检别名；
   DT_NEEDED 可用二者，别名歧义、ET_DYN、依赖/重定位、constructor/JNI version 均受检。
+  显式加载完成日志附 ELF 加载基址及映射起止，A32 故障的模块偏移从同一 linker namespace 的实际映射区间查得。
 - [ADR-0135](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/runtime.md#adr-0135)：共享来源快照拥有 APK/系统库字节，process
   经显式 native callback 持有；Java registry 退役不悬空其来源。Java/native 共用 namespace
   与构造器状态，native dlopen 不登记 ClassLoader 或执行 JNI_OnLoad，后续 Java load 复用映射。

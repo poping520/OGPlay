@@ -48,6 +48,9 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<
             throw std::overflow_error("guest TID exceeds API19 integer range");
         return static_cast<std::int32_t>(tid);
     };
+    services.memory_mappings = [context]() -> const GuestMemoryMappings* {
+        return context->session ? &context->session->Process().MemoryMappings() : nullptr;
+    };
     if (context->offline_connectivity && !context->network_policy.enabled && !context->network_environment) {
         auto environment = std::make_shared<GuestNetworkEnvironment>(*context->offline_connectivity);
         if (context->vfs) environment->Publish(*context->vfs);

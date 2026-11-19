@@ -59,6 +59,8 @@ Windows 定向诊断构建使用 `windows-msvc` 预设并保留对应配置目�
 | --- | --- | --- |
 | native 侧报 `GetObjectClass` 之类无关的 JNI 错 | 解释方法抛出的 Java 异常按 JNI 语义置为 pending，下一次 native 调用被严格门禁挡下，报出的却是那次无关调用 | 入向桥会把 pending 异常打成结构化 `warn`（类/消息/解释器栈）；先看这条 warn，不要查报错的那个 JNI 函数 |
 | `register vX out of range`，而 X 比方法声明的寄存器数只大 1 | `GetWide(vN)` 需要 `vN`/`vN+1`，越界消息报的是 `vN+1` | 先核对方法的 `registers`/`ins`，再怀疑 precheck 规则（k22b 类 bug 有先例） |
+| `uncaught ... An error occured while executing doInBackground()` | `AsyncTask` 包装后台线程原异常 | 读 `Caused by` 中的异常类与首帧，结合 `frontend.run_apk.unimplemented` 的命中定位接口缺口 |
+| `guest memory is unmapped` | guest 访存故障也可能来自 fast host call | 读故障地址、访问类型、线程及 PC/LR；用帧链的 `soname+offset` 和加载日志定位模块 |
 | 缺资源条目时抛宿主 C++ 异常，游戏直接崩 | 游戏期望的是可捕获的 Java 异常 | 平台侧缺失必须抛游戏真能 catch 的异常（如 `AssetManager.open` 缺条目抛 `java.io.IOException`），不炸宿主 |
 | 长时运行后 GC 预算耗尽 | 瞬态资源数组把 GC-A 预算打满（Asphalt 5 换语言/进赛道路径实测） | 先按 profile `[runtime.dexvm]` 兜住并记录，根治靠精确标记清除（GC-B），不要在解释器里打特例 |
 

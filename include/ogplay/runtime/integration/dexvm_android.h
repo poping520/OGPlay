@@ -359,8 +359,14 @@ struct DexVmAndroidContext final {
     std::atomic<std::int64_t> serial_broadcast_deadline_millis{std::numeric_limits<std::int64_t>::max()};
 
     struct RomServiceRecord final {
+        struct Connection {
+            dexvm::VmObjectRef dispatcher;
+            bool auto_create{};
+        };
+
+        // A binding-only record has no token until creation is scheduled.
         dexvm::VmObjectRef thread{}, token{}, component{}, bind_intent{}, binder{};
-        std::vector<dexvm::VmObjectRef> connections{};
+        std::vector<Connection> connections{};
         std::int32_t start_id{};
         bool started{}, bound{}, published{}, rebind{};
     };

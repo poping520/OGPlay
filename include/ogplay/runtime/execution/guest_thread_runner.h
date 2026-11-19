@@ -32,6 +32,12 @@ struct GuestThreadRunOutcome final {
 using GuestSupervisorCallHandler =
     std::function<SupervisorCallProgress(cpu::Cpu&, const cpu::RunResult&)>;
 using A32GuestCallSliceObserver = std::function<void(std::uint64_t)>;
+using GuestModuleLocator = std::function<std::string(memory::GuestAddress)>;
+
+struct A32GuestFaultContext final {
+    const memory::AddressSpace* address_space{};
+    GuestModuleLocator locate_module;
+};
 
 [[nodiscard]] bool TryDeliverSynchronousCpuSignal(cpu::Cpu& cpu, const cpu::RunResult& stopped,
                                                   const A32SyscallDispatcher& dispatcher);
@@ -85,9 +91,15 @@ public:
 };
 
 // An unhandled CPU stop leaves native state unsafe for guest finalization.
-class A32GuestCallFault final : public A32GuestCallError {
+class A32GuestCallFault : public A32GuestCallError {
 public:
     using A32GuestCallError::A32GuestCallError;
+};
+
+// The original exception is available through std::rethrow_if_nested.
+class A32GuestHostCallError : public A32GuestCallFault {
+public:
+    using A32GuestCallFault::A32GuestCallFault;
 };
 
 // Renders an unhandled A32 stop for "stopped outside a handled boundary"
@@ -95,27 +107,27 @@ public:
 // numeric values, execution state, guest thread id and the code bytes around
 // pc. Shared by the runners so every such report stays decodable without the
 // enum tables or a decimal-to-hex conversion at hand.
-[[nodiscard]] std::string DescribeA32GuestStop(
-    const cpu::RunResult& stopped, const cpu::A32State& state,
-    const memory::AddressSpace& address_space);
+[[nodiscard]] std::string DescribeA32GuestStop(const cpu::RunResult& stopped, const cpu::A32State& state,
+                                               const memory::AddressSpace& address_space,
+                                               const GuestModuleLocator& locate_module = {});
 
-[[nodiscard]] SupervisorCallProgress ConsumeAndroidArmSupervisorCall(
-    cpu::Cpu& cpu, const cpu::RunResult& stopped,
-    A32SyscallDispatcher& dispatcher,
-    const GuestSupervisorCallHandler& hle_handler = {});
+[[nodiscard]] SupervisorCallProgress ConsumeAndroidArmSupervisorCall(cpu::Cpu& cpu, const cpu::RunResult& stopped,
+                                                                     A32SyscallDispatcher& dispatcher,
+                                                                     const GuestSupervisorCallHandler& hle_handler = {},
+                                                                     const A32GuestFaultContext& fault_context = {});
 
-[[nodiscard]] A32GuestCallResult InvokeA32GuestCall(
-    cpu::Cpu& cpu, A32SyscallDispatcher& dispatcher,
-    GuestThreadLifecycle& lifecycle, memory::AddressSpace& address_space,
-    const A32GuestCallFrame& frame, memory::GuestAddress stack_top,
-    memory::GuestAddress return_trap, std::uint64_t tick_budget,
-    const GuestSupervisorCallHandler& hle_handler = {},
-    const A32GuestCallSliceObserver& slice_observer = {});
+[[nodiscard]] A32GuestCallResult
+InvokeA32GuestCall(cpu::Cpu& cpu, A32SyscallDispatcher& dispatcher, GuestThreadLifecycle& lifecycle,
+                   memory::AddressSpace& address_space, const A32GuestCallFrame& frame, memory::GuestAddress stack_top,
+                   memory::GuestAddress return_trap, std::uint64_t tick_budget,
+                   const GuestSupervisorCallHandler& hle_handler = {},
+                   const A32GuestCallSliceObserver& slice_observer = {}, const GuestModuleLocator& locate_module = {});
 
-[[nodiscard]] GuestThreadRunOutcome RunAndroidArmGuestThread(
-    cpu::Cpu& cpu, A32SyscallDispatcher& dispatcher,
-    GuestThreadLifecycle& lifecycle, memory::MemoryBus& memory_bus,
-    cpu::FutexTable& futex_table, std::uint64_t tick_budget,
-    const GuestSupervisorCallHandler& hle_handler = {});
+[[nodiscard]] GuestThreadRunOutcome RunAndroidArmGuestThread(cpu::Cpu& cpu, A32SyscallDispatcher& dispatcher,
+                                                             GuestThreadLifecycle& lifecycle,
+                                                             memory::MemoryBus& memory_bus,
+                                                             cpu::FutexTable& futex_table, std::uint64_t tick_budget,
+                                                             const GuestSupervisorCallHandler& hle_handler = {},
+                                                             const A32GuestFaultContext& fault_context = {});
 
 }  // namespace ogplay::runtime

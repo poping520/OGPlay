@@ -1,6 +1,7 @@
 #include "ogplay/session/android_app_process.h"
 
 #include <algorithm>
+#include <array>
 #include <condition_variable>
 #include <deque>
 #include <future>
@@ -439,6 +440,28 @@ public:
                     if (streams.exception.IsValid())
                         Fail("RuntimeInit.redirectLogStreams failed: " + streams.exception_message +
                              vm.DescribeThrowableCauses(streams.exception));
+                    // RuntimeInit.commonInit publishes the default HttpURLConnection user agent; native
+                    // SDKs read System.getProperty("http.agent") and dereference it. Only this step runs:
+                    // the rest of commonInit (crash handler, time zone, logging, socket tagger) is not adopted.
+                    const auto user_agent_method =
+                        linker.FindDirectMethod(runtime_init, "getDefaultUserAgent", "()Ljava/lang/String;");
+                    const auto java_system = linker.ResolveDescriptor("Ljava/lang/System;");
+                    const auto set_property = linker.FindDirectMethod(
+                        java_system, "setProperty", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+                    if (!user_agent_method || !set_property)
+                        Fail("RuntimeInit.getDefaultUserAgent or System.setProperty is unavailable");
+                    const auto user_agent = vm.Call(*user_agent_method, {});
+                    if (user_agent.exception.IsValid())
+                        Fail("RuntimeInit.getDefaultUserAgent failed: " + user_agent.exception_message +
+                             vm.DescribeThrowableCauses(user_agent.exception));
+                    const auto key = vm.NewStringUtf8("http.agent");
+                    const auto roots = vm.ProtectReferences(std::array{key, user_agent.value.ref});
+                    const auto published =
+                        vm.Call(*set_property, std::array{runtime::dexvm::VmValue::Ref(key),
+                                                          runtime::dexvm::VmValue::Ref(user_agent.value.ref)});
+                    if (published.exception.IsValid())
+                        Fail("System.setProperty(http.agent) failed: " + published.exception_message +
+                             vm.DescribeThrowableCauses(published.exception));
                     context->threads = &bridge->Threads();
                     if (request.configure_dex_vm) {
                         request.configure_dex_vm(bridge->Vm());

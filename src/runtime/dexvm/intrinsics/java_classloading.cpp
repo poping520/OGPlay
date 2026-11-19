@@ -103,12 +103,8 @@ IntrinsicClassDecl Declare_java_lang_VMClassLoader_Natives(const CoreIntrinsicSe
                                   ? std::optional<VmClassLoaderId>(kApplicationLoader)
                                   : std::nullopt;
             if (!role) return VmValue::Ref(VmObjectRef{});
-            try {
-                const auto type = loaders.FindLoadedClass(*role, name);
-                return VmValue::Ref(type ? c.vm.Model().ClassObject(*type) : VmObjectRef{});
-            } catch (const ClassNameCodecError&) {
-                return VmValue::Ref(VmObjectRef{});
-            }
+            const auto type = loaders.FindLoadedClass(*role, name);
+            return VmValue::Ref(type ? c.vm.Model().ClassObject(*type) : VmObjectRef{});
         },
         kAccStatic | kAccNative);
     b.StaticMethod(

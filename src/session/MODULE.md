@@ -11,7 +11,9 @@ guest 主线程在独立宿主线程持续执行 ROM Looper.loop。session 提�
   native inventory/ABI、rootless guest process、动态 loader、DexVM、Application root 与
   Activity lifecycle；Create 只准备 API 19 system ELF，不预载 APK `.so`。Manifest MAIN/LAUNCHER
   是唯一根入口；无 native inventory 保持 Java-capable
-  process mode。ActivityThread.attach(false) 通过本地 AMS 投递 bindApplication。
+  process mode。启动时执行 ROM RuntimeInit.redirectLogStreams，并按 commonInit 用
+  getDefaultUserAgent 设置 `http.agent`；commonInit 的崩溃处理器、时区、日志与 socket tagger 不采用。
+  ActivityThread.attach(false) 通过本地 AMS 投递 bindApplication。
   主队列首次空闲后发布 ROM Application，再允许启动 launcher。SDL 操作归宿主前端。
 
    把同一 sealed Manifest 的 package/version/target SDK/application

@@ -25,8 +25,9 @@ public:
     [[nodiscard]] std::optional<VmClassLoaderId> RoleOf(VmObjectRef loader_object);
 
     // findLoadedClass is intentionally side-effect free: no synthesis,
-    // linking, initialization, or initiating-state mutation.
-    [[nodiscard]] std::optional<DexClassId> FindLoadedClass(VmClassLoaderId loader, std::string_view binary_name) const;
+    // linking, initialization, or initiating-state mutation. Like Dalvik
+    // dvmDotToDescriptor, the name is not validated; '/' separators also match.
+    [[nodiscard]] std::optional<DexClassId> FindLoadedClass(VmClassLoaderId loader, std::string_view name) const;
     // loadClass searches the sealed linker namespace, including indexed API19
     // shapes. Arrays/shapes materialize lazily; no dynamic dex/jar is read.
     [[nodiscard]] DexClassId LoadClass(VmClassLoaderId loader, std::string_view binary_name);

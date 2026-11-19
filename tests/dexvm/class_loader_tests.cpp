@@ -376,6 +376,32 @@ TEST_CASE("ClassLoader separates known classes from initiating loader state") {
     CHECK(vm.linker.Class(*clinit_user).clinit_state == ClinitState::uninitialized);
 }
 
+TEST_CASE("ClassLoader findLoadedClass accepts slash-separated names like Dalvik") {
+    LoaderVm vm;
+    const auto system = vm.interpreter.ClassLoaders().ApplicationLoader();
+    const auto boot = vm.interpreter.ClassLoaders().BootstrapLoader();
+    const auto java_system = vm.linker.FindClass("Ljava/lang/System;");
+    REQUIRE(java_system.has_value());
+    const auto system_class = vm.model.ClassObject(*java_system);
+    const auto find_loaded = [&](const VmObjectRef loader, const std::string_view name) {
+        return Ref(vm.Virtual(loader, "findLoadedClass", "(Ljava/lang/String;)Ljava/lang/Class;",
+                              {VmValue::Ref(vm.String(name))}));
+    };
+    const auto load = [&](const std::string_view name) {
+        return vm.Virtual(system, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;",
+                          {VmValue::Ref(vm.String(name))});
+    };
+
+    // AOSP API19 java_lang_VMClassLoader.cpp: findLoadedClass converts with dvmDotToDescriptor,
+    // which maps '.' to '/' without validation, so a JNI-style name still finds the loaded class.
+    CHECK(find_loaded(boot, "java/lang/System") == system_class);
+    CHECK(find_loaded(boot, "java.lang.System") == system_class);
+    // Native SDKs pass JNI names to the application loader; parent delegation reaches the boot hit.
+    CHECK(Ref(load("java/lang/System")) == system_class);
+    CHECK_FALSE(find_loaded(boot, "java/lang/NoSuchClass").IsValid());
+    ExpectClassNotFound(vm, load("java/lang/NoSuchClass"));
+}
+
 TEST_CASE("ClassLoader refuses dynamic namespaces and bootstrap app lookup") {
     LoaderVm vm;
     const auto system = vm.interpreter.ClassLoaders().ApplicationLoader();

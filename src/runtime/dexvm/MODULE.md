@@ -53,7 +53,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   ClassLoaderFacade 为 VMClassLoader/DexFile/VMStack native 提供已登记类目录与身份查询，不拦截
   Java loadClass/getResource 等普通方法。独立 run-dex 无 APK 时以 ROM 空路径 PathClassLoader 表示
   已登记应用命名空间，仅 VM Class.forName 可直接查询它；不授予动态定义权限。
-  链接器仍从 DEX 常量池直接解析已登记类，不回调 Java loadClass。findLoadedClass 不链接或初始化；
+  链接器仍从 DEX 常量池直接解析已登记类，不回调 Java loadClass。findLoadedClass 不链接或初始化，
+  类名按 dvmDotToDescriptor 只把 '.' 换成 '/'、不做校验（JNI 风格斜杠名同样命中）；
   动态 classpath、自定义 defineClass、MultiDex 和多 namespace 仍拒绝，不登记 classes2.dex。
   VMClassLoader 按启动类路径顺序查询资源，ROM ClassLoader/ZipFile 提供 APK 资源与 Enumeration；
   jar:file URL 只读取封存 guest 归档，不开放宿主文件或网络归档；条目名保留原文，

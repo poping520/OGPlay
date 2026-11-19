@@ -1,5 +1,6 @@
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
 
+#include <algorithm>
 #include <array>
 #include <string>
 #include <string_view>
@@ -113,8 +114,11 @@ std::optional<VmClassLoaderId> ClassLoaderFacade::RoleOf(const VmObjectRef loade
 }
 
 std::optional<DexClassId> ClassLoaderFacade::FindLoadedClass(const VmClassLoaderId loader,
-                                                             const std::string_view binary_name) const {
-    const auto descriptor = ClassNameCodec::BinaryNameToDescriptor(binary_name);
+                                                             const std::string_view name) const {
+    // Dalvik VMClassLoader.findLoadedClass converts with dvmDotToDescriptor, which only
+    // maps '.' to '/' without validating, so JNI-style "java/lang/System" still matches.
+    auto descriptor = name.starts_with('[') ? std::string(name) : "L" + std::string(name) + ";";
+    std::replace(descriptor.begin(), descriptor.end(), '.', '/');
     const auto java_class = linker_->FindClass(descriptor);
     if (!java_class.has_value() || !linker_->IsInitiatedBy(*java_class, loader)) {
         return std::nullopt;

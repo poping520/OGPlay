@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-11-17。
+更新：2026-11-19。
 
 本文件是项目当前状态的快照：只写“现在怎样”，不写过程。修改时覆盖对应行，不追加流水；
 跨会话在办事项写入任务单，完成后的过程、验证明细及证据留在提交说明中。能力见 [capabilities.toml](../../capabilities.toml)，
@@ -44,6 +44,7 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
 | 割绳子 2.3.8（广告版） | macOS | ACRA 构造与 Application 生命周期回调注册通过，进入首个 Activity 的 onCreate，未呈现 | FragmentActivity 调用 `getLastNonConfigurationInstance()` 缺失 | DVM-376 |
 | 保卫萝卜 1.1.0 | macOS | Cocos2d 文字位图越过 `Paint.getFontMetricsInt()`，呈现 2 帧 | `nativeRender` 的 JNI `CallStaticObjectMethodV` 返回类型与描述符不符 | DVM-376 |
 | 鳄鱼小顽皮 1.13.1 | macOS | 闹钟登记已越过 `onResume` 的 UOE；库诊断运行 120 秒呈现 23,719 帧，SIGINT 退出 0 | 本次未见新的阻断错误；闹钟到期投递已通过 Probe，原 APK 到期路径和游戏内交互待复验 | DVM-211 |
+| Rayman Fiesta Run 1.4.2 | macOS | 越过 MSDK `http.agent` 的 strlen(NULL)（斜杠类名 findLoadedClass、启动未设 `http.agent` 已修），进入资源包加载；约 100 秒呈现 5659 帧，SIGTERM 退出 0 | 画面与交互未验；缺失报告列出 obb 与 73 个 `casa_gamedata` 路径，是否为正常探测未判定 | — |
 
 ## 未闭合问题
 

@@ -21,12 +21,11 @@
 | Zydis / Zycore | 4.0.0 / 1.5.2（Dynarmic externals） | https://github.com/zyantific/zydis | MIT | Dynarmic x86-64 反汇编 |
 | ext-boost | 1.90（`6a85c3100499e886e11c87a5c2109eedacea0a61`） | https://github.com/azahar-emu/ext-boost | Boost Software License 1.0 | Dynarmic 所需的裁剪 Boost 头文件 |
 | Boost.Pool | 1.90（`740c8076f9d02f0216e8f3dbb15d2fd80f67d7f4`） | https://github.com/boostorg/pool | Boost Software License 1.0 | 补充 Dynarmic 使用的 pool allocator 头文件 |
-| FFmpeg（`ogplay_ffmpeg` 预编译共享库） | n8.1.3（`1041abdc962f4cc4f394aa8de9dc5236c0c3b9e7`） | https://github.com/poping520/OGPlay-ffmpeg-prebuilt（上游 https://git.ffmpeg.org/ffmpeg.git） | LGPL-2.1-or-later | 游戏 CG 视频解码：mov 容器、H.264/MPEG-4/H.263/AAC |
+| FFmpeg（`ogplay_ffmpeg` 预编译共享库） | n8.1.3（`1041abdc962f4cc4f394aa8de9dc5236c0c3b9e7`） | https://github.com/poping520/OGPlay-ffmpeg-prebuilt（上游 https://git.ffmpeg.org/ffmpeg.git） | LGPL-2.1-or-later | 游戏 CG 视频与 MP3、MP4/M4A 音频解码 |
 | 7-Zip（`lib7z.dylib` / `lib7z.so` / `7z.dll` 动态库） | 26.06（`d3296e39e1f1f92c7b41c0c3848e65640428d42d`） | https://github.com/ip7z/7zip | LGPL-2.1-or-later，RAR 解码部分附 unRAR 限制，部分文件 BSD-3-Clause | ZIP、RAR、7z 游戏压缩包解码。含 OGPlay 补丁（[src/archive7z/patches/](src/archive7z/patches/)），仅增加文件名原始字节出口。 |
 | SQLite amalgamation | 3.53.4（`ed6f533374f8340dee587f714115e75d6d8d6aa6`） | https://github.com/poping520/sqlite-amalgamation | Public Domain | guest SQLite 数据库运行时 |
 | yyjson | 0.12.0（`8b4a38dc994a110abaec8a400615567bd996105f`） | https://github.com/ibireme/yyjson | MIT | JSON 解析与生成 |
 | stb | stb_image_write 1.16、stb_truetype 1.26、stb_vorbis 1.22 | https://github.com/nothings/stb | MIT 或 Public Domain（Unlicense） | 图片编码、字体栅格化、Ogg Vorbis 解码 |
-| minimp3 | `ea99364f61c14656440e8d77e9c233ccf3124633` | https://github.com/lieff/minimp3 | CC0-1.0 | MP3 解码 |
 | Compressonator（ATC 解码文件） | `f4b53d79ec5abbb50924f58aebb7bf2793200b94` | https://github.com/GPUOpen-Tools/compressonator | MIT | ATC 纹理软件解码 |
 | PowerVR Native SDK | `2b1bf2f14d3365d0bb801e2a6a131a319d3a2e48` | https://github.com/powervr-graphics/Native_SDK | MIT | 原样引入 `PVRTDecompress.cpp/.h` 实现 PVRTC1 软件解码 |
 | webview | `3ab4b5d722438fc8a13e6ca830c5e2372d19a01d` | https://github.com/webview/webview | MIT | 启动器 WebView 宿主 |

@@ -483,9 +483,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             // Java File/streams resolve through the same guest VFS as
             // native fopen (external mounts, /apk assets).
             dex_context->vfs = &filesystem;
-            // Real VideoView playback when this build links ogplay_ffmpeg and
-            // its self-check passed; otherwise opening a video records the gap
-            // and the guest receives an explicit error (ADR-0136).
+            // A failed runtime SDK self-check is reported before guest playback.
             if (video::FfmpegAvailable()) {
                 dex_context->video_source_player_factory = [realtime = !mcp_manual_step](auto source) {
                     auto player = video::OpenFfmpegVideo(std::move(source));

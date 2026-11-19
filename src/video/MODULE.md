@@ -31,14 +31,14 @@
   `MakeFfmpegVideoSourcePlayerFactory`：链接 `third_party/ffmpeg-prebuilt` 的真实解码
   后端。所有输入（含宿主路径入口）经自定义 AVIO 读取，32 KiB buffer，来源 ReadAt/seek；
   预编译库不含任何 FFmpeg protocol。可用性为进程内稳定的启动自检：运行库与头文件版本
-  一致，且 `mov` demuxer 与 `h264`/`mpeg4`/`aac` 解码器存在。当前平台无预编译包或
-  `OGPLAY_ENABLE_FFMPEG=OFF` 时编译 `ffmpeg_disabled.cpp`，原因来自配置期。
-  不可用时打开抛带原因的 `VideoPlayerError`。
+  一致，且存在 `mov`、`mp3` demuxer，`h264`、`mpeg4`、`aac`、`mp3float` 解码器与
+  MPEG audio parser。SDK 为配置期必选依赖，运行时自检失败时打开视频抛带原因的 `VideoPlayerError`。
 - `VideoCodecUnsupportedError`（`VideoPlayerError` 子类）：视频或音频轨编码未编入时
   抛出，携带轨道类型与 FFmpeg 编码名，供调用方按编码记账；不静默丢弃音轨。
-- `MakeFfmpegAudioDecoder`：为集成层提供符合 audio 接口的纯音频 ISO BMFF 入口。
-  复用自定义 AVIO 和 S16 PCM 转换，支持有界块读取及回到流首。缺少音轨或解码器时报告封装和编码，
-  存在视频轨的输入继续使用视频入口。FFmpeg 不可用时返回空工厂。
+- `MakeFfmpegAudioDecoder`：为集成层提供 MP3 与纯音频 ISO BMFF 入口，分别显式选择 `mp3`、`mov`
+  demuxer。MP3 由开头的 ID3 或前 4 KiB 内的 MPEG Layer III 同步头识别。复用自定义 AVIO 和 S16 PCM
+  转换，支持有界块读取及回到流首。缺少音轨、解码器或运行时自检失败时抛 `AudioDecodeError`，
+  携带可识别的封装和编码。存在视频轨的输入使用视频入口，内嵌封面可随纯音频输入打开。
 
 ## 不变量
 

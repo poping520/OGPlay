@@ -50,9 +50,6 @@ set(OGPLAY_ANGLE_SDK_CONFIGURATION "release" CACHE STRING
 set_property(CACHE OGPLAY_ANGLE_SDK_CONFIGURATION PROPERTY STRINGS release debug)
 set(OGPLAY_SKIA_SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/skia-prebuilt"
     CACHE PATH "Root of the platform-partitioned Skia prebuilt SDK")
-set(OGPLAY_ENABLE_FFMPEG "AUTO" CACHE STRING
-    "Link the prebuilt ogplay_ffmpeg SDK: AUTO (when this platform has a package), ON or OFF")
-set_property(CACHE OGPLAY_ENABLE_FFMPEG PROPERTY STRINGS AUTO ON OFF)
 set(OGPLAY_FFMPEG_SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ffmpeg-prebuilt"
     CACHE PATH "Root of the platform-partitioned ogplay_ffmpeg prebuilt SDK")
 
@@ -196,7 +193,6 @@ endif()
 
 ogplay_add_module(ogplay_audio Audio
     src/audio/java_sound_pool_mixer.cpp
-    src/audio/mp3.cpp
     src/audio/open_sles_pcm_mixer.cpp
     src/audio/ogg_vorbis.cpp
     src/audio/pcm_mix.cpp
@@ -214,18 +210,9 @@ ogplay_add_module(ogplay_video Video
     src/video/fake_video_player.cpp
     src/video/buffered_video_player.cpp
     src/video/rgba_canvas.cpp
+    src/video/ffmpeg_video_player.cpp
 )
-target_link_libraries(ogplay_video PRIVATE OGPlay::Audio OGPlay::Hal)
-if(OGPLAY_FFMPEG_FOUND)
-    target_sources(ogplay_video PRIVATE src/video/ffmpeg_video_player.cpp)
-    target_link_libraries(ogplay_video PRIVATE FFmpeg::FFmpeg)
-    target_compile_definitions(ogplay_video PUBLIC OGPLAY_HAS_FFMPEG=1)
-else()
-    target_sources(ogplay_video PRIVATE src/video/ffmpeg_disabled.cpp)
-    target_compile_definitions(ogplay_video
-        PUBLIC OGPLAY_HAS_FFMPEG=0
-        PRIVATE "OGPLAY_FFMPEG_MISSING_REASON=\"${OGPLAY_FFMPEG_MISSING_REASON}\"")
-endif()
+target_link_libraries(ogplay_video PRIVATE OGPlay::Audio OGPlay::Hal FFmpeg::FFmpeg)
 
 ogplay_add_module(ogplay_input Input
     src/input/mouse_touch_mapper.cpp

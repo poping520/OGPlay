@@ -18,6 +18,7 @@ namespace ogplay::audio {
 constexpr std::size_t kMaximumEncodedAudioBytes = 64U * 1024U * 1024U;
 constexpr std::size_t kMaximumDecodedPcmBytes = 128U * 1024U * 1024U;
 constexpr std::size_t kAudioPcmBlockSamples = 8192U;
+constexpr std::size_t kMp3ProbeBytes = 4096U;
 
 class EncodedAudioDataSource;
 

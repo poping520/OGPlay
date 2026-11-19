@@ -75,8 +75,8 @@ Pixmap/OpenVG、Android native-buffer/native-fence FD、presentation-time 和任
 
 普通 Java 协议由已准入 BootDex 执行；runtime 拥有受检资源/token/事件，audio 提供解码混音，
 session 拥有音频消费，frontend 只注入 HAL 输出。设备/解码工作线程不得直接执行 guest。
-短 SoundPool 音效可有界全量缓存；音乐以 OGG/MP3/WAV 增量窗口与每播放器独立游标解码，
-不缓存整首 PCM。复用固定 stb_vorbis/minimp3/WAV parser；MP3 后退 seek 允许线性重解码。
+短 SoundPool 音效可有界全量缓存；音乐以 OGG/MP3/WAV/MP4 增量窗口与每播放器独立游标解码，
+不缓存整首 PCM。OGG 用 stb_vorbis，MP3 和 MP4/M4A 用 FFmpeg，WAV 用 PCM parser。MP3 后退 seek 从流首重解码。
 每实例准备任务归 owner，reset/release/换源先取消并 join；资源经唯一 VFS lease，不反查 host 路径。
 AudioTrack STREAM 以构造 buffer 字节作可中断回压，等待释放全部 VM 锁，恢复后复验 owner。
 播放/clear/destroy/teardown 唤醒 writer；队列项上限只是内存护栏，不以重试或 sleep 伪造消费。
@@ -102,12 +102,12 @@ AudioTrack/MediaPlayer 按实例、SoundPool 按池保存 stream，stream gain �
 
 ### 决定
 
-独立 FFmpeg 构建仓库固定上游版本，裁剪 mov demuxer、h264/mpeg4/aac 解码及其必要依赖，
+独立 FFmpeg 构建仓库固定上游版本，按预编译清单裁剪 mov、mp3、ogg 等组件，
 不包含 protocol、encoder、muxer、filter、外部库或 GPL/nonfree 组件。
 预编译产物为单一 ogplay_ffmpeg 共享库与公共头、许可证、来源/配置/逐文件哈希清单，
 经 third_party/ffmpeg-prebuilt 固定浅 submodule 消费，CMake 校验后编译期直接链接。
 不按库名运行时探测，不镜像 FFmpeg 结构体；所有输入经自定义 AVIO 与拥有型来源读取。
-AUTO 在当前平台无包时构建无视频版本并给原因，ON 缺包则失败；启动校验版本与必要编码。
+当前平台缺 SDK 时 CMake 配置失败。运行时校验版本与必要的解码组件。
 VideoPlayer 保持拉模型、调用方 Clock 和有界队列；内部 worker 不回调 guest，退出先 join。
 未编入视频或音轨编码均明确抛错并按编码记账，不静默丢音轨、不伪造 completion。
 新增编码按实际命中扩充独立组件清单并重新发布包。

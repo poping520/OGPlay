@@ -110,7 +110,7 @@ OGPlay is built on many excellent open-source projects. Thanks to these projects
 | --- | --- |
 | Android runtime and ARM translation | [Android Open Source Project](https://source.android.com), [Dynarmic](https://git.eden-emu.dev/eden-emu/dynarmic) |
 | Graphics and windowing | [ANGLE](https://chromium.googlesource.com/angle/angle), [SDL](https://github.com/libsdl-org/SDL) |
-| Audio and video | [FFmpeg](https://ffmpeg.org), [minimp3](https://github.com/lieff/minimp3), [stb](https://github.com/nothings/stb) |
+| Audio and video | [FFmpeg](https://ffmpeg.org), [stb](https://github.com/nothings/stb) |
 | Texture decoding | [Compressonator](https://github.com/GPUOpen-Tools/compressonator), [PowerVR SDK](https://github.com/powervr-graphics/Native_SDK) |
 | Data processing | [SQLite](https://sqlite.org), [yyjson](https://github.com/ibireme/yyjson), [Boost](https://www.boost.org) |
 | Launcher interface | [webview](https://github.com/webview/webview), [Preact](https://preactjs.com), [three.js](https://threejs.org), [uPlot](https://github.com/leeoniya/uPlot), [SN Pro](https://github.com/supernotes/sn-pro) |

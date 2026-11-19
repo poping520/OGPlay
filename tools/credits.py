@@ -114,8 +114,6 @@ PROJECTS = [
       ("GNU LGPL 2.1", text("third_party/7zip/DOC/copying.txt")),
       ("unRAR License", text("third_party/7zip/DOC/unRarLicense.txt"))]),
     ("stb", "stb", "", "https://github.com/nothings/stb", "MIT OR Unlicense", [("stb", stb_license())]),
-    ("minimp3", "minimp3", "", "https://github.com/lieff/minimp3", "CC0-1.0",
-     [("minimp3", text("third_party/minimp3/LICENSE"))]),
     ("compressonator", "Compressonator", "", "https://github.com/GPUOpen-Tools/compressonator", "MIT",
      [("Compressonator", text("third_party/compressonator/LICENSE.txt"))]),
     ("powervr", "PowerVR SDK", "2b1bf2f1", "https://github.com/powervr-graphics/Native_SDK", "MIT",

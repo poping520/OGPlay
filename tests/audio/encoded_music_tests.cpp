@@ -11,6 +11,7 @@
 
 #include "ogplay/audio/encoded_music.h"
 #include "ogplay/audio/pcm_mix.h"
+#include "ogplay/video/ffmpeg_video_player.h"
 
 namespace {
 
@@ -104,11 +105,12 @@ TEST_CASE("encoded music restarts from zero after natural completion") {
 
 TEST_CASE("incremental music agrees with full decoding across blocks and seeks") {
     using namespace ogplay::audio;
-    for (const auto* name : {"short-vorbis.ogg", "short-mp3.mp3"}) {
+    const auto decoder = ogplay::video::MakeFfmpegAudioDecoder();
+    for (const auto* name : {"short-vorbis.ogg", "short-cbr-mp3.mp3"}) {
         CAPTURE(name);
         auto bytes = std::make_shared<const std::vector<std::byte>>(ReadSound(name));
-        const auto reference = DecodeEncodedAudio(*bytes);
-        EncodedAudioStream stream(bytes);
+        const auto reference = DecodeEncodedAudio(*bytes, decoder);
+        EncodedAudioStream stream(bytes, {}, decoder);
         REQUIRE(stream.Rate() == reference.sample_rate);
         REQUIRE(stream.Channels() == reference.channels);
         REQUIRE(stream.Frames() == reference.Frames());
@@ -126,13 +128,14 @@ TEST_CASE("incremental music agrees with full decoding across blocks and seeks")
         CHECK(stream.BufferedPcmBytes() <= 16384U);
         std::stop_source cancelled;
         cancelled.request_stop();
-        CHECK_THROWS(EncodedAudioStream(bytes, cancelled.get_token()));
+        CHECK_THROWS(EncodedAudioStream(bytes, cancelled.get_token(), decoder));
     }
 }
 
 TEST_CASE("music data source is consumed in bounded blocks without ReadAll") {
     using namespace ogplay::audio;
-    for (const auto* name : {"short-vorbis.ogg", "short-mp3.mp3"}) {
+    const auto decoder = ogplay::video::MakeFfmpegAudioDecoder();
+    for (const auto* name : {"short-vorbis.ogg", "short-cbr-mp3.mp3"}) {
         auto repeated = ReadSound(name);
         const auto part = repeated;
         while (repeated.size() < 256U * 1024U) {
@@ -141,8 +144,8 @@ TEST_CASE("music data source is consumed in bounded blocks without ReadAll") {
         auto source = std::make_shared<CountingSource>(std::move(repeated));
         std::stop_source cancelled;
         cancelled.request_stop();
-        CHECK_THROWS(EncodedAudioStream(source, cancelled.get_token()));
-        EncodedAudioStream stream(source);
+        CHECK_THROWS(EncodedAudioStream(source, cancelled.get_token(), decoder));
+        EncodedAudioStream stream(source, {}, decoder);
         CHECK(stream.Frames() > 0U);
         CHECK(source->maximum_request <= 64U * 1024U);
         CHECK(source->maximum_request < source->Size());
@@ -210,16 +213,17 @@ TEST_CASE("encoded music stream gains isolate mute without pausing playback") {
 
 TEST_CASE("long encoded music prepares without allocating the complete PCM song") {
     using namespace ogplay::audio;
-    const auto part = ReadSound("short-mp3.mp3");
-    const auto decoded = DecodeEncodedAudio(part);
-    constexpr std::size_t repeats = 1500;
+    const auto part = ReadSound("short-cbr-mp3.mp3");
+    const auto decoder = ogplay::video::MakeFfmpegAudioDecoder();
+    const auto decoded = DecodeEncodedAudio(part, decoder);
+    const auto repeats = kMaximumDecodedPcmBytes / (decoded.interleaved_samples.size() * sizeof(std::int16_t)) + 1;
     REQUIRE(decoded.interleaved_samples.size() * sizeof(std::int16_t) * repeats > kMaximumDecodedPcmBytes);
     std::vector<std::byte> encoded;
     encoded.reserve(part.size() * repeats);
     for (std::size_t i = 0; i < repeats; ++i) encoded.insert(encoded.end(), part.begin(), part.end());
     const auto bytes = encoded.size();
     REQUIRE(bytes < kMaximumEncodedAudioBytes);
-    EncodedMusicMixer mixer;
+    EncodedMusicMixer mixer(decoder);
     const auto player = mixer.Create();
     REQUIRE(mixer.SetEncoded(player, std::move(encoded)));
     REQUIRE(mixer.Prepare(player));

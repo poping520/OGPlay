@@ -13,9 +13,6 @@
   与卸载共享。
 - `DecodeOggVorbis`：从有界内存输入解码 Ogg Vorbis，事务发布拥有型 mono/stereo PCM16、
   采样率与帧数；使用仓库固定的 stb_vorbis 1.22（MIT 或 public-domain 双许可）。
-- `DecodeMp3`：用固定 CC0 minimp3 从有界内存输入逐帧解码，允许 ID3/非帧前缀，只接受
-  全流稳定的 mono/stereo PCM16；vendor commit、hash 与 fixture 来源见
-  `third_party/minimp3/README.md`。
 - `EncodedAudioSource`：统一 resid、APK entry、VFS path 与纯字节区间；`revision` 区分同路径
   替换，`lease` 标识已捕获的 FD 窗口。来源读取仍由上层注入，audio 模块不解析 APK/VFS。
 - `EncodedAudioDataSource`：窄拥有型接口只发布 `Size` 与带 `stop_token` 的 `ReadAt`；
@@ -24,7 +21,8 @@
   不缓存整首 PCM；SoundPool 仍用短音效全量缓存。音乐最多 16 实例，所持编码窗口总量
   128 MiB、单窗口 64 MiB；每 decoder PCM 块 16 KiB，Vorbis codec arena 上限 2 MiB。
   元数据准备在实例拥有的 jthread 中进行；每实例最多一个任务，不 detach，reset/release/
-  重设源先取消并 join；提交验证任务身份。MP3 准备只扫描帧头，后退 seek 重置解码器并
+  重设源先取消并 join；提交验证任务身份。MP3 准备扫描 demux 后的压缩帧时长并扣除 gapless
+  裁剪量，所得总帧数用于时长和播放边界。后退 seek 重置解码器并
   从头丢弃至目标帧，保持精确 PCM；不承诺常数时间 seek 或无欠载的实时性能。
   后续块解码失败停止对应音乐，通过 runtime 投递 MediaPlayer error，不停止其他音源。
 - `JavaSoundPoolMixer`：用注入的编码资源 loader 按 source 去重解码；独立 PoolId 隔离
@@ -38,9 +36,13 @@
   以及多 player 64-bit 累加后一次饱和。AudioTrack STREAM/STATIC 与 OpenSL buffer
   queue 使用不同 stop/clear 语义；STATIC 数据不被播放消费。
 - `DecodeWav`：解码有界 RIFF/WAVE PCM8/16 mono/stereo，拒绝压缩 WAVE。
-- `ExternalAudioDecoder`：识别文件偏移 4 处的 ISO BMFF `ftyp` 后，经集成层注入的 FFmpeg
-  解码器打开 MP4/M4A AAC，读取有界的交错 S16 PCM 块，支持回到流首。音频模块无需链接 video。
-- `DecodeEncodedAudio`：按魔数分派 OGG/WAV/MP3，SoundPool 的 MP4/M4A AAC 整段解码
+- `ExternalAudioDecoder`：生产由集成层注入 FFmpeg，用于 MP3 和 MP4/M4A AAC。读取有界的交错 S16
+  PCM 块并支持回到流首，audio 模块无需链接 video。MP3 支持 ID3v1/ID3v2，允许 ID3v1 前的无帧尾部填充，
+  并按 API 19 `GetMPEGAudioFrameSize` 的行为拒绝 free-format。
+  API 19 `MP3Extractor` / `XINGSeeker` 提供 encoder delay/padding，`AwesomePlayer` 的软件解码由
+  `OMXCodec` 的 `SkipCutBuffer` 裁剪，SoundPool 通过 `MediaPlayerService::decode` 共用播放解码链。
+  FFmpeg 的 MP3 解码显式启用自动 skip-samples 裁剪。
+- `DecodeEncodedAudio`：按魔数分派 Ogg Vorbis 和 WAV，SoundPool 的 MP3、MP4/M4A AAC 整段解码
   复用注入接口。解码失败携带封装及可识别的编码名，由 Android 集成层记录
   `android.media.audio_codec.<编码>`，无法识别编码时记录 `android.media.audio_container.unknown`。
 - M3/M6 定义对象表、PCM 队列、回调与媒体状态机。

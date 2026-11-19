@@ -9,7 +9,6 @@
 #include "ogplay/core/byte_order.h"
 #define STB_VORBIS_HEADER_ONLY
 #include "../../third_party/stb/stb_vorbis.c"
-#include "../../third_party/minimp3/minimp3.h"
 
 namespace ogplay::audio {
 namespace {
@@ -71,7 +70,7 @@ private:
 class EncodedAudioStream::Impl final {
 public:
     struct Close { void operator()(stb_vorbis* value) const { stb_vorbis_close(value); } };
-    enum class Kind { wav, vorbis, mp3, external };
+    enum class Kind { wav, vorbis, external };
 
     explicit Impl(std::shared_ptr<const EncodedAudioDataSource> input, const std::stop_token stop,
                   const ExternalAudioDecoder& decoder)
@@ -94,18 +93,15 @@ public:
                 container = "ogg";
                 codec = "vorbis";
                 OpenVorbis(stop, true);
-            } else if (LooksLikeMp4(header)) {
+            } else {
                 kind = Kind::external;
-                container = "mp4";
+                external_is_mp4 = LooksLikeMp4(header);
+                container = external_is_mp4 ? "mp4" : "mp3";
+                codec = external_is_mp4 ? "" : "mp3";
                 external = OpenExternalAudio(decoder, source, stop);
                 rate = external->Rate();
                 channels = external->Channels();
                 frames = external->Frames();
-            } else {
-                kind = Kind::mp3;
-                if (LooksLikeMp3(header)) container = codec = "mp3";
-                ScanMp3(stop);
-                mp3dec_init(&mp3);
             }
             if (!rate || !frames || stop.stop_requested())
                 throw std::invalid_argument("empty or cancelled music stream");
@@ -127,14 +123,6 @@ public:
                 throw std::runtime_error("truncated music source");
             done += got;
         }
-    }
-
-    void Fill(const std::uint64_t offset, std::vector<std::byte>& target,
-              const std::stop_token stop = {}) const {
-        if (offset >= source->Size()) { target.clear(); return; }
-        target.resize(static_cast<std::size_t>(std::min<std::uint64_t>(
-            kEncodedBlockBytes, source->Size() - offset)));
-        ReadExact(offset, target, stop);
     }
 
     void OpenWav(const std::stop_token stop) {
@@ -172,31 +160,6 @@ public:
         if (pcm_bytes % frame_bytes != 0U)
             throw std::invalid_argument("WAV PCM data is not frame aligned");
         frames = pcm_bytes / frame_bytes;
-    }
-
-    void ScanMp3(const std::stop_token stop) {
-        mp3dec_t decoder{};
-        mp3dec_init(&decoder);
-        std::vector<std::byte> buffer;
-        std::uint64_t offset{};
-        while (offset < source->Size()) {
-            if (stop.stop_requested()) throw std::runtime_error("music prepare cancelled");
-            Fill(offset, buffer, stop);
-            mp3dec_frame_info_t info{};
-            const auto decoded = mp3dec_decode_frame(
-                &decoder, reinterpret_cast<const std::uint8_t*>(buffer.data()),
-                static_cast<int>(buffer.size()), nullptr, &info);
-            if (info.frame_bytes <= 0) break;
-            offset += static_cast<std::size_t>(info.frame_bytes);
-            if (decoded == 0) continue;
-            if ((info.channels != 1 && info.channels != 2) || info.hz <= 0 ||
-                (rate && (rate != static_cast<std::uint32_t>(info.hz) ||
-                          channels != info.channels)))
-                throw std::invalid_argument("MP3 changes PCM format");
-            rate = static_cast<std::uint32_t>(info.hz);
-            channels = static_cast<std::uint8_t>(info.channels);
-            frames += static_cast<std::size_t>(decoded);
-        }
     }
 
     void RefillVorbis(const std::stop_token stop) {
@@ -291,33 +254,13 @@ public:
         }
     }
 
-    void DecodeMp3Block() {
-        for (;;) {
-            if (mp3_cursor >= source->Size())
-                throw std::runtime_error("truncated MP3 music");
-            Fill(mp3_cursor, codec_buffer);
-            mp3dec_frame_info_t info{};
-            const auto decoded = mp3dec_decode_frame(
-                &mp3, reinterpret_cast<const std::uint8_t*>(codec_buffer.data()),
-                static_cast<int>(codec_buffer.size()), pcm.data(), &info);
-            if (info.frame_bytes <= 0)
-                throw std::runtime_error("truncated MP3 music");
-            mp3_cursor += static_cast<std::size_t>(info.frame_bytes);
-            if (decoded == 0) continue;
-            if (info.hz != static_cast<int>(rate) || info.channels != channels)
-                throw std::runtime_error("MP3 format changed while decoding");
-            begin = next_frame;
-            count = static_cast<std::size_t>(decoded);
-            next_frame += count;
-            return;
-        }
-    }
-
     void DecodeExternalBlock(std::stop_token stop) {
         begin = next_frame;
         const auto remaining = std::min(pcm.size() / channels, frames - begin);
         count = external->ReadPcm(std::span(pcm).first(remaining * channels), stop);
-        if (count == 0 || count > remaining) throw AudioDecodeError("mp4", {}, "truncated decoded PCM");
+        if (count == 0 || count > remaining)
+            throw AudioDecodeError(external_is_mp4 ? "mp4" : "mp3", external_is_mp4 ? "" : "mp3",
+                                   "truncated decoded PCM");
         next_frame += count;
     }
 
@@ -342,15 +285,13 @@ public:
             if (frame < begin) {
                 begin = count = next_frame = 0U;
                 if (kind == Kind::vorbis) OpenVorbis({}, false);
-                else if (kind == Kind::external)
+                else
                     external->Rewind();
-                else { mp3_cursor = 0U; mp3dec_init(&mp3); }
             }
             do {
                 if (kind == Kind::vorbis) DecodeVorbisBlock();
-                else if (kind == Kind::external)
+                else
                     DecodeExternalBlock(stop);
-                else DecodeMp3Block();
             } while (frame >= begin + count);
         }
         const auto index = (frame - begin) * channels;
@@ -359,14 +300,12 @@ public:
 
     std::shared_ptr<const EncodedAudioDataSource> source;
     std::unique_ptr<ExternalAudioStream> external;
-    Kind kind{Kind::mp3};
+    Kind kind{Kind::external};
+    bool external_is_mp4{};
     std::unique_ptr<stb_vorbis, Close> vorbis;
     std::vector<std::byte> vorbis_buffer;
-    std::vector<std::byte> codec_buffer;
     std::size_t vorbis_begin{};
     std::uint64_t vorbis_cursor{};
-    mp3dec_t mp3{};
-    std::uint64_t mp3_cursor{};
     std::array<std::int16_t, kAudioPcmBlockSamples> pcm{};
     std::uint64_t pcm_offset{};
     std::size_t pcm_bytes{};
@@ -376,8 +315,8 @@ public:
     std::size_t frames{}, begin{}, count{}, next_frame{};
 };
 
-EncodedAudioStream::EncodedAudioStream(Bytes bytes, const std::stop_token stop)
-    : EncodedAudioStream(std::make_shared<MemorySource>(std::move(bytes)), stop) {}
+EncodedAudioStream::EncodedAudioStream(Bytes bytes, const std::stop_token stop, const ExternalAudioDecoder& decoder)
+    : EncodedAudioStream(std::make_shared<MemorySource>(std::move(bytes)), stop, decoder) {}
 
 EncodedAudioStream::EncodedAudioStream(std::shared_ptr<const EncodedAudioDataSource> source, const std::stop_token stop,
                                        const ExternalAudioDecoder& decoder)

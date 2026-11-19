@@ -37,7 +37,6 @@ android {
                 arguments += listOf(
                     "-DANDROID_STL=c++_shared",
                     "-DOGPLAY_BUILD_TESTS=OFF",
-                    "-DOGPLAY_ENABLE_FFMPEG=ON",
                     "-DOGPLAY_RUNTIME_DATA_DIR=$stagedAssets/data",
                 )
                 targets += listOf("ogplay_android", "ogplay_launcher", "ogplay_stage_data")

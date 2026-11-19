@@ -9,9 +9,8 @@
 
 namespace ogplay::video {
 
-// True when this build links the ogplay_ffmpeg SDK and its startup self-check
-// passed: runtime and header versions agree and the mov demuxer plus the
-// h264/mpeg4/aac decoders are present (ADR-0136). Stable per process.
+// True when the runtime version matches its headers and the required audio
+// and video components are present (ADR-0136). Stable per process.
 [[nodiscard]] bool FfmpegAvailable();
 
 // Human-readable reason when FfmpegAvailable() is false; empty otherwise.
@@ -30,8 +29,8 @@ namespace ogplay::video {
     std::shared_ptr<const VideoDataSource> source);
 [[nodiscard]] VideoSourcePlayerFactory MakeFfmpegVideoSourcePlayerFactory();
 
-// Empty when FFmpeg is unavailable. Accepts ISO BMFF with an audio track and
-// no video track other than attached artwork.
+// Accepts MP3 and audio-only ISO BMFF (attached artwork is allowed).
+// Opening a stream reports a failed SDK self-check as AudioDecodeError.
 [[nodiscard]] audio::ExternalAudioDecoder MakeFfmpegAudioDecoder();
 
 }  // namespace ogplay::video

@@ -89,13 +89,17 @@ TEST_CASE("SoundPool mixer keeps unavailable resources explicit") {
     CHECK(mixer.ActiveVoiceCount() == 0U);
 }
 
-TEST_CASE("SoundPool loads a pure audio M4A sample") {
-    auto decoder = ogplay::video::MakeFfmpegAudioDecoder();
-    if (!decoder) return;
-    const auto bytes = ReadSound("short-aac.m4a");
+TEST_CASE("SoundPool loads pure audio samples through FFmpeg") {
+    std::vector<std::byte> bytes;
+    SUBCASE("M4A") {
+        bytes = ReadSound("short-aac.m4a");
+    }
+    SUBCASE("MP3") {
+        bytes = ReadSound("short-cbr-mp3.mp3");
+    }
     REQUIRE_FALSE(bytes.empty());
     ogplay::audio::JavaSoundPoolMixer mixer([&](const ogplay::audio::EncodedAudioSource&) { return bytes; },
-                                            std::move(decoder));
+                                            ogplay::video::MakeFfmpegAudioDecoder());
     const auto pool = mixer.CreatePool(1);
     CHECK(mixer.LoadSample(pool, ogplay::audio::EncodedAudioSource::Resource(1)) != 0);
     CHECK(mixer.LoadedResourceCount() == 1);

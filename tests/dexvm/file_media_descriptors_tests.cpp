@@ -167,8 +167,6 @@ TEST_CASE("MediaPlayer FD lease survives close and path replacement") {
 
 TEST_CASE("MediaPlayer streams M4A PCM and loops back to its first samples") {
     auto decoder = ogplay::video::MakeFfmpegAudioDecoder();
-    if (!decoder) return;
-
     ogplay::audio::EncodedMusicMixer music(std::move(decoder));
     FileVm vm;
     VmThreadRuntime threads(vm.interpreter);
@@ -198,26 +196,39 @@ TEST_CASE("MediaPlayer streams M4A PCM and loops back to its first samples") {
     vm.CallOn(player, "release", "()V");
 }
 
-TEST_CASE("MediaPlayer reports an unrecognized audio container in IOException and the ledger") {
+TEST_CASE("MediaPlayer reports unsupported audio in IOException and the ledger") {
     ogplay::audio::EncodedMusicMixer music(ogplay::video::MakeFfmpegAudioDecoder());
     FileVm vm;
     VmThreadRuntime threads(vm.interpreter);
     vm.context->threads = &threads;
     vm.context->encoded_music = &music;
-    vm.vfs.CreateDirectory("/sdcard");
-    vm.JavaWrite("/sdcard/unsupported", "GIF89a unknown audio container");
+    const char* source;
+    const char* message;
+    const char* capability;
+    SUBCASE("unrecognized container") {
+        vm.vfs.CreateDirectory("/sdcard");
+        vm.JavaWrite("/sdcard/unsupported", "GIF89a unknown audio container");
+        source = "/sdcard/unsupported";
+        message = "unrecognized audio container";
+        capability = "android.media.audio_container.unknown";
+    }
+    SUBCASE("free-format MP3") {
+        vm.vfs.MountHostDirectory("/media", std::filesystem::path{OGPLAY_SOURCE_DIR} / "tests/fixtures/audio");
+        source = "/media/short-mp3.mp3";
+        message = "unsupported audio: mp3/mp3";
+        capability = "android.media.audio_codec.mp3";
+    }
     const auto player = vm.interpreter.NewIntrinsicInstance("Landroid/media/MediaPlayer;");
     const auto roots = vm.interpreter.ProtectReferences(std::array{player});
     vm.CallOn(player, "<init>", "()V");
-    vm.CallOn(player, "setDataSource", "(Ljava/lang/String;)V",
-              {VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/unsupported"))});
+    vm.CallOn(player, "setDataSource", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8(source))});
     const auto failure = vm.CallOnOutcome(player, "prepare", "()V");
     REQUIRE(failure.exception.IsValid());
     CHECK(vm.linker.Class(failure.exception_class).descriptor == "Ljava/io/IOException;");
-    CHECK(failure.exception_message.find("unrecognized audio container") != std::string::npos);
+    CHECK(failure.exception_message.find(message) != std::string::npos);
     const auto hits = vm.ledger.Unimplemented();
     REQUIRE(hits.size() == 1);
-    CHECK(hits.front().id == "android.media.audio_container.unknown");
+    CHECK(hits.front().id == capability);
     vm.CallOn(player, "release", "()V");
 }
 

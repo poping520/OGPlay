@@ -146,7 +146,7 @@ ROM MediaPlayer 保存参数、Listener 与 Handler，native transport 管理阶
 reset 清理旧待发事件。setDisplay/setSurface 绑定受检 ROM Surface，
 而不是让视频直接覆盖宿主屏幕。
 
-视频使用编译期链接的裁剪版 ogplay_ffmpeg。
+视频和纯音频 MP3、MP4/M4A 共用编译期必选的裁剪版 ogplay_ffmpeg。
 所有输入走自定义 AVIO，即把 FFmpeg 的读取操作接到 Size/ReadAt 来源上；
 运行库不提供任意网络 protocol。缺 codec 报告具体轨道错误，
 不会静默去掉音轨后宣称完整播放。

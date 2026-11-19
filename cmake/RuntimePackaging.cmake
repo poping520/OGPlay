@@ -39,9 +39,6 @@ endfunction()
 # Places the ogplay_ffmpeg runtime beside an executable; macOS resolves its
 # @rpath install name through @loader_path.
 function(ogplay_stage_ffmpeg_runtime target)
-    if(NOT OGPLAY_FFMPEG_FOUND)
-        return()
-    endif()
     get_filename_component(_ogplay_ffmpeg_name "${OGPLAY_FFMPEG_RUNTIME}" NAME)
     add_custom_command(TARGET ${target} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -134,10 +131,8 @@ if(TARGET ogplay AND APPLE)
     set(_ogplay_app "$<TARGET_BUNDLE_DIR:ogplay>")
     set(_ogplay_frameworks
         "$<TARGET_FILE:ogplaycore>" "$<TARGET_SONAME_FILE:SDL3::SDL3>" "$<TARGET_FILE:ogplay_7z>"
-        "${OGPLAY_ANGLE_RUNTIME_DIR}/libEGL.dylib" "${OGPLAY_ANGLE_RUNTIME_DIR}/libGLESv2.dylib")
-    if(OGPLAY_FFMPEG_FOUND)
-        list(APPEND _ogplay_frameworks "${OGPLAY_FFMPEG_RUNTIME}")
-    endif()
+        "${OGPLAY_ANGLE_RUNTIME_DIR}/libEGL.dylib" "${OGPLAY_ANGLE_RUNTIME_DIR}/libGLESv2.dylib"
+        "${OGPLAY_FFMPEG_RUNTIME}")
     add_custom_target(ogplay_bundle ALL
         COMMAND ${CMAKE_COMMAND} -E make_directory "${_ogplay_app}/Contents/Frameworks"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_ogplay_frameworks} "${_ogplay_app}/Contents/Frameworks"
@@ -173,14 +168,12 @@ if(OGPLAY_ENABLE_ANGLE)
             COMPONENT Runtime FILES_MATCHING PATTERN "*.so*")
     endif()
 endif()
-if(OGPLAY_FFMPEG_FOUND)
-    if(WIN32)
-        set(_ogplay_ffmpeg_install_dir ${CMAKE_INSTALL_BINDIR})
-    else()
-        set(_ogplay_ffmpeg_install_dir ${CMAKE_INSTALL_LIBDIR})
-    endif()
-    install(FILES "${OGPLAY_FFMPEG_RUNTIME}" DESTINATION ${_ogplay_ffmpeg_install_dir} COMPONENT Runtime)
+if(WIN32)
+    set(_ogplay_ffmpeg_install_dir ${CMAKE_INSTALL_BINDIR})
+else()
+    set(_ogplay_ffmpeg_install_dir ${CMAKE_INSTALL_LIBDIR})
 endif()
+install(FILES "${OGPLAY_FFMPEG_RUNTIME}" DESTINATION ${_ogplay_ffmpeg_install_dir} COMPONENT Runtime)
 
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES data/credits.json

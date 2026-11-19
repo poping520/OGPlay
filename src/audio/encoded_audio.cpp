@@ -7,7 +7,6 @@
 #include <stdexcept>
 
 #include "ogplay/audio/encoded_audio_stream.h"
-#include "ogplay/audio/mp3.h"
 #include "ogplay/audio/wav.h"
 
 namespace ogplay::audio {
@@ -52,19 +51,29 @@ bool LooksLikeMp4(std::span<const std::byte> encoded) {
 }
 
 bool LooksLikeMp3(std::span<const std::byte> encoded) {
-    return encoded.size() >= 3 &&
-           ((encoded[0] == std::byte{'I'} && encoded[1] == std::byte{'D'} && encoded[2] == std::byte{'3'}) ||
-            (encoded[0] == std::byte{0xff} && (encoded[1] & std::byte{0xe6}) == std::byte{0xe2}));
+    if (encoded.size() >= 3 && encoded[0] == std::byte{'I'} && encoded[1] == std::byte{'D'} &&
+        encoded[2] == std::byte{'3'})
+        return true;
+    const auto limit = std::min(encoded.size(), kMp3ProbeBytes);
+    for (std::size_t offset = 0; offset + 4 <= limit; ++offset) {
+        const auto version_layer = std::to_integer<unsigned>(encoded[offset + 1]);
+        const auto bitrate_rate = std::to_integer<unsigned>(encoded[offset + 2]);
+        const auto mode_emphasis = std::to_integer<unsigned>(encoded[offset + 3]);
+        if (encoded[offset] == std::byte{0xff} && (version_layer & 0xe6) == 0xe2 && (version_layer & 0x18) != 0x08 &&
+            (bitrate_rate & 0xf0) != 0xf0 && (bitrate_rate & 0x0c) != 0x0c && (mode_emphasis & 0x03) != 0x02)
+            return true;
+    }
+    return false;
 }
 
 std::unique_ptr<ExternalAudioStream> OpenExternalAudio(const ExternalAudioDecoder& decoder,
                                                        std::shared_ptr<const EncodedAudioDataSource> source,
                                                        std::stop_token stop) {
-    if (!decoder) throw AudioDecodeError("mp4", {}, "external decoder unavailable");
+    if (!decoder) throw AudioDecodeError({}, {}, "external decoder unavailable");
     auto stream = decoder(std::move(source), stop);
     if (!stream || stream->Rate() < 4000 || stream->Rate() > 192000 || !stream->Frames() ||
         (stream->Channels() != 1 && stream->Channels() != 2)) {
-        throw AudioDecodeError("mp4", {}, "invalid audio stream metadata");
+        throw AudioDecodeError({}, {}, "invalid audio stream metadata");
     }
     return stream;
 }
@@ -100,36 +109,36 @@ Pcm16Audio DecodeEncodedAudio(const std::span<const std::byte> encoded, const Ex
         throw std::invalid_argument(
             "encoded audio is empty or exceeds the decode limit");
     }
-    if (LooksLikeMp4(encoded)) {
-        auto stream = OpenExternalAudio(decoder, std::make_shared<SpanAudioSource>(encoded));
-        Pcm16Audio result;
-        result.sample_rate = stream->Rate();
-        result.channels = stream->Channels();
-        const auto maximum_frames = kMaximumDecodedPcmBytes / sizeof(std::int16_t) / result.channels;
-        if (stream->Frames() > maximum_frames) throw AudioDecodeError("mp4", {}, "decoded PCM exceeds the byte budget");
-        std::array<std::int16_t, kAudioPcmBlockSamples> block{};
-        while (result.Frames() < stream->Frames()) {
-            const auto frames = std::min(block.size() / result.channels, stream->Frames() - result.Frames());
-            const auto samples = std::span(block).first(frames * result.channels);
-            const auto read = stream->ReadPcm(samples, {});
-            if (read == 0 || read > frames) throw AudioDecodeError("mp4", {}, "truncated decoded PCM");
-            const auto decoded = samples.first(read * result.channels);
-            result.interleaved_samples.insert(result.interleaved_samples.end(), decoded.begin(), decoded.end());
-        }
-        return result;
-    }
     const bool ogg = LooksLikeOgg(encoded);
     const bool wav = LooksLikeWav(encoded);
     try {
         if (ogg) return DecodeOggVorbis(encoded);
         if (wav) return DecodeWav(encoded);
-        return DecodeMp3(encoded);
     } catch (const std::runtime_error& error) {
         if (ogg) throw AudioDecodeError("ogg", "vorbis", error.what());
-        if (wav) throw AudioDecodeError("wav", "pcm", error.what());
-        if (LooksLikeMp3(encoded)) throw AudioDecodeError("mp3", "mp3", error.what());
-        throw AudioDecodeError({}, {}, error.what());
+        throw AudioDecodeError("wav", "pcm", error.what());
     }
+
+    auto stream = OpenExternalAudio(decoder, std::make_shared<SpanAudioSource>(encoded));
+    const bool mp4 = LooksLikeMp4(encoded);
+    const auto container = mp4 ? "mp4" : "mp3";
+    const auto codec = mp4 ? "" : "mp3";
+    Pcm16Audio result;
+    result.sample_rate = stream->Rate();
+    result.channels = stream->Channels();
+    const auto maximum_frames = kMaximumDecodedPcmBytes / sizeof(std::int16_t) / result.channels;
+    if (stream->Frames() > maximum_frames)
+        throw AudioDecodeError(container, codec, "decoded PCM exceeds the byte budget");
+    std::array<std::int16_t, kAudioPcmBlockSamples> block{};
+    while (result.Frames() < stream->Frames()) {
+        const auto frames = std::min(block.size() / result.channels, stream->Frames() - result.Frames());
+        const auto samples = std::span(block).first(frames * result.channels);
+        const auto read = stream->ReadPcm(samples, {});
+        if (read == 0 || read > frames) throw AudioDecodeError(container, codec, "truncated decoded PCM");
+        const auto decoded = samples.first(read * result.channels);
+        result.interleaved_samples.insert(result.interleaved_samples.end(), decoded.begin(), decoded.end());
+    }
+    return result;
 }
 
 }  // namespace ogplay::audio

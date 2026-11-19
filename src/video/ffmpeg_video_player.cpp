@@ -5,6 +5,7 @@
 #include <array>
 #include <cerrno>
 #include <cstdio>
+#include <cstring>
 #include <deque>
 #include <fstream>
 #include <limits>
@@ -19,6 +20,7 @@ extern "C" {
 #include <libavutil/channel_layout.h>
 #include <libavutil/error.h>
 #include <libavutil/frame.h>
+#include <libavutil/intreadwrite.h>
 #include <libavutil/log.h>
 #include <libavutil/mem.h>
 #include <libavutil/pixdesc.h>
@@ -37,6 +39,7 @@ constexpr std::size_t kVideoBackpressureBytes = 192U * 1024U * 1024U;
 constexpr std::size_t kVideoBackpressureThreshold = 48U;
 constexpr std::size_t kMaxBufferedPcmSamples = 8U * 1024U * 1024U;
 constexpr int kAvioBufferSize = 32 * 1024;
+constexpr int kId3v1TagBytes = 128;
 
 [[nodiscard]] std::string AvError(const int code) {
     std::array<char, AV_ERROR_MAX_STRING_SIZE> text{};
@@ -76,6 +79,12 @@ const SelfCheck& FfmpegSelfCheck() {
         }
         if (av_find_input_format("mov") == nullptr)
             return {false, "ogplay_ffmpeg lacks the mov demuxer"};
+        if (av_find_input_format("mp3") == nullptr) return {false, "ogplay_ffmpeg lacks the mp3 demuxer"};
+        if (avcodec_find_decoder_by_name("mp3float") == nullptr)
+            return {false, "ogplay_ffmpeg lacks the mp3float decoder"};
+        auto* parser = av_parser_init(AV_CODEC_ID_MP3);
+        if (parser == nullptr) return {false, "ogplay_ffmpeg cannot initialize the MPEG audio parser"};
+        av_parser_close(parser);
         return {true, {}};
     }();
     return result;
@@ -248,15 +257,19 @@ public:
     void Rewind() override;
 
 private:
-    void OpenStreams();
+    void OpenStreams(const AVInputFormat* input = nullptr);
+    [[nodiscard]] const AVInputFormat* FindAudioInput();
     void OpenAudioOnly();
+    [[nodiscard]] std::int64_t CountMp3Samples(int rate);
+    [[nodiscard]] bool IsMp3Trailer(const AVPacket& packet) const;
+    void RewindAudio();
     [[nodiscard]] std::uint64_t SourceSize() const noexcept;
     static int ReadSource(void* opaque, std::uint8_t* destination, int size);
     static std::int64_t SeekSource(void* opaque, std::int64_t offset, int whence);
     [[nodiscard]] static const AVCodec* RequireDecoder(const AVStream* stream,
                                                        const char* kind);
-    [[nodiscard]] static AVCodecContext* OpenCodec(const AVCodecParameters* params,
-                                                   const AVCodec* decoder);
+    [[nodiscard]] static AVCodecContext* OpenCodec(const AVCodecParameters* params, const AVCodec* decoder,
+                                                   bool trim_mp3 = false);
     void ConfigureResampler();
     [[nodiscard]] std::int64_t FramePtsMs(const AVFrame* frame,
                                           AVRational time_base,
@@ -307,6 +320,7 @@ private:
     bool audio_eof_ = false;
     std::int64_t last_position_ms_ = -1;
     std::size_t audio_frames_{};
+    std::string_view audio_container_;
     std::string audio_codec_name_;
     std::optional<std::int64_t> first_audio_pts_;
 };
@@ -327,12 +341,12 @@ FfmpegVideoPlayer::~FfmpegVideoPlayer() { ClearDecodeState(); }
 
 FfmpegVideoPlayer::FfmpegVideoPlayer(std::shared_ptr<const audio::EncodedAudioDataSource> source, std::stop_token stop)
     : audio_source_(std::move(source)), source_stop_(stop) {
-    if (!audio_source_) throw audio::AudioDecodeError("mp4", {}, "audio data source is null");
     try {
-        OpenStreams();
-    } catch (const VideoPlayerError& error) {
+        const auto* input = FindAudioInput();
+        OpenStreams(input);
+    } catch (const std::exception& error) {
         ClearDecodeState();
-        throw audio::AudioDecodeError("mp4", audio_codec_name_, error.what());
+        throw audio::AudioDecodeError(audio_container_, audio_codec_name_, error.what());
     } catch (...) {
         ClearDecodeState();
         throw;
@@ -364,13 +378,14 @@ const AVCodec* FfmpegVideoPlayer::RequireDecoder(const AVStream* stream,
     return decoder;
 }
 
-AVCodecContext* FfmpegVideoPlayer::OpenCodec(const AVCodecParameters* params,
-                                             const AVCodec* decoder) {
+AVCodecContext* FfmpegVideoPlayer::OpenCodec(const AVCodecParameters* params, const AVCodec* decoder, bool trim_mp3) {
     AVCodecContext* codec = avcodec_alloc_context3(decoder);
     if (codec == nullptr) {
         throw VideoPlayerError("ffmpeg codec context allocation failed");
     }
     int rc = avcodec_parameters_to_context(codec, params);
+    // API 19's software PCM path applies MP3 encoder delay and padding.
+    if (trim_mp3) codec->flags2 &= ~AV_CODEC_FLAG2_SKIP_MANUAL;
     if (rc >= 0) rc = avcodec_open2(codec, decoder, nullptr);
     if (rc < 0) {
         avcodec_free_context(&codec);
@@ -439,7 +454,33 @@ std::int64_t FfmpegVideoPlayer::SeekSource(void* opaque,
     return result;
 }
 
-void FfmpegVideoPlayer::OpenStreams() {
+const AVInputFormat* FfmpegVideoPlayer::FindAudioInput() {
+    if (!audio_source_) throw VideoPlayerError("audio data source is null");
+    std::array<std::byte, audio::kMp3ProbeBytes> header;
+    auto bytes = std::span(header).first(std::min<std::uint64_t>(SourceSize(), header.size()));
+    std::size_t done = 0;
+    while (done < bytes.size()) {
+        if (source_stop_.stop_requested()) throw VideoPlayerError("audio open cancelled");
+        const auto count = audio_source_->ReadAt(done, bytes.subspan(done), source_stop_);
+        if (count == 0 || count > bytes.size() - done) throw VideoPlayerError("could not read audio header");
+        done += count;
+    }
+    const char* name;
+    if (audio::LooksLikeMp4(bytes)) {
+        audio_container_ = "mp4";
+        name = "mov";
+    } else if (audio::LooksLikeMp3(bytes)) {
+        audio_container_ = "mp3";
+        audio_codec_name_ = "mp3";
+        name = "mp3";
+    } else {
+        throw VideoPlayerError("expected ISO BMFF or MPEG Layer III audio");
+    }
+    if (const auto& check = FfmpegSelfCheck(); !check.ok) throw VideoPlayerError("ffmpeg unavailable: " + check.reason);
+    return av_find_input_format(name);
+}
+
+void FfmpegVideoPlayer::OpenStreams(const AVInputFormat* input) {
     auto* buffer = static_cast<unsigned char*>(av_malloc(kAvioBufferSize));
     if (buffer == nullptr) throw VideoPlayerError("ffmpeg IO buffer allocation failed");
     avio_ = avio_alloc_context(buffer, kAvioBufferSize, 0, this, &ReadSource, nullptr,
@@ -452,9 +493,7 @@ void FfmpegVideoPlayer::OpenStreams() {
     if (format_ == nullptr) throw VideoPlayerError("ffmpeg format allocation failed");
     format_->pb = avio_;
     format_->flags |= AVFMT_FLAG_CUSTOM_IO;
-    const AVInputFormat* input = nullptr;
     if (audio_source_) {
-        input = av_find_input_format("mov");
         format_->interrupt_callback = {[](void* opaque) {
                                            return static_cast<int>(
                                                static_cast<FfmpegVideoPlayer*>(opaque)->source_stop_.stop_requested());
@@ -516,6 +555,11 @@ void FfmpegVideoPlayer::OpenStreams() {
 }
 
 void FfmpegVideoPlayer::OpenAudioOnly() {
+    const bool mp3 = audio_container_ == "mp3";
+    if (mp3) {
+        if (const int rc = avformat_find_stream_info(format_, nullptr); rc < 0)
+            throw VideoPlayerError("ffmpeg cannot read MP3 stream info: " + AvError(rc));
+    }
     for (unsigned i = 0; i < format_->nb_streams; ++i) {
         const auto* stream = format_->streams[i];
         if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
@@ -528,20 +572,56 @@ void FfmpegVideoPlayer::OpenAudioOnly() {
     const auto* stream = format_->streams[audio_stream_];
     if (stream->codecpar->codec_id != AV_CODEC_ID_NONE)
         audio_codec_name_ = avcodec_get_name(stream->codecpar->codec_id);
-    audio_codec_ = OpenCodec(stream->codecpar, RequireDecoder(stream, "audio"));
+    audio_codec_ = OpenCodec(stream->codecpar, RequireDecoder(stream, "audio"), mp3);
     const auto rate = audio_codec_->sample_rate;
     const auto channels = audio_codec_->ch_layout.nb_channels;
     if (rate < 4000 || rate > 192000 || channels < 1)
         throw VideoPlayerError("invalid audio sample rate or channel count");
     const AVRational samples{1, rate};
-    const auto duration = stream->duration > 0 ? av_rescale_q(stream->duration, stream->time_base, samples)
-                                               : av_rescale_q(format_->duration, AVRational{1, AV_TIME_BASE}, samples);
+    const auto duration = mp3 ? CountMp3Samples(rate)
+                          : stream->duration > 0
+                              ? av_rescale_q(stream->duration, stream->time_base, samples)
+                              : av_rescale_q(format_->duration, AVRational{1, AV_TIME_BASE}, samples);
     if (duration <= 0 || duration > 4LL * 60 * 60 * rate) throw VideoPlayerError("invalid audio duration");
     audio_frames_ = static_cast<std::size_t>(duration);
     audio_time_base_ = stream->time_base;
     metadata_.audio_sample_rate = static_cast<std::uint32_t>(rate);
     metadata_.audio_channels = static_cast<std::uint8_t>(std::min(channels, 2));
     ConfigureResampler();
+    if (mp3) RewindAudio();
+}
+
+std::int64_t FfmpegVideoPlayer::CountMp3Samples(int rate) {
+    // Use parsed frame durations and the same gapless side data as the decoder.
+    // Bitrate-based estimates cannot bound reads or seeks to the actual PCM end.
+    const AVRational samples{1, rate};
+    const auto time_base = format_->streams[audio_stream_]->time_base;
+    std::int64_t frames = 0;
+    int rc;
+    while (!source_stop_.stop_requested() && (rc = av_read_frame(format_, packet_)) >= 0) {
+        if (packet_->stream_index == audio_stream_ && !IsMp3Trailer(*packet_)) {
+            if (packet_->duration <= 0) throw VideoPlayerError("MP3 packet has no duration");
+            frames += av_rescale_q(packet_->duration, time_base, samples);
+            std::size_t size = 0;
+            const auto* skip = av_packet_get_side_data(packet_, AV_PKT_DATA_SKIP_SAMPLES, &size);
+            if (skip && size >= 10) frames -= static_cast<std::int64_t>(AV_RL32(skip)) + AV_RL32(skip + 4);
+        }
+        av_packet_unref(packet_);
+    }
+    if (source_stop_.stop_requested()) throw VideoPlayerError("MP3 frame scan cancelled");
+    if (rc != AVERROR_EOF) throw VideoPlayerError("ffmpeg MP3 frame scan failed: " + AvError(rc));
+    return frames;
+}
+
+bool FfmpegVideoPlayer::IsMp3Trailer(const AVPacket& packet) const {
+    if (audio_container_ != "mp3" || packet.size < kId3v1TagBytes || packet.pos < 0 ||
+        static_cast<std::uint64_t>(packet.pos) + static_cast<std::uint64_t>(packet.size) != SourceSize())
+        return false;
+    // The MPEG parser drops an ID3v1 tag at flush only if it starts the packet.
+    // A few bytes between the last frame and the tag can leave both in a packet.
+    const auto prefix_size = static_cast<std::size_t>(packet.size - kId3v1TagBytes);
+    const auto prefix = std::as_bytes(std::span(packet.data, prefix_size));
+    return std::memcmp(packet.data + prefix_size, "TAG", 3) == 0 && !audio::LooksLikeMp3(prefix);
 }
 
 std::int64_t FfmpegVideoPlayer::FramePtsMs(const AVFrame* frame,
@@ -599,6 +679,10 @@ void FfmpegVideoPlayer::SendVideoPacket(const AVPacket* packet) {
 
 void FfmpegVideoPlayer::AppendPcm(const AVFrame* frame) {
     const auto channels = static_cast<std::size_t>(metadata_.audio_channels);
+    if (audio_container_ == "mp3" &&
+        (frame->sample_rate != static_cast<int>(Rate()) || frame->ch_layout.nb_channels != Channels() ||
+         frame->format != audio_codec_->sample_fmt))
+        throw VideoPlayerError("MP3 format changed while decoding");
     const auto limit = audio_source_ ? audio::kAudioPcmBlockSamples : kMaxBufferedPcmSamples;
     if (audio_source_ && (frame->nb_samples < 0 || static_cast<std::size_t>(frame->nb_samples) > limit / channels))
         throw VideoPlayerError("ffmpeg audio frame exceeds PCM block budget");
@@ -686,6 +770,10 @@ bool FfmpegVideoPlayer::ReadAndRoutePacket() {
             return true;
         }
         if (index == audio_stream_) {
+            if (IsMp3Trailer(*packet_)) {
+                av_packet_unref(packet_);
+                continue;
+            }
             if (audio_source_ && !first_audio_pts_) {
                 first_audio_pts_ = packet_->pts == AV_NOPTS_VALUE ? 0 : packet_->pts;
             }
@@ -782,19 +870,27 @@ std::size_t FfmpegVideoPlayer::ReadPcm(std::span<std::int16_t> interleaved, std:
         if (stop.stop_requested()) throw VideoPlayerError("audio read cancelled");
         return ReadPcm(interleaved);
     } catch (const VideoPlayerError& error) {
-        throw audio::AudioDecodeError("mp4", audio_codec_name_, error.what());
+        throw audio::AudioDecodeError(audio_container_, audio_codec_name_, error.what());
     }
 }
 
 void FfmpegVideoPlayer::Rewind() {
     source_stop_ = {};
+    try {
+        RewindAudio();
+    } catch (const VideoPlayerError& error) {
+        throw audio::AudioDecodeError(audio_container_, audio_codec_name_, error.what());
+    }
+}
+
+void FfmpegVideoPlayer::RewindAudio() {
     // Include AAC priming packets that precede the presentation timeline.
-    const auto timestamp = first_audio_pts_.value_or(0);
+    const auto timestamp = audio_container_ == "mp3" ? 0 : first_audio_pts_.value_or(0);
     if (const int rc = av_seek_frame(format_, audio_stream_, timestamp, AVSEEK_FLAG_BACKWARD); rc < 0)
-        throw audio::AudioDecodeError("mp4", audio_codec_name_, "rewind failed: " + AvError(rc));
+        throw VideoPlayerError("ffmpeg audio rewind failed: " + AvError(rc));
     avcodec_flush_buffers(audio_codec_);
     swr_close(swr_);
-    if (swr_init(swr_) < 0) throw audio::AudioDecodeError("mp4", audio_codec_name_, "resampler reset failed");
+    if (swr_init(swr_) < 0) throw VideoPlayerError("ffmpeg audio resampler reset failed");
     pcm_buffer_.clear();
     demux_eof_ = false;
     audio_eof_ = false;
@@ -853,7 +949,6 @@ VideoSourcePlayerFactory MakeFfmpegVideoSourcePlayerFactory() {
 }
 
 audio::ExternalAudioDecoder MakeFfmpegAudioDecoder() {
-    if (!FfmpegAvailable()) return {};
     return [](std::shared_ptr<const audio::EncodedAudioDataSource> source, std::stop_token stop) {
         return std::make_unique<FfmpegVideoPlayer>(std::move(source), stop);
     };

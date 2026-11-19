@@ -175,8 +175,8 @@ note = "M5  用仓库固定 stb_vorbis 1.22 将最大 64 MiB Ogg Vorbis 内存�
 
 [audio.mp3_decoder]
 status = "complete"
-test = "tests/audio/mp3_tests.cpp"
-note = "固定 CC0 minimp3 ea99364f，将最大 64 MiB MP3 内存输入含 ID3 前缀逐帧解码为最大 128 MiB 的拥有型 mono/stereo PCM16；采样率/声道中途变化、空、损坏与超限明确失败"
+test = "tests/audio/mp3_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp#MediaPlayer reports unsupported audio"
+note = "FFmpeg MP3 demuxer 与 mp3float 输出 mono/stereo PCM16，支持 ID3v1、ID3v2 和 LAME gapless。扫描压缩帧计算 PCM 帧数。编码窗口上限 64 MiB，整段 PCM 上限 128 MiB。free-format 和 PCM 格式中途变化明确失败。"
 
 [audio.sound_pool_mixer]
 status = "complete"
@@ -186,7 +186,7 @@ note = "独立 SoundPool 池、AOSP play(IFFIIF) loop/priority/rate/maxStreams �
 [audio.encoded_music_playback]
 status = "partial"
 test = "tests/audio/encoded_music_tests.cpp; tests/dexvm/audio_track_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp"
-note = "音乐 OGG/MP3/WAV 及经 FFmpeg 注入的 MP4/M4A AAC 增量 bitstream 解码、独立 seek/loop/volume、有限实例/输入预算和可取消准备任务；显式 MediaPlayer transport 阶段和按 stream 输出增益。MP3 后退 seek 线性重解码；仍未做真实游戏听测，不宣称完整 MediaPlayer/CTS。"
+note = "音乐 OGG/WAV 和经 FFmpeg 注入的 MP3、MP4/M4A AAC 增量解码，独立 seek/loop/volume、有限实例/输入预算和可取消准备任务。显式 MediaPlayer transport 阶段和按 stream 输出增益。MP3 后退 seek 线性重解码。游戏内听测待验。"
 
 [frontend.run_apk_external]
 status = "complete"
@@ -1582,7 +1582,7 @@ note = "ROM ContentResolver 保留缺席 provider 的 null 返回和 Uri 参数�
 [dexvm.media_data_sources]
 status = "complete"
 test = "tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp; tests/audio/mp3_tests.cpp; tests/audio/java_sound_pool_mixer_tests.cpp; tests/audio/encoded_audio_tests.cpp; tests/audio/encoded_music_tests.cpp; tests/video/ffmpeg_video_player_tests.cpp"
-note = "MediaPlayer 每实例增量解码 OGG/MP3/WAV/MP4（AAC）；SoundPool 短音效有界整读并共用 MP4 解码入口。Java/裸 guest VFS fd 均捕获独立区间租约，PFD/AFD 关闭不影响已捕获源；无真实 handle 的平台 apk_entry 沿封存 APK 路径。VideoView/FFmpeg 复用 ReadAt/seek，STORED 条目只校验一次 CRC。host fd、pipe/socket、网络 Uri 不支持；Windows/Linux 真实视频未验收。"
+note = "MediaPlayer 每实例增量解码 OGG/MP3/WAV/MP4（AAC）。SoundPool 短音效有界整读，共用 FFmpeg 的 MP3、MP4/M4A 解码入口。Java/裸 guest VFS fd 均捕获独立区间租约，PFD/AFD 关闭不影响已捕获源；无真实 handle 的平台 apk_entry 沿封存 APK 路径。VideoView/FFmpeg 复用 ReadAt/seek，STORED 条目只校验一次 CRC。host fd、pipe/socket、网络 Uri 不支持；Windows/Linux 真实视频未验收。"
 
 [dexvm.video_view_local]
 status = "partial"

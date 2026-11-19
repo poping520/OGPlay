@@ -110,7 +110,7 @@ OGPlay 建立在众多优秀的开源项目之上，感谢以下开源项目及�
 | --- | --- |
 | Android 运行与 ARM 翻译 | [Android Open Source Project](https://source.android.com)、[Dynarmic](https://git.eden-emu.dev/eden-emu/dynarmic) |
 | 图形与窗口 | [ANGLE](https://chromium.googlesource.com/angle/angle)、[SDL](https://github.com/libsdl-org/SDL) |
-| 音视频 | [FFmpeg](https://ffmpeg.org)、[minimp3](https://github.com/lieff/minimp3)、[stb](https://github.com/nothings/stb) |
+| 音视频 | [FFmpeg](https://ffmpeg.org)、[stb](https://github.com/nothings/stb) |
 | 纹理解码 | [Compressonator](https://github.com/GPUOpen-Tools/compressonator)、[PowerVR SDK](https://github.com/powervr-graphics/Native_SDK) |
 | 数据处理 | [SQLite](https://sqlite.org)、[yyjson](https://github.com/ibireme/yyjson)、[Boost](https://www.boost.org) |
 | 启动器界面 | [webview](https://github.com/webview/webview)、[Preact](https://preactjs.com)、[three.js](https://threejs.org)、[uPlot](https://github.com/leeoniya/uPlot)、[SN Pro](https://github.com/supernotes/sn-pro) |

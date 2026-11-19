@@ -86,7 +86,7 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   ABI,64 位 setter 第 4 参数从对齐 guest 栈读取;错误 class/reference/field/kind/type/
   栈地址均明确失败。
   static/instance FieldID binding 只共享校验→查类→查字段骨架，storage kind 与错误上下文仍分开。
-- JNI guest FindClass 经 registry 的显式 owner resolver 按需发布真实链接类。
+- JNI guest FindClass 将 guest 线程标识交给 registry 的显式 owner resolver，按需发布真实链接类。
   DexVM 解析数组描述符并共享 GetObjectClass 的类身份。数组类从 VM 查询父类、类型关系和
   继承方法，缺失字段沿同一 NoSuchFieldError 路径。
   成员 ID 精确匹配描述符与 static；缺失返回 NULL，并挂起 NoSuchMethodError/NoSuchFieldError，

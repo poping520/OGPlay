@@ -10,6 +10,7 @@
 #include "ogplay/runtime/dexvm/nio_buffer_access.h"
 #include "ogplay/runtime/dexvm/guest_memory.h"
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
+#include "ogplay/runtime/dexvm/class_name_codec.h"
 
 #include <algorithm>
 #include <cstring>
@@ -457,7 +458,7 @@ public:
 
     [[nodiscard]] JniObjectIdentity JniClassIdentity(const dx::DexClassId java_class) {
         const auto& linked = linker.Class(java_class);
-        if (linked.is_array) {
+        if (linked.is_array || dx::ClassNameCodec::IsPrimitive(linked.descriptor)) {
             return model->ToIdentity(model->ClassObject(java_class));
         }
         // Value transport needs the stable class identity, not a fresh scan of
@@ -481,7 +482,8 @@ public:
             const auto ref = model->FindIdentity(identity);
             if (ref.IsValid() && model->Kind(ref) == dx::VmObjectKind::class_object) {
                 const auto type = model->ClassOfClassObject(ref);
-                if (linker.Class(type).is_array) return type;
+                const auto& linked = linker.ClassHeader(type);
+                if (linked.is_array || dx::ClassNameCodec::IsPrimitive(linked.descriptor)) return type;
             }
         }
         return std::nullopt;
@@ -501,6 +503,7 @@ public:
         if (!type) return std::nullopt;
         const auto& linked = linker.Class(*type);
         JniExternalClassInfo info{.name = linked.descriptor};
+        if (!linked.is_array) return info;
         if (linked.super) info.superclass = JniClassIdentity(*linked.super);
         for (const auto descriptor : {"Ljava/lang/Cloneable;", "Ljava/io/Serializable;"}) {
             info.interfaces.push_back(JniClassIdentity(linker.ResolveDescriptor(descriptor)));
@@ -535,7 +538,7 @@ public:
     [[nodiscard]] std::pair<dx::DexClassId, dx::DexClassId>
     ObjectArrayClassIdentity(const JniObjectIdentity element_identity) {
         const auto element_class = DexClassIdentity(element_identity);
-        const auto array_class = linker.ResolveDescriptor("[" + linker.Class(element_class).descriptor);
+        const auto array_class = linker.ArrayClass(element_class);
         return {array_class, element_class};
     }
 
@@ -974,15 +977,24 @@ public:
         auto& classes = session->Classes();
         auto& invocations = session->Invocations();
         const auto& linked = linker.ClassHeader(class_id);
-        if (startup) {
-            const auto registered = class_identities.find(class_id.Value());
-            if (registered != class_identities.end()) return registered->second;
+        if (const auto registered = class_identities.find(class_id.Value()); registered != class_identities.end()) {
+            if (!startup) {
+                PublishDeferredNativeMembers(registered->second);
+                if (linker.GapSurveyEnabled()) {
+                    PublishMissingMethods(class_id, registered->second);
+                    PublishMissingFields(class_id, registered->second);
+                }
+            }
+            return registered->second;
         }
         if (linked.is_array) {
             throw DexVmBridgeError("dexvm bridge cannot register an array JNI class");
         }
         const auto name = linked.descriptor.substr(1, linked.descriptor.size() - 2);
-        if (const auto existing = classes.FindClass(name); existing.has_value()) {
+        const auto existing = classes.FindClass(name);
+        const bool default_namespace =
+            linked.defining_loader == dx::kBootstrapLoader || linked.defining_loader == dx::kApplicationLoader;
+        if (default_namespace && existing && !native_class_ids.contains(existing->value)) {
             class_identities.emplace(class_id.Value(), *existing);
             native_class_ids.emplace(existing->value, class_id);
             PublishDeferredNativeMembers(*existing);
@@ -997,24 +1009,17 @@ public:
         const std::unique_ptr<void, decltype(unregister)> registration(this, unregister);
         JniClassDeclaration declaration;
         declaration.name = name;
-        if (linked.super.has_value()) {
-            const auto& super = linker.ClassHeader(*linked.super);
-            if (!super.is_array) {
-                static_cast<void>(RegisterClassForNative(*linked.super, startup));
-                declaration.superclass = super.descriptor.substr(1, super.descriptor.size() - 2);
-            }
-        }
+        JniExternalClassInfo hierarchy;
+        if (linked.super) hierarchy.superclass = RegisterClassForNative(*linked.super, startup);
         declaration.is_interface = linked.is_interface;
-        declaration.interfaces.reserve(linked.direct_interfaces.size());
+        hierarchy.interfaces.reserve(linked.direct_interfaces.size());
         for (const auto interface_id : linked.direct_interfaces) {
             const auto& interface_class = linker.ClassHeader(interface_id);
             if (!interface_class.is_interface) {
                 throw dx::JavaLinkageError(dx::JavaLinkageKind::incompatible_class_change,
                                            "implemented type is not an interface: " + interface_class.descriptor);
             }
-            static_cast<void>(RegisterClassForNative(interface_id, startup));
-            declaration.interfaces.push_back(
-                interface_class.descriptor.substr(1, interface_class.descriptor.size() - 2));
+            hierarchy.interfaces.push_back(RegisterClassForNative(interface_id, startup));
         }
         // Preserve the registered class and hierarchy for passive JNI queries.
         // Newly registered boot members are only needed on explicit lookup.
@@ -1041,7 +1046,7 @@ public:
         }
         JniObjectIdentity identity;
         try {
-            identity = classes.RegisterClass(declaration, defer_members);
+            identity = classes.RegisterVmClass(declaration, hierarchy, default_namespace && !existing, defer_members);
         } catch (const JniClassRegistryError& error) {
             throw DexVmBridgeError("cannot publish DexVM class to JNI: " + name + ": " + error.what());
         }
@@ -1088,7 +1093,7 @@ public:
         // interpreted classes must retain intrinsic parents in JNI type checks.
         for (const auto class_id : linker.AllClasses()) {
             const auto& linked = linker.ClassHeader(class_id);
-            if (linked.is_array) continue;
+            if (linked.is_array || dx::ClassNameCodec::IsPrimitive(linked.descriptor)) continue;
             try {
                 static_cast<void>(RegisterClassForNative(class_id, true));
             } catch (const dx::JavaLinkageError&) {
@@ -1360,6 +1365,7 @@ public:
             // separately; releasing the single-writer VM lock is not a park.
             notify_blocking = !android_context->egl.producers.contains(std::this_thread::get_id());
         }
+        const dx::Interpreter::JniClassLoaderScope jni_loader(*vm, owner_class.defining_loader);
         const auto execution_depth = execution_lock.ReleaseForBlocking(notify_blocking);
         try {
             bool invoked = false;
@@ -1926,8 +1932,7 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
         const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
         const std::vector<std::uint8_t> encoded(message.begin(), message.end());
         const auto utf8 = core::Utf16ToUtf8(DecodeJniModifiedUtf8(encoded), core::InvalidUtf16Policy::replace).value();
-        const auto object = bridge_state->vm->MakeThrowable(
-            bridge_state->linker.Class(bridge_state->DexClassIdentity(type)).descriptor, utf8);
+        const auto object = bridge_state->vm->MakeThrowable(bridge_state->DexClassIdentity(type), utf8);
         return bridge_state->PublishLocal(object, thread);
     });
     session.Classes().SetClassResolver([bridge_state](const std::string& name) -> std::optional<JniObjectIdentity> {
@@ -1952,6 +1957,32 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
             if (error.Reason() == dx::DexVmErrorReason::unknown_class) return std::nullopt;
             throw;
         }
+    });
+    session.Classes().SetFindClassResolver([bridge_state](std::uint64_t thread,
+                                                          const std::string& name) -> std::optional<JniObjectIdentity> {
+        auto& vm = *bridge_state->vm;
+        const dx::VmExecutionLockScope guard(vm.ExecutionLock());
+        const bool is_array = name.starts_with('[');
+        if (!is_array && !IsValidJniObjectClassName(name)) return std::nullopt;
+        std::optional<JniObjectIdentity> result;
+        vm.RunInExecutionContext(bridge_state->ContextForJniThread(thread), [&] {
+            try {
+                if (is_array) static_cast<void>(ParseJniFieldDescriptor(name));
+                auto loader = vm.JniClassLoader();
+                if (!loader) loader = vm.ClassLoaders().RoleOf(vm.ClassLoaders().SystemLoader());
+                const auto type = vm.Linker().ResolveDescriptor(is_array ? name : "L" + name + ";", loader.value());
+                result = is_array ? bridge_state->JniClassIdentity(type) : bridge_state->RegisterClassForNative(type);
+            } catch (const JniSignatureError&) {
+            } catch (const dx::VmJavaThrow& error) {
+                const auto throwable =
+                    error.existing.IsValid() ? error.existing : vm.MakeThrowable(error.descriptor, error.message);
+                bridge_state->session->Environment().Throw(thread, bridge_state->PublishLocal(throwable, thread));
+            } catch (const dx::JavaLinkageError& error) {
+                const auto throwable = vm.MakeThrowable(error.Descriptor(), error.what());
+                bridge_state->session->Environment().Throw(thread, bridge_state->PublishLocal(throwable, thread));
+            }
+        });
+        return result;
     });
     session.Environment().SetObjectAllocationHook([bridge_state](std::uint64_t thread, JniReference java_class) {
         const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
@@ -1981,9 +2012,12 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
                     .ref;
             });
         }
+        if (!android_context->standalone_dex_path.empty()) {
+            vm.ClassLoaders().SetApplicationLoaderFactory([&vm] { return vm.ClassLoaders().SystemLoader(); });
+        }
         try {
             PrepareAndroidMainLooper(*impl_->vm, android_context);
-            if (android_context->sealed_apk_bytes) {
+            if (android_context->sealed_apk_bytes || !android_context->standalone_dex_path.empty()) {
                 const auto loader = vm.ClassLoaders().ApplicationLoader();
                 const auto thread = vm.Threads().CurrentThreadObject();
                 static_cast<void>(android_intrinsics::CallAndroidMethod(
@@ -2008,6 +2042,7 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
             session.Environment().SetExceptionDescriber({});
             session.Environment().SetThrowableFactory({});
             session.Classes().SetClassResolver({});
+            session.Classes().SetFindClassResolver({});
             session.Classes().SetExternalClassHooks({});
             session.Classes().SetMemberLoader({});
             session.Objects().ObjectArrays().SetAssignability({});
@@ -2120,6 +2155,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         impl_->session->DirectBuffers() = {};
         impl_->session->Environment().SetObjectAllocationHook({});
         impl_->session->Classes().SetClassResolver({});
+        impl_->session->Classes().SetFindClassResolver({});
         impl_->session->Classes().SetExternalClassHooks({});
         impl_->session->Classes().SetMemberLoader({});
         impl_->session->Environment().SetExceptionDescriber({});

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <condition_variable>
 #include <deque>
 #include <exception>
 #include <functional>
@@ -10,6 +11,7 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -42,16 +44,32 @@ using DescriptorParts = MethodTypeDescriptor;
 
 class DexClassLinker::Impl final {
 public:
+    struct ResolutionCache final {
+        explicit ResolutionCache(const loader::DexImage& image)
+            : types(image.types.size()), methods(image.methods.size()), fields(image.fields.size()) {}
+
+        std::vector<std::optional<DexClassId>> types;
+        static constexpr std::size_t kInvokeKindCount = 6U;
+        std::vector<std::array<std::optional<ResolvedCallSite>, kInvokeKindCount>> methods;
+        std::vector<std::optional<ResolvedFieldRef>> fields;
+    };
+
     struct DexUnit final {
         DexUnitId id;
         bool boot{};
         std::vector<std::uint8_t> bytes;
         loader::DexImage image;
         std::vector<loader::DexClassData> class_data;
-        std::vector<std::optional<DexClassId>> type_cache;
-        static constexpr std::size_t kInvokeKindCount = 6U;
-        std::vector<std::array<std::optional<ResolvedCallSite>, kInvokeKindCount>> method_cache;
-        std::vector<std::optional<ResolvedFieldRef>> field_cache;
+        ResolutionCache primary_cache;
+        std::map<VmClassLoaderId, ResolutionCache> loader_caches;
+        std::unordered_map<std::string, std::uint32_t> class_defs;
+        bool used{};
+        bool closed{};
+
+        [[nodiscard]] ResolutionCache& Cache(VmClassLoaderId loader) {
+            if (loader == (boot ? kBootstrapLoader : kApplicationLoader)) return primary_cache;
+            return loader_caches.try_emplace(loader, image).first->second;
+        }
     };
 
     struct ClassExtras final {
@@ -64,6 +82,7 @@ public:
         bool dex_members_pending{};
         bool linked{};
         bool link_failed{};
+        std::thread::id linking_thread;
     };
 
     struct OverrideWarning final {
@@ -97,13 +116,33 @@ public:
     std::deque<ClassExtras> extras;
     std::deque<LinkedMethod> methods;
     std::deque<LinkedField> fields;
-    std::unordered_map<std::string, std::uint32_t> class_by_descriptor;
+    using ClassDirectory = std::unordered_map<std::string, DexClassId>;
+    std::map<VmClassLoaderId, ClassDirectory> defined_classes;
+    std::map<VmClassLoaderId, ClassDirectory> initiated_classes;
+    VmExecutionLock* execution_lock{};
+    std::function<DexClassId(VmClassLoaderId, std::string_view)> load_class;
+    std::mutex link_wait_mutex;
+    std::condition_variable link_finished;
+    std::map<std::thread::id, std::thread::id> link_waiters;
+
+    [[nodiscard]] static std::optional<DexClassId> Lookup(const std::map<VmClassLoaderId, ClassDirectory>& directory,
+                                                          VmClassLoaderId loader, std::string_view descriptor) {
+        const auto space = directory.find(loader);
+        if (space == directory.end()) return std::nullopt;
+        const auto found = space->second.find(std::string(descriptor));
+        return found == space->second.end() ? std::nullopt : std::optional(found->second);
+    }
+
+    [[nodiscard]] DexUnitId AddUnit(std::vector<std::uint8_t> bytes, bool boot, bool dynamic,
+                                    const std::function<void(std::span<const std::uint8_t>)>& write_output = {});
+
     std::unordered_map<std::uint64_t, VmFieldId> intrinsic_field_bindings;
 
     std::deque<DexUnit> dex_units;
     std::optional<DexUnitId> application_unit;
 
     bool link_complete{};
+    bool dynamic_dex_opened{};
     std::vector<std::string> implicit_intrinsic_overrides;
 
     // Gap survey state; the map key is "owner" or "owner->member" so the
@@ -129,14 +168,22 @@ public:
         return dex_units[id.value - 1U];
     }
 
-    [[nodiscard]] DexClassId AddClass(LinkedClass linked) {
+    [[nodiscard]] DexClassId AddClass(LinkedClass linked) { return AddClass(std::move(linked), ClassExtras{}); }
+
+    [[nodiscard]] DexClassId AddClass(LinkedClass linked, ClassExtras extra) {
         const auto id = DexClassId(static_cast<std::uint32_t>(classes.size() + 1));
         linked.id = id;
-        if (!class_by_descriptor.emplace(linked.descriptor, static_cast<std::uint32_t>(classes.size())).second) {
-            Fail(DexVmErrorReason::duplicate_class, "class is declared twice: " + linked.descriptor);
+        auto& directory = defined_classes[linked.defining_loader];
+        const auto [entry, inserted] = directory.emplace(linked.descriptor, id);
+        if (!inserted) Fail(DexVmErrorReason::duplicate_class, "class is declared twice: " + linked.descriptor);
+        try {
+            classes.push_back(std::move(linked));
+            extras.push_back(std::move(extra));
+        } catch (...) {
+            if (classes.size() > extras.size()) classes.pop_back();
+            directory.erase(entry);
+            throw;
         }
-        classes.push_back(std::move(linked));
-        extras.emplace_back();
         return id;
     }
 
@@ -192,12 +239,8 @@ public:
         if (!caller || ClassAt(target).descriptor.size() == 1U) return;
         auto component = target;
         while (ClassAt(component).is_array) {
-            const auto& descriptor = ClassAt(component).array_element_descriptor;
-            if (!IsRefDescriptor(descriptor)) return;
-            const auto found = class_by_descriptor.find(descriptor);
-            if (found == class_by_descriptor.end())
-                Fail(DexVmErrorReason::internal_invariant, "array element class is missing");
-            component = classes[found->second].id;
+            component = *ClassAt(component).array_element_class;
+            if (ClassAt(component).descriptor.size() == 1U) return;
         }
         if ((ClassAt(component).access_flags & kAccPublic) == 0U && !SamePackage(component, *caller)) {
             throw JavaLinkageError(JavaLinkageKind::illegal_access,

@@ -94,6 +94,10 @@ public:
     JniClassRegistry& operator=(JniClassRegistry&&) noexcept;
 
     [[nodiscard]] JniObjectIdentity RegisterClass(const JniClassDeclaration& declaration, bool defer_members = false);
+    // VM definitions are keyed by identity, including same-name classes from distinct loaders.
+    [[nodiscard]] JniObjectIdentity RegisterVmClass(const JniClassDeclaration& declaration,
+                                                    const JniExternalClassInfo& hierarchy, bool publish_name,
+                                                    bool defer_members);
     // Adds one declared method to an existing class. This is used when two
     // platform providers share a class identity but own disjoint methods;
     // an existing declaration with the same name/descriptor is rejected.
@@ -106,6 +110,10 @@ public:
     using ClassResolver = std::function<std::optional<JniObjectIdentity>(const std::string&)>;
     void SetClassResolver(ClassResolver resolver);
     [[nodiscard]] std::optional<JniObjectIdentity> ResolveClass(const std::string& name) const;
+    using FindClassResolver = std::function<std::optional<JniObjectIdentity>(std::uint64_t, const std::string&)>;
+    void SetFindClassResolver(FindClassResolver resolver);
+    [[nodiscard]] std::optional<JniObjectIdentity> ResolveFindClass(std::uint64_t thread,
+                                                                    const std::string& name) const;
     // Queries for VM-owned class mirrors run outside the registry lock.
     void SetExternalClassHooks(JniExternalClassHooks hooks);
     // Called outside the registry lock when lookup reaches a class with deferred members.

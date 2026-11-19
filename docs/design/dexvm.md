@@ -25,24 +25,24 @@ core / Android catalog → 启动类路径 DEX → 应用 DEX
 
 catalog 是平台类型和绑定的目录，intrinsic 是宿主实现的方法处理器。
 装配先登记目录，再按 `bootdex.jar` 的 DEX 条目顺序登记 OGPlay 和原样 API19 ROM DEX，最后登记应用 DEX。
-ReadBootClasspath 读取单个归档，BootClasspathDexFiles 提取 DEX，
-每个 unit 保留自己的常量池和解析缓存。
+ReadBootClasspath 读取单个归档，BootClasspathDexFiles 按顺序提取 DEX。Boot 定义
+遵循启动路径顺序。主 DEX 预登记时保留 parent-first 结果，应用同名副本不会向 boot 类混入成员、
+层级或注解。之后 DexFile 可以从 VFS 打开裸 DEX 或归档中的 classes.dex，解析和校验后发布
+独立 unit cookie。ROM DexPathList 和自定义 ClassLoader 按需用 cookie 定义类。APK 中的
+secondary DEX 在 ROM MultiDex 安装 dexElements 后进入应用命名空间。
 
-常量池索引只在所属 DEX 内有意义。因此解析跟随方法所属 unit，
-不能把另一个 DEX 中数值相同的索引当作同一成员。
-DEX 来源使用拥有型存储保活，避免解析缓存引用调用方已经销毁的临时字节。
-这种组织多了来源与缓存管理，却让多 DEX 与 ROM/应用混合调用有明确归属。
+每个类定义由 defining loader ID 与描述符定位。bootstrap 和 application ID 固定，其余 ROM
+ClassLoader 对象按需分配 ID，VM 保活对象、unit 和类。数组从组件 Class 获取 defining loader
+和精确的组件身份。JNI 以同样的身份和父类/接口关系发布类，因此不同 loader 的同名 Class、
+数组、字段和方法可以同时存在。
 
-类加载采用 bootstrap parent-first，同一描述符先登记的定义胜出。
-同一类描述符可能同时出现在 boot 与 application 中，选择之后只保留一个权威定义，
-应用副本不会向父定义混入字段或注解。若把应用同名字段合并进 ROM 类，即使方法看似能调用，
-实例布局、反射枚举和 JNI 字段 ID 也可能相互矛盾。
-因此类注册、成员解析与 Class 镜像都围绕确定的 loader 和定义来源，
-调用缓存也保留 caller 和所属 unit，不把一个名字或索引当成全 VM 通用成员键。
-
-ROM 身份先登记，层级与成员在触达时物化，
-使未使用的可选类不因依赖不完整阻断 VM 装配。
-惰性处理只延后有成本的链接，实际触达时仍检查缺类、缺成员及访问规则。
+常量池索引在所属 DEX 内有意义，解析缓存再按引用类的 defining loader 划分。链接器从引用
+类的 loader 查已 initiate 的类，应用 loader 还可直接命中 boot 和主 DEX。未命中时进入 ROM
+loadClass，委托由 Java 执行，VM 记录成功结果。未找到的名字可在 dexElements 更新后重试。
+链接器在执行锁内维护类表，Java 加载暂时释放执行锁时，其他线程等待同一定义的结果。
+首次链接失败保留原异常，此后该定义解析抛 NoClassDefFoundError；经 defineClassNative
+动态定义的类链接失败时从 loader 类表撤下，重试会重新定义并报原错误。类初始化检查不同 loader
+的覆盖方法和接口实现是否解析到相同的签名类型。
 
 ## 一次对象方法调用怎样完成
 
@@ -217,9 +217,11 @@ Proxy 使用 ROM 校验和有序接口缓存，AnnotationRuntime 仍有受限合
 其统一类身份缺口见[已知问题](../state/KNOWN-ISSUES.md#执行与平台)。
 
 应用 PathClassLoader 标识封存 APK，父链为 boot→null。
-DexFile native 查询已登记单元，classpath stream 只读取显式归档，
-loadLibrary 交给平台 loader。这保留稳定的 application/boot 边界，
-动态 classpath、自定义加载权限等完整 VM 能力则不在当前范围内。
+Class.forName 与 findLoadedClass 使用 ROM 传入的 loader。反射签名、注解值和 Proxy
+方法按声明或引用它们的类解析。JNI FindClass 使用当前 native 方法的 defining loader，
+JNI_OnLoad 沿用加载库调用传入的 loader，附加线程无 native 方法时使用 ROM system loader。
+classpath stream 读取已封存的资源归档，平台库加载仍由现有后端处理。动态 DEX 的可选输出是
+原始 DEX 字节，ClassLoader.defineClass(byte[]/ByteBuffer)、dexopt 和类卸载超出支持范围。
 
 ## 存量 intrinsic 与支持边界
 

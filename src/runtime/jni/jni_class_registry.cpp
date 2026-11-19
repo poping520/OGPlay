@@ -62,7 +62,9 @@ JniClassRegistryErrorReason JniClassRegistryError::Reason() const noexcept {
 
 class JniClassRegistry::Impl final {
 public:
-    [[nodiscard]] JniObjectIdentity Register(const JniClassDeclaration& declaration, const bool defer_members) {
+    [[nodiscard]] JniObjectIdentity Register(const JniClassDeclaration& declaration, const bool defer_members,
+                                             const JniExternalClassInfo* hierarchy = nullptr,
+                                             const bool publish_name = true) {
         ValidateClassName(declaration.name);
         std::set<MemberKey> method_keys;
         std::vector<JniMethodDescriptor> method_layouts;
@@ -99,37 +101,37 @@ public:
         }
 
         std::scoped_lock lock(mutex_);
-        if (classes_by_name_.contains(declaration.name)) {
+        if (publish_name && classes_by_name_.contains(declaration.name)) {
             Fail(JniClassRegistryErrorReason::duplicate_class,
                  "JNI class is already registered");
         }
         std::optional<JniObjectIdentity> superclass;
-        if (declaration.superclass.has_value()) {
-            const auto found = classes_by_name_.find(*declaration.superclass);
-            if (found == classes_by_name_.end()) {
-                Fail(JniClassRegistryErrorReason::unknown_superclass,
-                     "JNI superclass must be registered first");
-            }
-            superclass = found->second;
-        }
         std::vector<JniObjectIdentity> interfaces;
-        interfaces.reserve(declaration.interfaces.size());
+        if (hierarchy) {
+            superclass = hierarchy->superclass;
+            if (superclass) static_cast<void>(RequireClass(*superclass));
+            interfaces = hierarchy->interfaces;
+        } else {
+            if (declaration.superclass) {
+                const auto found = classes_by_name_.find(*declaration.superclass);
+                if (found == classes_by_name_.end())
+                    Fail(JniClassRegistryErrorReason::unknown_superclass, "JNI superclass must be registered first");
+                superclass = found->second;
+            }
+            interfaces.reserve(declaration.interfaces.size());
+            for (const auto& interface_name : declaration.interfaces) {
+                const auto found = classes_by_name_.find(interface_name);
+                if (found == classes_by_name_.end())
+                    Fail(JniClassRegistryErrorReason::unknown_interface, "JNI interface must be registered first");
+                interfaces.push_back(found->second);
+            }
+        }
         std::unordered_set<std::uint64_t> unique_interfaces;
-        for (const auto& interface_name : declaration.interfaces) {
-            const auto found = classes_by_name_.find(interface_name);
-            if (found == classes_by_name_.end()) {
-                Fail(JniClassRegistryErrorReason::unknown_interface,
-                     "JNI interface must be registered first");
-            }
-            if (!RequireClass(found->second).is_interface) {
-                Fail(JniClassRegistryErrorReason::invalid_class,
-                     "JNI implemented type is not an interface");
-            }
-            if (!unique_interfaces.emplace(found->second.value).second) {
-                Fail(JniClassRegistryErrorReason::duplicate_interface,
-                     "JNI class contains a duplicate interface");
-            }
-            interfaces.push_back(found->second);
+        for (const auto interface_id : interfaces) {
+            if (!RequireClass(interface_id).is_interface)
+                Fail(JniClassRegistryErrorReason::invalid_class, "JNI implemented type is not an interface");
+            if (!unique_interfaces.emplace(interface_id.value).second)
+                Fail(JniClassRegistryErrorReason::duplicate_interface, "JNI class contains a duplicate interface");
         }
         EnsureIds(declaration.methods.size(), declaration.fields.size());
 
@@ -159,7 +161,7 @@ public:
             static_cast<void>(key);
             fields_.at(id.Value()).declaring_class = identity;
         }
-        classes_by_name_.emplace(declaration.name, identity);
+        if (publish_name) classes_by_name_.emplace(declaration.name, identity);
         classes_.emplace(identity.value, std::move(entry));
         return identity;
     }
@@ -527,8 +529,24 @@ public:
         { std::scoped_lock lock(mutex_); resolver = resolver_; }
         return resolver ? resolver(name) : std::nullopt;
     }
+
+    void SetFindClassResolver(FindClassResolver resolver) {
+        std::scoped_lock lock(mutex_);
+        find_class_resolver_ = std::move(resolver);
+    }
+
+    std::optional<JniObjectIdentity> ResolveFindClass(std::uint64_t thread, const std::string& name) const {
+        FindClassResolver resolver;
+        {
+            std::scoped_lock lock(mutex_);
+            resolver = find_class_resolver_;
+        }
+        return resolver ? resolver(thread, name) : Resolve(name);
+    }
+
 private:
     ClassResolver resolver_;
+    FindClassResolver find_class_resolver_;
     JniExternalClassHooks external_class_hooks_;
     MemberLoader member_loader_;
     mutable std::mutex mutex_;
@@ -549,6 +567,13 @@ JniClassRegistry::operator=(JniClassRegistry &&) noexcept = default;
 JniObjectIdentity JniClassRegistry::RegisterClass(const JniClassDeclaration& declaration, const bool defer_members) {
     return impl_->Register(declaration, defer_members);
 }
+
+JniObjectIdentity JniClassRegistry::RegisterVmClass(const JniClassDeclaration& declaration,
+                                                    const JniExternalClassInfo& hierarchy, bool publish_name,
+                                                    bool defer_members) {
+    return impl_->Register(declaration, defer_members, &hierarchy, publish_name);
+}
+
 JniMethodId
 JniClassRegistry::RegisterMethod(const JniObjectIdentity java_class,
                                  const JniMethodDeclaration &declaration) {
@@ -580,6 +605,15 @@ void JniClassRegistry::PublishDeferredMembers(const JniObjectIdentity java_class
 }
 std::optional<JniObjectIdentity> JniClassRegistry::ResolveClass(const std::string& name) const {
     return impl_->Resolve(name);
+}
+
+void JniClassRegistry::SetFindClassResolver(FindClassResolver resolver) {
+    impl_->SetFindClassResolver(std::move(resolver));
+}
+
+std::optional<JniObjectIdentity> JniClassRegistry::ResolveFindClass(std::uint64_t thread,
+                                                                    const std::string& name) const {
+    return impl_->ResolveFindClass(thread, name);
 }
 std::string JniClassRegistry::ClassName(
     const JniObjectIdentity java_class) const {

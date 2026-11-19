@@ -473,7 +473,7 @@ VmObjectRef Interpreter::SharedEnumConstants(const DexClassId java_class) {
                              "enum ordinals are not contiguous: " + linked.descriptor);
         }
     }
-    const auto array_class = linker.ResolveDescriptor("[" + linked.descriptor);
+    const auto array_class = linker.ArrayClass(java_class);
     const auto array = impl_->model->NewObjectArray(array_class, java_class, static_cast<JniSize>(constants.size()));
     for (std::size_t index = 0; index < constants.size(); ++index) {
         impl_->model->SetObjectElement(array, static_cast<JniSize>(index), constants[index].object);

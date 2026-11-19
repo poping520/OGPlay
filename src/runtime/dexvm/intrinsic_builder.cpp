@@ -439,7 +439,7 @@ void IntrinsicCall::SetRef(const IntrinsicFieldHandle field, const VmObjectRef v
     RequireRefField(linked);
     const auto object = FieldObject(*context_, linked, VmObjectRef{}, false);
     if (value.IsValid()) {
-        const auto target = context_->vm.Linker().ResolveDescriptor(linked.descriptor);
+        const auto target = context_->vm.Linker().ResolveDescriptor(linked.descriptor, linked.owner);
         const auto actual = context_->vm.Model().ObjectClass(value);
         if (!context_->vm.Linker().IsAssignable(target, actual)) {
             FailBuild("intrinsic reference field value has an incompatible class");
@@ -457,7 +457,7 @@ void IntrinsicCall::SetRef(const IntrinsicFieldHandle field, const VmObjectRef o
     RequireRefField(linked);
     const auto actual_object = FieldObject(*context_, linked, object, true);
     if (value.IsValid()) {
-        const auto target = context_->vm.Linker().ResolveDescriptor(linked.descriptor);
+        const auto target = context_->vm.Linker().ResolveDescriptor(linked.descriptor, linked.owner);
         const auto actual = context_->vm.Model().ObjectClass(value);
         if (!context_->vm.Linker().IsAssignable(target, actual)) {
             FailBuild("intrinsic reference field value has an incompatible class");

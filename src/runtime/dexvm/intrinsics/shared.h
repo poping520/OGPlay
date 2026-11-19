@@ -92,19 +92,22 @@ inline VmObjectRef NewStringArray(Interpreter& vm, const std::vector<std::string
 
 // Recursive builder for Array.newInstance: each level allocates the real
 // typed array so subsequent check-cast and aget/aput see honest classes.
-[[nodiscard]] inline VmObjectRef BuildReflectArray(Interpreter& vm, const std::string& element_descriptor,
+[[nodiscard]] inline VmObjectRef BuildReflectArray(Interpreter& vm, const DexClassId leaf,
                                                    const std::span<const std::int32_t> dims) {
-    std::string descriptor(dims.size(), '[');
-    descriptor += element_descriptor;
-    const auto array_class = vm.Linker().ResolveDescriptor(descriptor);
-    if (dims.size() == 1 && IsPrimitiveDescriptor(element_descriptor)) {
+    auto& linker = vm.Linker();
+    auto element = leaf;
+    for (std::size_t depth = 1; depth < dims.size(); ++depth)
+        element = linker.ArrayClass(element);
+    const auto array_class = linker.ArrayClass(element);
+    const auto& element_descriptor = linker.ClassHeader(element).descriptor;
+    if (IsPrimitiveDescriptor(element_descriptor)) {
         return vm.Model().NewPrimitiveArray(array_class, PrimitiveKindFor(element_descriptor), dims[0]);
     }
-    const auto element_class = vm.Linker().ResolveDescriptor(descriptor.substr(1));
-    const auto array = vm.Model().NewObjectArray(array_class, element_class, dims[0]);
+    const auto array = vm.Model().NewObjectArray(array_class, element, dims[0]);
+    const auto root = vm.ProtectReferences(std::array{array});
     if (dims.size() > 1) {
         for (std::int32_t index = 0; index < dims[0]; ++index) {
-            vm.Model().SetObjectElement(array, index, BuildReflectArray(vm, element_descriptor, dims.subspan(1)));
+            vm.Model().SetObjectElement(array, index, BuildReflectArray(vm, leaf, dims.subspan(1)));
         }
     }
     return array;

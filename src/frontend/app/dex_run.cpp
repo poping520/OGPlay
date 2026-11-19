@@ -177,6 +177,12 @@ DexRunOptions ParseDexRunArgs(const std::span<const std::string_view> args) {
         else if (arg == "--native-lib-dir") {
             options.native_lib_dir = value();
             if (options.native_lib_dir.empty()) throw std::invalid_argument("--native-lib-dir must not be empty");
+        } else if (arg == "--vfs-file") {
+            const auto host = value();
+            const auto guest = value();
+            if (host.empty() || guest.empty())
+                throw std::invalid_argument("--vfs-file requires nonempty host and guest paths");
+            options.vfs_files.push_back({host, guest});
         } else if (arg == "--enable-assertions" || arg == "-ea")
             options.enable_assertions = true;
         else if (arg == "--merge-console")
@@ -200,6 +206,7 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
     auto app_dex = ReadDex(options.input);
     const auto data = BundledDataPaths().root;
     const auto context = runtime::AssembleAndroidContext(runtime::ReadBootClasspath(data / "android/19/framework"));
+    context->standalone_dex_path = "/data/local/ogplay-main.dex";
     auto boot_dex = runtime::BootClasspathDexFiles(context->boot_classpath);
 
     core::CapabilityLedger ledger;
@@ -226,6 +233,11 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
     runtime::VirtualFileSystem vfs;
     context->framework_resource_apk = data / "android/19/framework/framework-res.apk";
     frontend::MountFrameworkPayload(vfs, data / "android/19/framework");
+    vfs.PutFile(context->standalone_dex_path, std::as_bytes(std::span(app_dex)), false);
+    for (const auto& file : options.vfs_files) {
+        const auto bytes = ReadFile(file.host_path);
+        vfs.PutFile(vfs.CanonicalPath(file.guest_path), std::as_bytes(std::span(bytes)), false);
+    }
     const auto& bionic = runtime::SelectBionicProfile(19);
     std::vector<runtime::BionicOwnedModule> owned_system;
     for (const auto name : bionic.guest_libraries) {

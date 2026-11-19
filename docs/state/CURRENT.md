@@ -46,6 +46,7 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
 | 鳄鱼小顽皮 1.13.1 | macOS | 闹钟登记已越过 `onResume` 的 UOE；库诊断运行 120 秒呈现 23,719 帧，SIGINT 退出 0 | 本次未见新的阻断错误；闹钟到期投递已通过 Probe，原 APK 到期路径和游戏内交互待复验 | DVM-211 |
 | Rayman Fiesta Run 1.4.2 | macOS | 越过 MSDK `http.agent` 的 strlen(NULL)（斜杠类名 findLoadedClass、启动未设 `http.agent` 已修），进入资源包加载；约 100 秒呈现 5659 帧，SIGTERM 退出 0 | 画面与交互未验；缺失报告列出 obb 与 73 个 `casa_gamedata` 路径，是否为正常探测未判定 | — |
 | POPClassic | macOS | 快速开始并跳过过场，进入第一关，关卡 AAC 环境音已提交非零 PCM 至 SDL。约 190 秒呈现 9,202 帧，SIGTERM 退出 0 | FFmpeg 离线解码 APK 中全部 91 个 MP3 成功，覆盖此前两处 SoundPool 加载失败。游戏内声音、后续关卡和跨平台待验 | — |
+| Assassin's Creed Pirates 2.9.1 | macOS | ROM MultiDex 安装 1 个 secondary DEX，进入 SparkActivity 并加载 libSparkApp.so | 首个 Java 异常为 Kontagent worker 调用空的 UncaughtExceptionHandler；MediaPlayer 构造达到 music player 上限，尚未呈现；120 秒 SIGINT 后 Activity 关闭超时，退出 1 | — |
 
 ## 未闭合问题
 
@@ -55,7 +56,7 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
   Java-only 线程误交 clone join 已修，MCP shutdown 稳定性待验。
 - 门禁：[WU7-T](KNOWN-ISSUES.md) 已清理 HEAD
   测试失败，但现已不再全绿：受影响主题 672 用例中 ogplay_tests 仍有 31 个失败/崩溃、app 测试 DIAG-4 失败，9ab2ccd0 上同样存在，见 [DVM-369](KNOWN-ISSUES.md)；未跑全量。
-- 一致性：dalvik/tests 双后端 86/91（94.5%，044-proxy 已通过，见 DVM-259/369）；035/046/070 通过，085 oracle 排除；070 共享数组已修复，见 [DIAG-7](KNOWN-ISSUES.md)；JNI 双后端 399/399（100%，DVM-260 / ADR-0152、0153：pending 按 Dalvik 非 CheckJNI 放行、heap capacity 对齐 4.4；JNI/dalvik 零回归、基础场景 6/9 无新增失败），静态覆盖 233/233（100%），见 [DIAG-8](KNOWN-ISSUES.md)。 Framework A–D=0/521/173/13/2、E=27/0/0；八类撤换，见 [DVM-268](KNOWN-ISSUES.md)。 BootDex父类准入，场景待外验。
+- 一致性：dalvik/tests 双后端 86/91（94.5%，044-proxy 已通过，见 DVM-259/369）；threaded 89/92，068/086/087 经动态 DexFile 转为通过，switch 未复跑；035/046/070 通过，085 oracle 排除；070 共享数组已修复，见 [DIAG-7](KNOWN-ISSUES.md)；JNI 双后端 399/399（100%，DVM-260 / ADR-0152、0153：pending 按 Dalvik 非 CheckJNI 放行、heap capacity 对齐 4.4；JNI/dalvik 零回归、基础场景 6/9 无新增失败），静态覆盖 233/233（100%），见 [DIAG-8](KNOWN-ISSUES.md)。 Framework A–D=0/521/173/13/2、E=27/0/0；八类撤换，见 [DVM-268](KNOWN-ISSUES.md)。 BootDex父类准入，场景待外验。
 - `--ephemeral-sandbox` 下 Dungeon Hunter 约 106 帧抛 `Invalid path: /sdcard`；持久沙盒不复现。
 - 跨平台：近期修复多只在 macOS 实跑；[VFS-07](KNOWN-ISSUES.md) macOS 待验证。
 

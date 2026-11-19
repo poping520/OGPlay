@@ -1,4 +1,9 @@
+#include <cstring>
+#include <limits>
+#include <utility>
+
 #include "ogplay/loader/dex.h"
+#include "ogplay/runtime/vfs/vfs.h"
 #include "ogplay/runtime/dexvm/class_name_codec.h"
 #include "ogplay/loader/binary_xml.h"
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
@@ -143,55 +148,174 @@ Decl Declare_local_BackupService_Class(const Context&) {
     return std::move(builder).Build();
 }
 
+namespace {
+
+class DexFileDescriptor final {
+public:
+    DexFileDescriptor(VirtualFileSystem& vfs, std::string_view path, VfsOpenOptions options)
+        : vfs_(vfs), fd_(vfs.Open(path, options)) {}
+
+    ~DexFileDescriptor() {
+        if (fd_ < 0) return;
+        try {
+            Close();
+        } catch (const std::exception&) {
+        }
+    }
+
+    DexFileDescriptor(const DexFileDescriptor&) = delete;
+    DexFileDescriptor& operator=(const DexFileDescriptor&) = delete;
+
+    [[nodiscard]] std::int32_t Get() const { return fd_; }
+
+    void Close() { vfs_.Close(std::exchange(fd_, -1)); }
+
+private:
+    VirtualFileSystem& vfs_;
+    std::int32_t fd_;
+};
+
+[[noreturn]] void DexFileIoFailure(dx::Interpreter& vm, std::string message,
+                                   const char* type = "Ljava/io/IOException;") {
+    if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.dex_file.io", 0);
+    throw dx::VmJavaThrow{type, std::move(message)};
+}
+
+VirtualFileSystem& DexFileVfs(dx::Interpreter& vm, const Context& context) {
+    if (!context->vfs) DexFileIoFailure(vm, "guest filesystem is unavailable");
+    return *context->vfs;
+}
+
+void RequireReadableDexFile(VirtualFileSystem& vfs, std::string_view path) {
+    const auto info = vfs.Stat(path);
+    if (info.is_directory || info.is_character_device || (info.Mode() & 0444U) == 0)
+        throw VfsError(13, "DEX source is not a readable regular file");
+}
+
+std::vector<std::uint8_t> ReadExternalDex(VirtualFileSystem& vfs, std::string_view path) {
+    RequireReadableDexFile(vfs, path);
+    const DexFileDescriptor fd(vfs, path, {.read = true});
+    const auto size = vfs.DescriptorInfo(fd.Get()).size;
+    if (size > std::numeric_limits<std::uint32_t>::max()) throw std::runtime_error("DEX source is too large");
+    std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
+    auto remaining = std::as_writable_bytes(std::span(bytes));
+    while (!remaining.empty()) {
+        const auto count = vfs.Read(fd.Get(), remaining);
+        if (count == 0) throw std::runtime_error("DEX source changed while reading");
+        remaining = remaining.subspan(count);
+    }
+    if (path.ends_with(".dex")) return bytes;
+
+    const auto archive = std::as_bytes(std::span(bytes));
+    const auto dex = loader::ReadApkEntry(archive, loader::ParseApkArchive(archive), "classes.dex");
+    bytes.resize(dex.size());
+    if (!dex.empty()) std::memcpy(bytes.data(), dex.data(), dex.size());
+    return bytes;
+}
+
+void WriteDexOutput(VirtualFileSystem& vfs, std::string_view path, std::span<const std::uint8_t> bytes) {
+    const auto canonical = vfs.CanonicalPath(path);
+    const auto slash = canonical.rfind('/');
+    const auto parent = std::string_view(canonical).substr(0, std::max<std::size_t>(1, slash));
+    const auto directory = vfs.Stat(parent);
+    if (!directory.is_directory || (directory.Mode() & 0222U) == 0)
+        throw VfsError(13, "DEX output directory is not writable");
+    try {
+        if ((vfs.Stat(path).Mode() & 0222U) == 0) throw VfsError(13, "DEX output file is not writable");
+    } catch (const VfsError& error) {
+        if (error.ErrorNumber() != 2) throw;
+    }
+    DexFileDescriptor fd(vfs, path, {.write = true, .create = true, .truncate = true});
+    if (vfs.Write(fd.Get(), std::as_bytes(bytes)) != bytes.size())
+        throw std::runtime_error("incomplete DEX output write");
+    fd.Close();
+}
+
+dx::DexUnitId DexFileCookie(dx::IntrinsicContext& call, std::size_t argument) {
+    const auto cookie = dx::DexUnitId{static_cast<std::uint32_t>(call.arguments[argument].AsInt())};
+    if (cookie.IsValid() && !call.vm.Linker().IsUserDex(cookie))
+        throw dx::VmJavaThrow{"Ljava/lang/RuntimeException;", "invalid DexFile cookie"};
+    return cookie;
+}
+
+}  // namespace
+
 Decl Declare_dalvik_system_DexFile_Natives(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Ldalvik/system/DexFile;", "Ljava/lang/Object;");
     builder.MergesBootClass();
     constexpr auto native = dx::kAccPrivate | dx::kAccStatic | dx::kAccNative;
-    // One sealed application DEX is already registered with the linker.
-    constexpr int application_cookie = 1;
     builder.StaticMethod(
         "openDexFileNative", "(Ljava/lang/String;Ljava/lang/String;I)I",
         [context](dx::IntrinsicContext& call) {
-            if (context->sealed_apk_bytes &&
-                call.vm.StringUtf8(call.arguments[0].ref) == context->package_resource_path &&
-                !call.arguments[1].ref.IsValid() && call.arguments[2].AsInt() == 0)
-                return dx::VmValue::Int(application_cookie);
-            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.dex_file.open", 0);
-            throw dx::VmJavaThrow{"Ljava/io/IOException;", "DexFile requires the sealed application APK"};
+            auto& vm = call.vm;
+            const auto source = vm.StringUtf8(dx::IntrinsicCall(call).NonNullRef(0, "sourceName"));
+            const auto output = call.arguments[1].ref;
+            const bool sealed = (context->sealed_apk_bytes && source == context->package_resource_path) ||
+                                (!context->standalone_dex_path.empty() && source == context->standalone_dex_path);
+            if (sealed && !output.IsValid())
+                return dx::VmValue::Int(static_cast<std::int32_t>(vm.Linker().ApplicationUnit().value().value));
+            auto& vfs = DexFileVfs(vm, context);
+            try {
+                const auto canonical = vfs.CanonicalPath(source);
+                for (const auto& jar : context->boot_classpath) {
+                    if (canonical == vfs.CanonicalPath(jar.guest_path))
+                        throw std::runtime_error("Re-opening BOOTCLASSPATH DEX files is not allowed");
+                }
+                std::function<void(std::span<const std::uint8_t>)> write_output;
+                if (output.IsValid()) {
+                    const auto path = vm.StringUtf8(output);
+                    write_output = [&vfs, path](std::span<const std::uint8_t> bytes) {
+                        WriteDexOutput(vfs, path, bytes);
+                    };
+                }
+                const auto unit = sealed ? vm.Linker().ApplicationUnit().value()
+                                         : vm.Linker().OpenDex(ReadExternalDex(vfs, source), write_output);
+                if (sealed && write_output) write_output(vm.Linker().DexBytes(unit));
+                return dx::VmValue::Int(static_cast<std::int32_t>(unit.value));
+            } catch (const dx::DexVmError& error) {
+                if (error.Reason() != dx::DexVmErrorReason::invalid_code &&
+                    error.Reason() != dx::DexVmErrorReason::invalid_image)
+                    throw;
+                DexFileIoFailure(vm, error.what());
+            } catch (const std::runtime_error& error) {
+                DexFileIoFailure(vm, error.what());
+            }
         },
         native);
     builder.StaticMethod(
         "closeDexFile", "(I)V",
-        [](dx::IntrinsicContext&) {
-            return dx::VmValue::Void();  // The linked DEX remains live until VM shutdown.
+        [](dx::IntrinsicContext& call) {
+            const auto unit = DexFileCookie(call, 0);
+            if (unit.IsValid()) call.vm.Linker().CloseDex(unit);
+            return dx::VmValue::Void();
         },
         native);
     builder.StaticMethod(
         "defineClassNative", "(Ljava/lang/String;Ljava/lang/ClassLoader;I)Ljava/lang/Class;",
-        [](dx::IntrinsicContext& call) {
+        [context](dx::IntrinsicContext& call) {
             auto& vm = call.vm;
-            auto name = vm.StringUtf8(call.arguments[0].ref);
+            auto name = vm.StringUtf8(dx::IntrinsicCall(call).NonNullRef(0, "name"));
             std::replace(name.begin(), name.end(), '.', '/');
-            const auto type = vm.Linker().FindClass("L" + name + ";");
-            if (call.arguments[2].AsInt() != application_cookie ||
-                !vm.ClassLoaders().IsRomApplicationLoader(call.arguments[1].ref) || !type ||
-                vm.Linker().ClassHeader(*type).defining_loader != dx::kApplicationLoader)
-                throw dx::VmJavaThrow{"Ljava/lang/ClassNotFoundException;", name};
-            vm.Linker().EnsureClassLinked(*type);
-            vm.Linker().MarkInitiatedBy(*type, dx::kApplicationLoader);
-            return dx::VmValue::Ref(vm.Model().ClassObject(*type));
+            const auto unit = DexFileCookie(call, 2);
+            if (!unit.IsValid()) return dx::VmValue::Ref(dx::VmObjectRef{});
+            const auto object = call.arguments[1].ref;
+            const auto loader = vm.ClassLoaders().RoleOf(object);
+            if (!loader) throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "unknown class loader"};
+            // The APK occupies the system path for resource queries. Its main
+            // classes are defined by LoadedApk's separate application loader.
+            if (context->sealed_apk_bytes && unit == vm.Linker().ApplicationUnit() &&
+                *loader != dx::kApplicationLoader && object.IsValid() && object == vm.ClassLoaders().SystemLoader())
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            const auto type = vm.Linker().DefineDexClass(unit, *loader, "L" + name + ";");
+            return dx::VmValue::Ref(type ? vm.Model().ClassObject(*type) : dx::VmObjectRef{});
         },
         native);
     builder.StaticMethod(
         "getClassNameList", "(I)[Ljava/lang/String;",
-        [context](dx::IntrinsicContext& call) {
-            if (!context->sealed_apk_bytes || call.arguments[0].AsInt() != application_cookie) {
-                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.dex_file.class_names", 0);
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid sealed APK cookie"};
-            }
-            const auto bytes = loader::ReadApkEntry(context->ApkBytes(), context->archive, "classes.dex");
-            const auto image = loader::ParseDex(
-                std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size()));
+        [](dx::IntrinsicContext& call) {
+            const auto unit = DexFileCookie(call, 0);
+            if (!unit.IsValid()) return dx::VmValue::Ref(dx::VmObjectRef{});
+            const auto& image = call.vm.Linker().Image(unit);
             const auto array_type = call.vm.Linker().ResolveDescriptor("[Ljava/lang/String;");
             const auto string_type = call.vm.Linker().ResolveDescriptor("Ljava/lang/String;");
             const auto array =
@@ -205,6 +329,23 @@ Decl Declare_dalvik_system_DexFile_Natives(const Context& context) {
             return dx::VmValue::Ref(array);
         },
         native);
+    builder.StaticMethod(
+        "isDexOptNeeded", "(Ljava/lang/String;)Z",
+        [context](dx::IntrinsicContext& call) {
+            auto& vm = call.vm;
+            const auto path = vm.StringUtf8(dx::IntrinsicCall(call).NonNullRef(0, "fileName"));
+            auto& vfs = DexFileVfs(vm, context);
+            try {
+                RequireReadableDexFile(vfs, path);
+                const DexFileDescriptor fd(vfs, path, {.read = true});
+            } catch (const VfsError& error) {
+                DexFileIoFailure(vm, error.what(),
+                                 error.ErrorNumber() == 2 ? "Ljava/io/FileNotFoundException;"
+                                                          : "Ljava/io/IOException;");
+            }
+            return dx::VmValue::Int(0);
+        },
+        dx::kAccPublic | dx::kAccStatic | dx::kAccNative);
     return std::move(builder).Build();
 }
 

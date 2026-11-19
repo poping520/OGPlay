@@ -52,6 +52,7 @@ private:
         std::string descriptor;
         bool present{};
         LinkedAnnotationValue encoded;
+        DexClassId source;
         bool materialized{};
         VmValue value;
     };
@@ -67,8 +68,12 @@ private:
 
     [[nodiscard]] DexClassId RequireAnnotationClass(VmObjectRef class_object);
     [[nodiscard]] DexClassId EnsureImplClass(DexClassId annotation_type);
-    [[nodiscard]] VmObjectRef Materialize(const LinkedAnnotation& annotation);
-    [[nodiscard]] VmObjectRef MaterializeAnnotations(const std::vector<LinkedAnnotation>& annotations);
+    [[nodiscard]] std::optional<DexClassId> ResolveAnnotationType(std::string_view descriptor, DexClassId source);
+    [[nodiscard]] VmObjectRef Materialize(const LinkedAnnotation& annotation, DexClassId source, DexClassId type);
+    [[nodiscard]] VmObjectRef MaterializeDeclared(const std::vector<LinkedAnnotation>& annotations, DexClassId source,
+                                                  DexClassId requested);
+    [[nodiscard]] VmObjectRef MaterializeAnnotations(const std::vector<LinkedAnnotation>& annotations,
+                                                     DexClassId source);
     [[nodiscard]] VmObjectRef EmptyAnnotationArray();
     [[nodiscard]] VmObjectRef MakeAnnotationArray(
         const std::vector<VmObjectRef>& values);
@@ -80,13 +85,12 @@ private:
         const std::vector<std::pair<std::string, LinkedAnnotationValue>>&
             elements,
         std::string_view name) const;
-    void BindMembers(InstanceState& state, DexClassId annotation_type,
-                     const std::vector<std::pair<std::string, LinkedAnnotationValue>>&
-                         elements);
-    [[nodiscard]] VmValue MaterializeEncoded(
-        const LinkedAnnotationValue& encoded, std::string_view expected);
-    [[nodiscard]] VmValue MaterializeArray(
-        const LinkedAnnotationValue& encoded, std::string_view component);
+    void BindMembers(InstanceState& state, DexClassId source,
+                     const std::vector<std::pair<std::string, LinkedAnnotationValue>>& elements);
+    [[nodiscard]] VmValue MaterializeEncoded(const LinkedAnnotationValue& encoded, std::string_view expected,
+                                             DexClassId source, DexClassId expected_owner);
+    [[nodiscard]] VmValue MaterializeArray(const LinkedAnnotationValue& encoded, std::string_view component,
+                                           DexClassId source, DexClassId expected_owner);
     [[nodiscard]] VmObjectRef CloneIfArray(VmObjectRef value);
     [[nodiscard]] VmValue MemberValue(InstanceState& state, std::size_t index);
     [[nodiscard]] bool ValuesEqual(const VmValue& left, const VmValue& right,

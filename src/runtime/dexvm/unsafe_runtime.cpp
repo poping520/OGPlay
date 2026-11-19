@@ -106,7 +106,7 @@ UnsafeRuntime::Location UnsafeRuntime::Resolve(
         Invalid("Unsafe field receiver or type mismatch");
     location.index = field.slot;
     if (kind == UnsafeValueKind::reference)
-        location.reference_type = linker.ResolveDescriptor(field.descriptor);
+        location.reference_type = linker.ResolveDescriptor(field.descriptor, field.owner);
     const auto slots = model.InstanceSlots(object);
     const auto width = kind == UnsafeValueKind::long_integer ? 2U : 1U;
     if (static_cast<std::size_t>(location.index) + width > slots.size())

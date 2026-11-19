@@ -66,6 +66,7 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<
     };
     static_cast<void>(DeviceLocale(context->locale_language, context->locale_region));
     services.application_classpath = [context] {
+        if (!context->standalone_dex_path.empty()) return context->standalone_dex_path;
         return context->package_resource_path.empty() ? std::string(".") : context->package_resource_path;
     };
     services.vm_property_assignments = [context] {

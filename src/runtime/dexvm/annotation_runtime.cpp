@@ -188,31 +188,34 @@ DexClassId AnnotationRuntime::EnsureImplClass(const DexClassId annotation_type) 
     return info.impl;
 }
 
-VmObjectRef AnnotationRuntime::Materialize(const LinkedAnnotation& annotation) {
-    auto& linker = interpreter_->Linker();
-    DexClassId type;
+std::optional<DexClassId> AnnotationRuntime::ResolveAnnotationType(std::string_view descriptor, DexClassId source) {
     try {
-        type = linker.ResolveDescriptor(annotation.type_descriptor);
+        return interpreter_->Linker().ResolveDescriptor(descriptor, source);
     } catch (const JavaLinkageError& error) {
-        if (error.Kind() == JavaLinkageKind::no_class) return VmObjectRef{};
-        throw;
+        if (error.Kind() != JavaLinkageKind::no_class) throw;
+    } catch (const VmJavaThrow& error) {
+        if (error.descriptor != "Ljava/lang/NoClassDefFoundError;") throw;
     }
+    return std::nullopt;
+}
+
+VmObjectRef AnnotationRuntime::Materialize(const LinkedAnnotation& annotation, DexClassId source, DexClassId type) {
+    auto& linker = interpreter_->Linker();
     const auto impl = EnsureImplClass(type);
     const auto instance = interpreter_->Model().NewInstance(impl, linker.Class(impl).instance_slots);
     const auto roots = interpreter_->ProtectReferences(std::array{instance});
     InstanceState state;
     state.annotation_type = type;
-    BindMembers(state, type, annotation.elements);
+    BindMembers(state, source, annotation.elements);
     instances_.InsertOrAssign(instance, std::move(state));
     static_cast<void>(roots);
     return instance;
 }
 
-void AnnotationRuntime::BindMembers(InstanceState& state, const DexClassId annotation_type,
+void AnnotationRuntime::BindMembers(InstanceState& state, const DexClassId source,
                                     const std::vector<std::pair<std::string, LinkedAnnotationValue>>& elements) {
     auto& linker = interpreter_->Linker();
-    linker.EnsureClassLinked(annotation_type);
-    const auto& linked = linker.Class(annotation_type);
+    const auto& linked = linker.Class(state.annotation_type);
     const auto& defaults = linked.annotation_defaults;
     for (const auto method_id : linked.own_virtual_methods) {
         const auto& method = linker.Method(method_id);
@@ -224,9 +227,11 @@ void AnnotationRuntime::BindMembers(InstanceState& state, const DexClassId annot
         if (const auto* explicit_value = FindNamed(elements, method.name); explicit_value != nullptr) {
             member.present = true;
             member.encoded = *explicit_value;
+            member.source = source;
         } else if (const auto* default_value = FindNamed(defaults, method.name); default_value != nullptr) {
             member.present = true;
             member.encoded = *default_value;
+            member.source = state.annotation_type;
         }
         state.members.push_back(std::move(member));
     }
@@ -275,10 +280,9 @@ VmObjectRef AnnotationRuntime::GetClassAnnotation(const DexClassId java_class, c
     const auto requested = RequireAnnotationClass(annotation_class);
     auto& linker = interpreter_->Linker();
     linker.EnsureClassLinked(java_class);
-    const auto& descriptor = linker.Class(requested).descriptor;
-    if (const auto* found = FindDeclared(linker.Class(java_class).runtime_annotations, descriptor); found != nullptr) {
-        return Materialize(*found);
-    }
+    if (const auto found = MaterializeDeclared(linker.Class(java_class).runtime_annotations, java_class, requested);
+        found.IsValid())
+        return found;
     if (!inherited || !AnnotationTypeIsInherited(requested)) {
         return VmObjectRef{};
     }
@@ -287,9 +291,8 @@ VmObjectRef AnnotationRuntime::GetClassAnnotation(const DexClassId java_class, c
         linker.EnsureClassLinked(*current);
         const auto& linked = linker.Class(*current);
         if (linked.is_interface) break;
-        if (const auto* found = FindDeclared(linked.runtime_annotations, descriptor); found != nullptr) {
-            return Materialize(*found);
-        }
+        if (const auto found = MaterializeDeclared(linked.runtime_annotations, *current, requested); found.IsValid())
+            return found;
         current = linked.super;
     }
     return VmObjectRef{};
@@ -299,34 +302,32 @@ bool AnnotationRuntime::IsDeclaredClassAnnotationPresent(const DexClassId java_c
                                                          const VmObjectRef annotation_class) {
     const auto requested = RequireAnnotationClass(annotation_class);
     auto& linker = interpreter_->Linker();
-    return FindDeclared(linker.Class(java_class).runtime_annotations, linker.Class(requested).descriptor) != nullptr;
+    const auto& descriptor = linker.ClassHeader(requested).descriptor;
+    return FindDeclared(linker.Class(java_class).runtime_annotations, descriptor) &&
+           ResolveAnnotationType(descriptor, java_class) == requested;
 }
 
 VmObjectRef AnnotationRuntime::GetClassAnnotations(const DexClassId java_class, const bool inherited) {
     auto& linker = interpreter_->Linker();
     linker.EnsureClassLinked(java_class);
-    std::vector<VmObjectRef> values;
-    std::vector<std::string> seen;
+
+    struct SelectedAnnotation {
+        const LinkedAnnotation* annotation;
+        DexClassId source;
+        DexClassId type;
+    };
+
+    std::vector<SelectedAnnotation> selected;
     auto current = java_class;
     bool first = true;
     while (current.IsValid()) {
         linker.EnsureClassLinked(current);
         const auto& linked = linker.Class(current);
         for (const auto& annotation : linked.runtime_annotations) {
-            if (std::find(seen.begin(), seen.end(), annotation.type_descriptor) != seen.end()) {
-                continue;
-            }
-            if (!first) {
-                try {
-                    const auto type = linker.ResolveDescriptor(annotation.type_descriptor);
-                    if (!AnnotationTypeIsInherited(type)) continue;
-                } catch (const JavaLinkageError& error) {
-                    if (error.Kind() != JavaLinkageKind::no_class) throw;
-                    continue;
-                }
-            }
-            seen.push_back(annotation.type_descriptor);
-            if (const auto value = Materialize(annotation); value.IsValid()) values.push_back(value);
+            const auto type = ResolveAnnotationType(annotation.type_descriptor, current);
+            if (!type || std::ranges::any_of(selected, [&](const auto& item) { return item.type == *type; })) continue;
+            if (!first && !AnnotationTypeIsInherited(*type)) continue;
+            selected.push_back({&annotation, current, *type});
         }
         if (!inherited) break;
         if (!linked.super.has_value()) break;
@@ -334,14 +335,23 @@ VmObjectRef AnnotationRuntime::GetClassAnnotations(const DexClassId java_class, 
         current = *linked.super;
         if (linker.Class(current).is_interface) break;
     }
-    return MakeAnnotationArray(values);
+    const auto element = linker.ResolveDescriptor(kAnnotation);
+    auto& model = interpreter_->Model();
+    const auto result =
+        model.NewObjectArray(linker.ArrayClass(element), element, static_cast<JniSize>(selected.size()));
+    const auto roots = interpreter_->ProtectReferences(std::array{result});
+    for (std::size_t index = 0; index < selected.size(); ++index) {
+        const auto& item = selected[index];
+        model.SetObjectElement(result, static_cast<JniSize>(index),
+                               Materialize(*item.annotation, item.source, item.type));
+    }
+    return result;
 }
 
 VmObjectRef AnnotationRuntime::GetFieldAnnotation(const VmFieldId field, const VmObjectRef annotation_class) {
     const auto requested = RequireAnnotationClass(annotation_class);
-    const auto& descriptor = interpreter_->Linker().Class(requested).descriptor;
-    const auto* found = FindDeclared(interpreter_->Linker().Field(field).runtime_annotations, descriptor);
-    return found == nullptr ? VmObjectRef{} : Materialize(*found);
+    const auto& linked = interpreter_->Linker().Field(field);
+    return MaterializeDeclared(linked.runtime_annotations, linked.owner, requested);
 }
 
 bool AnnotationRuntime::IsFieldAnnotationPresent(const VmFieldId field, const VmObjectRef annotation_class) {
@@ -349,17 +359,26 @@ bool AnnotationRuntime::IsFieldAnnotationPresent(const VmFieldId field, const Vm
 }
 
 VmObjectRef AnnotationRuntime::GetFieldAnnotations(const VmFieldId field) {
-    return MaterializeAnnotations(interpreter_->Linker().Field(field).runtime_annotations);
+    const auto& linked = interpreter_->Linker().Field(field);
+    return MaterializeAnnotations(linked.runtime_annotations, linked.owner);
 }
 
 VmObjectRef AnnotationRuntime::GetMethodAnnotation(VmMethodId method, VmObjectRef annotation_class) {
     const auto requested = RequireAnnotationClass(annotation_class);
-    const auto* found = FindDeclared(interpreter_->Linker().Method(method).runtime_annotations,
-                                     interpreter_->Linker().Class(requested).descriptor);
-    return found ? Materialize(*found) : VmObjectRef{};
+    const auto& linked = interpreter_->Linker().Method(method);
+    return MaterializeDeclared(linked.runtime_annotations, linked.owner, requested);
 }
 
-VmObjectRef AnnotationRuntime::MaterializeAnnotations(const std::vector<LinkedAnnotation>& annotations) {
+VmObjectRef AnnotationRuntime::MaterializeDeclared(const std::vector<LinkedAnnotation>& annotations, DexClassId source,
+                                                   DexClassId requested) {
+    const auto& descriptor = interpreter_->Linker().ClassHeader(requested).descriptor;
+    const auto* found = FindDeclared(annotations, descriptor);
+    if (!found || ResolveAnnotationType(descriptor, source) != requested) return VmObjectRef{};
+    return Materialize(*found, source, requested);
+}
+
+VmObjectRef AnnotationRuntime::MaterializeAnnotations(const std::vector<LinkedAnnotation>& annotations,
+                                                      DexClassId source) {
     auto& vm = *interpreter_;
     const auto component = vm.Linker().ResolveDescriptor("Ljava/lang/annotation/Annotation;");
     const auto array_type = vm.Linker().ResolveDescriptor("[Ljava/lang/annotation/Annotation;");
@@ -367,8 +386,8 @@ VmObjectRef AnnotationRuntime::MaterializeAnnotations(const std::vector<LinkedAn
     const auto root = vm.ProtectReferences(std::array{array});
     JniSize count{};
     for (const auto& annotation : annotations) {
-        const auto value = Materialize(annotation);
-        if (value.IsValid()) vm.Model().SetObjectElement(array, count++, value);
+        if (const auto type = ResolveAnnotationType(annotation.type_descriptor, source))
+            vm.Model().SetObjectElement(array, count++, Materialize(annotation, source, *type));
     }
     if (count == static_cast<JniSize>(annotations.size())) return array;
     const auto compact = vm.Model().NewObjectArray(array_type, component, count);
@@ -378,7 +397,8 @@ VmObjectRef AnnotationRuntime::MaterializeAnnotations(const std::vector<LinkedAn
 }
 
 VmObjectRef AnnotationRuntime::GetMethodAnnotations(VmMethodId method) {
-    return MaterializeAnnotations(interpreter_->Linker().Method(method).runtime_annotations);
+    const auto& linked = interpreter_->Linker().Method(method);
+    return MaterializeAnnotations(linked.runtime_annotations, linked.owner);
 }
 
 VmObjectRef AnnotationRuntime::GetParameterAnnotations(VmMethodId method) {
@@ -393,7 +413,7 @@ VmObjectRef AnnotationRuntime::GetParameterAnnotations(VmMethodId method) {
     const auto result_root = vm.ProtectReferences(std::array{result});
     for (std::size_t index = 0; index < count; ++index) {
         const auto array = index < linked.parameter_annotations.size()
-                               ? MaterializeAnnotations(linked.parameter_annotations[index])
+                               ? MaterializeAnnotations(linked.parameter_annotations[index], linked.owner)
                                : EmptyAnnotationArray();
         vm.Model().SetObjectElement(result, static_cast<JniSize>(index), array);
     }
@@ -408,9 +428,9 @@ VmObjectRef AnnotationRuntime::GetDefaultValue(const VmMethodId method) {
     const auto* found = FindNamed(owner.annotation_defaults, linked_method.name);
     if (found == nullptr) return VmObjectRef{};
     const auto expected = ReturnType(linked_method.descriptor);
-    const auto value = MaterializeEncoded(*found, expected);
+    const auto value = MaterializeEncoded(*found, expected, linked_method.owner, linked_method.owner);
     ReflectionCodec codec(*interpreter_, linker, interpreter_->Model());
-    const auto return_type = linker.ResolveDescriptor(expected);
+    const auto return_type = linker.ResolveDescriptor(expected, linked_method.owner);
     return codec.BoxReturn(return_type, value);
 }
 
@@ -440,7 +460,8 @@ VmValue AnnotationRuntime::MemberValue(InstanceState& state, const std::size_t i
         ThrowIncomplete(interpreter_->Linker().Class(state.annotation_type).descriptor, member.name);
     }
     if (!member.materialized) {
-        member.value = MaterializeEncoded(member.encoded, ReturnType(member.descriptor));
+        member.value =
+            MaterializeEncoded(member.encoded, ReturnType(member.descriptor), member.source, state.annotation_type);
         member.materialized = true;
     }
     return member.value;
@@ -492,7 +513,8 @@ VmValue AnnotationRuntime::ToString(const VmObjectRef instance) {
     return VmValue::Ref(interpreter_->NewStringUtf8(text.str()));
 }
 
-VmValue AnnotationRuntime::MaterializeEncoded(const LinkedAnnotationValue& encoded, const std::string_view expected) {
+VmValue AnnotationRuntime::MaterializeEncoded(const LinkedAnnotationValue& encoded, const std::string_view expected,
+                                              DexClassId source, DexClassId expected_owner) {
     using Kind = LinkedAnnotationValue::Kind;
     if (encoded.kind == Kind::unsupported || !KindMatches(encoded, expected)) {
         ThrowMismatch(expected);
@@ -511,19 +533,25 @@ VmValue AnnotationRuntime::MaterializeEncoded(const LinkedAnnotationValue& encod
     case Kind::string_value: return VmValue::Ref(model.InternString(encoded.text));
     case Kind::type_descriptor: {
         try {
-            const auto type = linker.ResolveDescriptor(encoded.descriptor);
+            const auto type = linker.ResolveDescriptor(encoded.descriptor, source);
             return VmValue::Ref(model.ClassObject(type));
         } catch (const JavaLinkageError& error) {
             if (error.Kind() == JavaLinkageKind::no_class) ThrowMissingType(encoded.descriptor);
+            throw;
+        } catch (const VmJavaThrow& error) {
+            if (error.descriptor == "Ljava/lang/NoClassDefFoundError;") ThrowMissingType(encoded.descriptor);
             throw;
         }
     }
     case Kind::enum_constant: {
         DexClassId type;
         try {
-            type = linker.ResolveDescriptor(encoded.descriptor);
+            type = linker.ResolveDescriptor(encoded.descriptor, source);
         } catch (const JavaLinkageError& error) {
             if (error.Kind() == JavaLinkageKind::no_class) ThrowMissingType(encoded.descriptor);
+            throw;
+        } catch (const VmJavaThrow& error) {
+            if (error.descriptor == "Ljava/lang/NoClassDefFoundError;") ThrowMissingType(encoded.descriptor);
             throw;
         }
         const auto initialized = interpreter_->EnsureClassInitialized(type);
@@ -546,25 +574,29 @@ VmValue AnnotationRuntime::MaterializeEncoded(const LinkedAnnotationValue& encod
         }
         return VmValue::Ref(object);
     }
-    case Kind::array: return VmValue::Ref(MaterializeArray(encoded, expected.substr(1)).ref);
+    case Kind::array: return VmValue::Ref(MaterializeArray(encoded, expected.substr(1), source, expected_owner).ref);
     case Kind::annotation: {
         LinkedAnnotation nested;
         nested.type_descriptor = encoded.nested_type;
         nested.elements = encoded.nested_elements;
-        return VmValue::Ref(Materialize(nested));
+        const auto type = ResolveAnnotationType(nested.type_descriptor, source);
+        if (!type) ThrowMissingType(nested.type_descriptor);
+        if (*type != linker.ResolveDescriptor(expected, expected_owner)) ThrowMismatch(expected);
+        return VmValue::Ref(Materialize(nested, source, *type));
     }
     case Kind::null_reference: return VmValue::Ref(VmObjectRef{});
     default: ThrowMismatch(expected);
     }
 }
 
-VmValue AnnotationRuntime::MaterializeArray(const LinkedAnnotationValue& encoded, const std::string_view component) {
+VmValue AnnotationRuntime::MaterializeArray(const LinkedAnnotationValue& encoded, const std::string_view component,
+                                            DexClassId source, DexClassId expected_owner) {
     auto& linker = interpreter_->Linker();
     auto& model = interpreter_->Model();
     const auto array_descriptor = "[" + std::string(component);
     DexClassId array_class;
     try {
-        array_class = linker.ResolveDescriptor(array_descriptor);
+        array_class = linker.ResolveDescriptor(array_descriptor, expected_owner);
     } catch (const JavaLinkageError& error) {
         if (error.Kind() == JavaLinkageKind::no_class) ThrowMissingType(array_descriptor);
         throw;
@@ -576,7 +608,7 @@ VmValue AnnotationRuntime::MaterializeArray(const LinkedAnnotationValue& encoded
         for (JniSize index = 0; index < length; ++index) {
             const auto& item = encoded.values[static_cast<std::size_t>(index)];
             if (!KindMatches(item, component)) ThrowMismatch(component);
-            const auto value = MaterializeEncoded(item, component);
+            const auto value = MaterializeEncoded(item, component, source, expected_owner);
             const auto bits = component.front() == 'F' || component.front() == 'D'
                                   ? (component.front() == 'D' ? value.wide : static_cast<std::uint64_t>(value.cat1))
                                   : (component.front() == 'J' ? value.wide : value.cat1);
@@ -585,13 +617,13 @@ VmValue AnnotationRuntime::MaterializeArray(const LinkedAnnotationValue& encoded
         static_cast<void>(roots);
         return VmValue::Ref(array);
     }
-    const auto element = linker.ResolveDescriptor(component);
+    const auto element = *linker.ClassHeader(array_class).array_element_class;
     const auto array = model.NewObjectArray(array_class, element, length);
     const auto roots = interpreter_->ProtectReferences(std::array{array});
     for (JniSize index = 0; index < length; ++index) {
         const auto& item = encoded.values[static_cast<std::size_t>(index)];
         if (!KindMatches(item, component)) ThrowMismatch(component);
-        const auto value = MaterializeEncoded(item, component);
+        const auto value = MaterializeEncoded(item, component, source, expected_owner);
         model.SetObjectElement(array, index, value.ref);
     }
     static_cast<void>(roots);

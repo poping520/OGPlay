@@ -3,6 +3,7 @@
 // vtable construction live in class_linker.cpp.
 
 #include "class_linker_internal.h"
+#include "ogplay/runtime/dexvm/interpreter.h"
 
 namespace ogplay::runtime::dexvm {
 
@@ -17,13 +18,15 @@ DexClassId DexClassLinker::ResolveTypeIndex(const std::uint32_t type_index) {
 DexClassId DexClassLinker::ResolveTypeIndex(
     const DexUnitId unit_id, const std::uint32_t type_index, std::optional<DexClassId> caller) {
     auto& unit = impl_->UnitAt(unit_id);
+    const auto loader =
+        caller ? impl_->ClassAt(*caller).defining_loader : (unit.boot ? kBootstrapLoader : kApplicationLoader);
     if (type_index >= unit.image.types.size()) {
         Fail(DexVmErrorReason::unresolved_reference,
              "type index is out of range");
     }
-    auto& cached = unit.type_cache[type_index];
+    auto& cached = unit.Cache(loader).types[type_index];
     if (!cached.has_value()) {
-        cached = ResolveDescriptor(unit.image.types[type_index].descriptor);
+        cached = ResolveDescriptor(unit.image.types[type_index].descriptor, loader);
     }
     EnsureClassLinked(*cached);
     impl_->CheckClassAccess(*cached, caller);
@@ -44,6 +47,8 @@ ResolvedCallSite DexClassLinker::ResolveMethodIndex(
     const DexUnitId unit_id, const std::uint32_t method_index,
     const InvokeKind requested_kind, std::optional<DexClassId> caller) {
     auto& unit = impl_->UnitAt(unit_id);
+    const auto loader =
+        caller ? impl_->ClassAt(*caller).defining_loader : (unit.boot ? kBootstrapLoader : kApplicationLoader);
     if (method_index >= unit.image.methods.size()) {
         Fail(DexVmErrorReason::unresolved_reference,
              "method index is out of range");
@@ -52,8 +57,21 @@ ResolvedCallSite DexClassLinker::ResolveMethodIndex(
     const auto& entry = image.methods[method_index];
     const auto owner_descriptor =
         image.types[entry.class_type_index].descriptor;
-    const auto owner = ResolveDescriptor(owner_descriptor);
     const auto name = Ascii(image.strings[entry.name_string_index]);
+    const auto kind =
+        requested_kind == InvokeKind::private_direct && name == "<init>" ? InvokeKind::constructor : requested_kind;
+    auto& cached = unit.Cache(loader).methods[method_index][static_cast<std::size_t>(kind)];
+    const auto check_access = [&](const ResolvedCallSite& call) {
+        impl_->CheckClassAccess(call.declared_owner, caller);
+        const auto& method = impl_->MethodAt(call.method);
+        impl_->CheckMemberAccess(method.owner, method.access_flags, caller);
+    };
+    if (cached) {
+        EnsureClassLinked(cached->declared_owner);
+        check_access(*cached);
+        return *cached;
+    }
+    const auto owner = ResolveDescriptor(owner_descriptor, loader);
     const auto& prototype = image.prototypes[entry.prototype_index];
     std::string descriptor = "(";
     for (const auto parameter : prototype.parameter_type_indices) {
@@ -62,18 +80,6 @@ ResolvedCallSite DexClassLinker::ResolveMethodIndex(
     descriptor += ")";
     descriptor += image.types[prototype.return_type_index].descriptor;
 
-    const auto kind = requested_kind == InvokeKind::private_direct &&
-                              name == "<init>"
-                          ? InvokeKind::constructor
-                          : requested_kind;
-    auto& cached = unit.method_cache[method_index]
-                                    [static_cast<std::size_t>(kind)];
-    const auto check_access = [&](const ResolvedCallSite& call) {
-        impl_->CheckClassAccess(owner, caller);
-        const auto& method = impl_->MethodAt(call.method);
-        impl_->CheckMemberAccess(method.owner, method.access_flags, caller);
-    };
-    if (cached.has_value()) { check_access(*cached); return *cached; }
     if ((kind == InvokeKind::interface_call) != impl_->ClassAt(owner).is_interface) {
         throw JavaLinkageError(JavaLinkageKind::incompatible_class_change,
                               "method owner has wrong interface kind: " + owner_descriptor);
@@ -176,11 +182,13 @@ ResolvedFieldRef DexClassLinker::ResolveFieldIndex(
     const DexUnitId unit_id, const std::uint32_t field_index,
     const bool is_static, std::optional<DexClassId> caller) {
     auto& unit = impl_->UnitAt(unit_id);
+    const auto loader =
+        caller ? impl_->ClassAt(*caller).defining_loader : (unit.boot ? kBootstrapLoader : kApplicationLoader);
     if (field_index >= unit.image.fields.size()) {
         Fail(DexVmErrorReason::unresolved_reference,
              "field index is out of range");
     }
-    auto& cached = unit.field_cache[field_index];
+    auto& cached = unit.Cache(loader).fields[field_index];
     if (cached.has_value()) {
         EnsureClassLinked(cached->declared_owner);
         const auto& field = impl_->FieldAt(cached->field);
@@ -196,7 +204,7 @@ ResolvedFieldRef DexClassLinker::ResolveFieldIndex(
     const auto& entry = image.fields[field_index];
     const auto owner_descriptor =
         image.types[entry.class_type_index].descriptor;
-    const auto owner = ResolveDescriptor(owner_descriptor);
+    const auto owner = ResolveDescriptor(owner_descriptor, loader);
     const auto name = Ascii(image.strings[entry.name_string_index]);
     const auto descriptor = image.types[entry.type_index].descriptor;
     const auto resolved = FindFieldRecursive(owner, name, descriptor);
@@ -264,6 +272,57 @@ std::optional<VmFieldId> DexClassLinker::FindFieldRecursive(
     return std::nullopt;
 }
 
+void DexClassLinker::ValidateLoaderConstraints(DexClassId id) {
+    const auto& linked = impl_->ClassAt(id);
+    if (!impl_->dynamic_dex_opened || linked.is_interface) return;
+
+    const auto resolve = [&](std::string_view descriptor, VmClassLoaderId loader) -> std::optional<DexClassId> {
+        try {
+            return ResolveDescriptor(descriptor, loader);
+        } catch (const JavaLinkageError& error) {
+            if (error.Kind() != JavaLinkageKind::no_class) throw;
+        } catch (const VmJavaThrow& error) {
+            if (error.descriptor != "Ljava/lang/NoClassDefFoundError;") throw;
+        }
+        return std::nullopt;
+    };
+    const auto check = [&](const LinkedMethod& implementation, DexClassId declaration) {
+        const auto from = impl_->ClassAt(declaration).defining_loader;
+        const auto to = impl_->ClassAt(implementation.owner).defining_loader;
+        if (from == to) return;
+        const auto prototype = SplitDescriptor(implementation.descriptor);
+        const auto same_type = [&](std::string_view descriptor) {
+            if (!IsRefDescriptor(descriptor)) return true;
+            const auto parent = resolve(descriptor, from);
+            return parent == resolve(descriptor, to);
+        };
+        if (!same_type(prototype.return_type) || !std::ranges::all_of(prototype.parameters, same_type)) {
+            throw JavaLinkageError(JavaLinkageKind::linkage, linked.descriptor + "->" + implementation.name +
+                                                                 implementation.descriptor +
+                                                                 " resolves to different types across class loaders");
+        }
+    };
+
+    if (linked.super) {
+        const auto& parent = impl_->ClassAt(*linked.super);
+        if (parent.defining_loader != linked.defining_loader) {
+            for (std::size_t index = 0; index < parent.vtable.size(); ++index) {
+                if (parent.vtable[index] != linked.vtable[index])
+                    check(impl_->MethodAt(linked.vtable[index]), parent.id);
+            }
+        }
+    }
+    for (const auto interface_id : linked.interfaces) {
+        const auto& interface = impl_->ClassAt(interface_id);
+        if (interface.defining_loader == linked.defining_loader) continue;
+        for (const auto method_id : interface.own_virtual_methods) {
+            const auto& method = impl_->MethodAt(method_id);
+            const auto slot = FindVtableIndex(id, method.name, method.descriptor);
+            if (slot) check(impl_->MethodAt(linked.vtable[*slot]), interface_id);
+        }
+    }
+}
+
 bool DexClassLinker::IsAssignable(const DexClassId target,
                                   const DexClassId source) {
     if (target == source) return true;
@@ -273,24 +332,20 @@ bool DexClassLinker::IsAssignable(const DexClassId target,
         !IsRefDescriptor(source_class.descriptor)) return false;
     // Interfaces are reference types too: Runnable[] is assignable to Object[].
     // Intrinsic interfaces need not encode an Object superclass.
-    if (target_class.descriptor == "Ljava/lang/Object;") return true;
+    if (target_class.defining_loader == kBootstrapLoader && target_class.descriptor == "Ljava/lang/Object;")
+        return true;
     if (source_class.is_array) {
         // JLS 10.7 / AOSP TypeCheck: every array type is a subtype of
         // Object, Cloneable, and Serializable. Object.clone() uses
         // `this instanceof Cloneable`, so this must match the Java check.
-        if (target_class.descriptor == "Ljava/lang/Object;" ||
-            target_class.descriptor == "Ljava/lang/Cloneable;" ||
-            target_class.descriptor == "Ljava/io/Serializable;") {
+        if (target_class.defining_loader == kBootstrapLoader && (target_class.descriptor == "Ljava/lang/Cloneable;" ||
+                                                                 target_class.descriptor == "Ljava/io/Serializable;")) {
             return true;
         }
         if (!target_class.is_array) return false;
-        const auto& source_element = source_class.array_element_descriptor;
-        const auto& target_element = target_class.array_element_descriptor;
-        if (source_element == target_element) return true;
-        if (IsRefDescriptor(source_element) &&
-            IsRefDescriptor(target_element)) {
-            return IsAssignable(ResolveDescriptor(target_element),
-                                ResolveDescriptor(source_element));
+        if (IsRefDescriptor(source_class.array_element_descriptor) &&
+            IsRefDescriptor(target_class.array_element_descriptor)) {
+            return IsAssignable(*target_class.array_element_class, *source_class.array_element_class);
         }
         return false;
     }

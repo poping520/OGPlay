@@ -261,7 +261,7 @@
   },
   "068-classloader": {
     "switch": "excluded:harness",
-    "threaded": "excluded:harness"
+    "threaded": "pass"
   },
   "069-field-type": {
     "switch": "pass",
@@ -333,11 +333,11 @@
   },
   "086-null-super": {
     "switch": "fail:output",
-    "threaded": "fail:output"
+    "threaded": "pass"
   },
   "087-gc-after-link": {
     "switch": "fail:output",
-    "threaded": "fail:output"
+    "threaded": "pass"
   },
   "088-monitor-verification": {
     "switch": "pass",

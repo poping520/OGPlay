@@ -52,7 +52,8 @@ Context、ContextWrapper、PackageManager 整类执行 ROM；ContextImpl 和 App
 分别持有应用环境与本地 IPackageManager，构造、attach 校验和虚派委托由原版 Java 管理。
 封存 APK 经 ROM ActivityThread.H 处理 bindApplication，LoadedApk/Instrumentation 创建 Application
 及 ContextImpl。Application 和各 Activity 使用独立的 ROM ContextImpl，应用 loader 由 ROM
-ApplicationLoaders 缓存，与 VM 应用类的 loader 同一对象。DexFile 仅接入已注册的当前 APK DEX。
+ApplicationLoaders 缓存，与 VM 应用类的 loader 同一对象。封存 APK 的 DexFile cookie 对应
+主 DEX，外部 DEX 和 MultiDex 提取归档经 VFS 打开并交给链接器按 loader 定义。
 Activity、PhoneWindow、WindowManagerGlobal 和 ViewRootImpl 执行 ROM。AMS 通过 IApplicationThread
 调度启动、暂停、停止、结果、恢复及销毁。当前 APK 的封存 Manifest 提供组件身份、主题和 alias。
 同包 Activity 由封存清单解析；task 与实例复用遵循四种 launchMode，支持本地 for-result。

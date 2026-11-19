@@ -73,6 +73,7 @@ struct InterpreterExecutionState final {
     // Depth of guest native frames this context currently has live on the
     // root guest stack (04 §1 outbound marshaling).
     std::uint32_t native_depth{};
+    std::optional<VmClassLoaderId> jni_class_loader;
     bool constructing_throwable{};
     bool collecting_gc{};
     // Teardown handshake, read once per instruction by Tick().

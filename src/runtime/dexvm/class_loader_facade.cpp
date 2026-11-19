@@ -11,7 +11,15 @@
 namespace ogplay::runtime::dexvm {
 
 ClassLoaderFacade::ClassLoaderFacade(Interpreter& interpreter, DexClassLinker& linker, JavaObjectModel& model)
-    : interpreter_(&interpreter), linker_(&linker), model_(&model) {}
+    : interpreter_(&interpreter), linker_(&linker), model_(&model) {
+    linker.SetLoaderResolver(&interpreter.ExecutionLock(), [this](VmClassLoaderId loader, std::string_view descriptor) {
+        return InvokeLoadClass(loader, descriptor);
+    });
+}
+
+ClassLoaderFacade::~ClassLoaderFacade() {
+    linker_->SetLoaderResolver(nullptr, {});
+}
 
 VmObjectRef ClassLoaderFacade::CallLoaderSingleton(std::string_view descriptor, std::string_view method,
                                                    std::string_view signature) {
@@ -62,8 +70,8 @@ VmObjectRef ClassLoaderFacade::ApplicationLoader() {
         if (application_loader_factory_)
             application_loader_ = application_loader_factory_();
         else {
-            // Standalone run-dex has no APK. Still execute a real ROM constructor;
-            // the sealed namespace is available to Class.forName's VM entry only.
+            // Embedders without a configured classpath still use a ROM loader.
+            // The pre-registered classes are resolved by the linker.
             const auto parent = BootstrapLoader();
             const auto path = interpreter_->NewStringUtf8("");
             const auto roots = interpreter_->ProtectReferences(std::array{parent, path});
@@ -84,33 +92,38 @@ VmObjectRef ClassLoaderFacade::ApplicationLoader() {
     return application_loader_;
 }
 
-bool ClassLoaderFacade::IsRomApplicationLoader(const VmObjectRef object) const {
-    return application_loader_factory_ && object.IsValid() && object == application_loader_;
+VmObjectRef ClassLoaderFacade::LoaderObject(VmClassLoaderId loader) {
+    if (loader == kBootstrapLoader) return BootstrapLoader();
+    if (loader == kApplicationLoader) return ApplicationLoader();
+    return dynamic_loaders_.at(loader.value - 2U);
 }
 
 VmObjectRef ClassLoaderFacade::LoaderForClass(const DexClassId java_class) {
-    const auto& linked = linker_->Class(java_class);
-    if (ClassNameCodec::IsPrimitive(linked.descriptor)) {
-        return VmObjectRef(0);
-    }
-    return linked.defining_loader == kBootstrapLoader ? BootstrapLoader() : ApplicationLoader();
+    const auto& linked = linker_->ClassHeader(java_class);
+    if (ClassNameCodec::IsPrimitive(linked.descriptor)) return VmObjectRef{};
+    return LoaderObject(linked.defining_loader);
 }
 
 std::optional<VmClassLoaderId> ClassLoaderFacade::RoleOf(const VmObjectRef loader_object) {
-    if (!loader_object.IsValid()) return std::nullopt;
-    if (loader_object == bootstrap_loader_ || loader_object == system_loader_) return kBootstrapLoader;
+    if (!loader_object.IsValid() || loader_object == bootstrap_loader_) return kBootstrapLoader;
     if (loader_object == application_loader_) return kApplicationLoader;
-    // Java may have called getSystemClassLoader directly before the facade's
-    // singleton cache was populated. It is never the APK defining loader.
-    if (loader_object == SystemLoader()) return kBootstrapLoader;
+    if (const auto found = loader_ids_.find(loader_object.Value()); found != loader_ids_.end()) return found->second;
 
-    const auto class_loader = linker_->FindClass("Ljava/lang/ClassLoader;");
-    if (!class_loader.has_value() || !linker_->IsAssignable(*class_loader, model_->ObjectClass(loader_object))) {
-        return std::nullopt;
+    const auto actual = model_->ObjectClass(loader_object);
+    if (linker_->ClassHeader(actual).descriptor == "Ljava/lang/BootClassLoader;" &&
+        linker_->ClassHeader(actual).defining_loader == kBootstrapLoader)
+        return kBootstrapLoader;
+    const auto class_loader = linker_->FindClass(kBootstrapLoader, "Ljava/lang/ClassLoader;");
+    if (!class_loader || !linker_->IsAssignable(*class_loader, actual)) return std::nullopt;
+    const auto id = VmClassLoaderId{static_cast<std::uint32_t>(dynamic_loaders_.size()) + 2U};
+    const auto entry = loader_ids_.emplace(loader_object.Value(), id).first;
+    try {
+        dynamic_loaders_.push_back(loader_object);
+    } catch (...) {
+        loader_ids_.erase(entry);
+        throw;
     }
-    // Guest-created subclasses share the one application namespace. They do
-    // not become definition authorities merely by being ClassLoader objects.
-    return kApplicationLoader;
+    return id;
 }
 
 std::optional<DexClassId> ClassLoaderFacade::FindLoadedClass(const VmClassLoaderId loader,
@@ -119,61 +132,38 @@ std::optional<DexClassId> ClassLoaderFacade::FindLoadedClass(const VmClassLoader
     // maps '.' to '/' without validating, so JNI-style "java/lang/System" still matches.
     auto descriptor = name.starts_with('[') ? std::string(name) : "L" + std::string(name) + ";";
     std::replace(descriptor.begin(), descriptor.end(), '.', '/');
-    const auto java_class = linker_->FindClass(descriptor);
-    if (!java_class.has_value() || !linker_->IsInitiatedBy(*java_class, loader)) {
-        return std::nullopt;
-    }
-    return java_class;
-}
-
-bool ClassLoaderFacade::BootstrapCanLoad(std::string_view descriptor) const {
-    while (descriptor.starts_with("["))
-        descriptor.remove_prefix(1);
-    if (ClassNameCodec::IsPrimitive(descriptor)) return descriptor != "V";
-    auto component = linker_->FindClass(descriptor);
-    if (!component && !linker_->GapSurveyEnabled()) {
-        try {
-            component = linker_->ResolveDescriptor(descriptor);
-        } catch (const JavaLinkageError& error) {
-            if (error.Kind() != JavaLinkageKind::no_class) throw;
-        }
-    }
-    return component.has_value() && linker_->Class(*component).defining_loader == kBootstrapLoader;
+    return linker_->FindInitiatedClass(loader, descriptor);
 }
 
 DexClassId ClassLoaderFacade::LoadClass(const VmClassLoaderId loader, const std::string_view binary_name) {
     const auto descriptor = ClassNameCodec::BinaryNameToDescriptor(binary_name);
-    if (loader == kBootstrapLoader && !BootstrapCanLoad(descriptor)) {
-        throw DexVmError(DexVmErrorReason::unknown_class, "bootstrap class is not available: " + descriptor);
-    }
+    const auto type = linker_->ResolveDescriptor(descriptor, loader);
+    linker_->MarkInitiatedBy(type, loader);
+    return type;
+}
 
-    DexClassId java_class;
-    if (descriptor.starts_with("[")) {
-        java_class = linker_->ResolveDescriptor(descriptor);
-    } else {
-        const auto known = linker_->FindClass(descriptor);
-        if (known)
-            java_class = *known;
-        else if (!linker_->GapSurveyEnabled()) {
-            try {
-                java_class = linker_->ResolveDescriptor(descriptor);
-            } catch (const JavaLinkageError& error) {
-                if (error.Kind() != JavaLinkageKind::no_class || linker_->FindClass(descriptor)) throw;
-                throw DexVmError(DexVmErrorReason::unknown_class, error.what());
-            }
-        } else
-            throw DexVmError(DexVmErrorReason::unknown_class, "class is not available: " + descriptor);
+DexClassId ClassLoaderFacade::InvokeLoadClass(VmClassLoaderId loader, std::string_view descriptor) {
+    const auto object = LoaderObject(loader);
+    const auto actual = model_->ObjectClass(object);
+    const auto slot = linker_->FindVtableIndex(actual, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
+    if (!slot) throw DexVmError(DexVmErrorReason::internal_invariant, "ROM ClassLoader.loadClass is missing");
+    const auto name = interpreter_->NewStringUtf8(ClassNameCodec::ClassGetName(descriptor));
+    const auto roots = interpreter_->ProtectReferences(std::array{object, name});
+    const auto method = linker_->Class(actual).vtable[*slot];
+    const auto result = interpreter_->Call(method, std::array{VmValue::Ref(object), VmValue::Ref(name)});
+    if (result.exception.IsValid()) {
+        const auto cause_root = interpreter_->ProtectReferences(std::array{result.exception});
+        constexpr auto no_class = "Ljava/lang/NoClassDefFoundError;";
+        const auto failure = interpreter_->MakeThrowable(no_class, descriptor);
+        interpreter_->InitThrowableCause(failure, result.exception);
+        throw VmJavaThrow{no_class, std::string(descriptor), failure};
     }
-    try {
-        linker_->EnsureClassLinked(java_class);
-    } catch (const DexVmError& error) {
-        if (error.Reason() == DexVmErrorReason::unknown_class) {
-            throw DexVmError(DexVmErrorReason::invalid_hierarchy, error.what());
-        }
-        throw;
-    }
-    linker_->MarkInitiatedBy(java_class, loader);
-    return java_class;
+    if (!result.value.ref.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "ClassLoader returned null"};
+    const auto type = model_->ClassOfClassObject(result.value.ref);
+    if (linker_->ClassHeader(type).descriptor != descriptor)
+        throw JavaLinkageError(JavaLinkageKind::no_class,
+                               "ClassLoader returned the wrong class for " + std::string(descriptor));
+    return type;
 }
 
 void ClassLoaderFacade::VisitRoots(const std::function<void(VmObjectRef)>& visitor) const {
@@ -181,6 +171,8 @@ void ClassLoaderFacade::VisitRoots(const std::function<void(VmObjectRef)>& visit
     visitor(bootstrap_loader_);
     visitor(system_loader_);
     visitor(application_loader_);
+    for (const auto loader : dynamic_loaders_)
+        visitor(loader);
 }
 
 }  // namespace ogplay::runtime::dexvm

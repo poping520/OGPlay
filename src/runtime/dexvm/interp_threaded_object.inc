@@ -10,9 +10,7 @@
                 }
                 const auto& element = linked.array_element_descriptor;
                 if (element.starts_with("L") || element.starts_with("[")) {
-                    instruction.resolved_aux =
-                        kObjectElementFlag |
-                        linker->ResolveDescriptor(element).Value();
+                    instruction.resolved_aux = kObjectElementFlag | linked.array_element_class->Value();
                 } else {
                     instruction.resolved_aux =
                         static_cast<std::uint32_t>(ArrayKindFor(element));

@@ -34,6 +34,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -53,7 +54,6 @@ INTERNAL_ERROR_EXIT = 70
 EXCLUDED = {
     "001-nop": ("excluded:harness", "run script only echoes text; the VM is never started"),
     "063-process-manager": ("excluded:scope", "spawns host child processes (Runtime.exec)"),
-    "068-classloader": ("excluded:harness", "loads a secondary src-ex dex from a device path"),
     "071-dexfile": ("excluded:harness", "src-ex secondary dex, DexFile on device paths and a native library"),
     "089-many-methods": ("excluded:harness", "expects dx's own 64K-reference build error; the VM is never started"),
 }
@@ -168,6 +168,22 @@ def build(test: str, tests_dir: Path, work: Path, tools) -> tuple[Path | None, s
                           capture_output=True, text=True)
     if done.returncode != 0 or not dex.exists():
         return None, "dx: " + first_error(done.stderr + done.stdout)
+    if test == "068-classloader":
+        external = work / "classes-ex"
+        external.mkdir()
+        sources = sorted(str(p) for p in (work / "src-ex").rglob("*.java"))
+        done = subprocess.run(base[:-1] + [str(external)] + sources, capture_output=True, text=True)
+        if done.returncode != 0:
+            return None, "javac src-ex: " + first_error(done.stderr + done.stdout)
+        jar = work / "test-ex.jar"
+        done = subprocess.run([str(java), "-Xmx1024m", "-cp", str(dx_jar), "com.android.dx.command.Main",
+                               "--dex", "--debug", f"--output={jar}", str(external)],
+                              capture_output=True, text=True)
+        if done.returncode != 0 or not jar.exists():
+            return None, "dx src-ex: " + first_error(done.stderr + done.stdout)
+    elif test in {"086-null-super", "087-gc-after-link"}:
+        with zipfile.ZipFile(work / "test.jar", "w", compression=zipfile.ZIP_DEFLATED) as jar:
+            jar.write(dex, "classes.dex")
     return dex, ""
 
 
@@ -195,7 +211,8 @@ def classify(stdout: bytes, expected: bytes, exit_code: int | None, timed_out: b
     return "fail:output", detail
 
 
-def run_one(cli: Path, dex: Path, expected: bytes, out: Path, backend: str, timeout: float):
+def run_one(cli: Path, dex: Path, expected: bytes, out: Path, backend: str, timeout: float,
+            vfs_files: list[Path]):
     ledger = out / f"ledger-{backend}.json"
     started = time.monotonic()
     timed_out, exit_code = False, None
@@ -203,8 +220,9 @@ def run_one(cli: Path, dex: Path, expected: bytes, out: Path, backend: str, time
         # AOSP run-test:203,210,221 captures ./run 2>&1. Merge Java console
         # streams in call order; keep OGPlay host diagnostics on separate stderr.
         # run-test also passes -ea to dalvikvm for every test.
+        mounts = [arg for path in vfs_files for arg in ("--vfs-file", str(path), path.name)]
         done = subprocess.run([str(cli), "dexvm", "run-dex", str(dex), "--backend", backend,
-                               "--enable-assertions", "--merge-console", "--ledger-json", str(ledger)],
+                               "--enable-assertions", "--merge-console", "--ledger-json", str(ledger), *mounts],
                               capture_output=True, timeout=timeout)
         stdout, stderr, exit_code = done.stdout, done.stderr, done.returncode
     except subprocess.TimeoutExpired as expired:
@@ -235,8 +253,9 @@ def run_test(test: str, args, tools) -> list[Result]:
         return [Result(test, b, "excluded:compile", error, build_note=note) for b in args.backends]
     expected = (args.tests_dir / test / "expected.txt").read_bytes()
     results = []
+    vfs_files = [path for path in (dex.parent / "test-ex.jar", dex.parent / "test.jar") if path.is_file()]
     for backend in args.backends:
-        outcome, detail, code, seconds, hits = run_one(args.cli, dex, expected, out, backend, args.timeout)
+        outcome, detail, code, seconds, hits = run_one(args.cli, dex, expected, out, backend, args.timeout, vfs_files)
         results.append(Result(test, backend, outcome, detail, code, round(seconds, 2), hits, note))
     return results
 

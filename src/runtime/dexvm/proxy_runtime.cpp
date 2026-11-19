@@ -58,7 +58,7 @@ struct Forward final {
             method.owner,
             method.name,
             method.descriptor,
-            linker.ResolveDescriptor(parsed.return_type),
+            linker.ResolveDescriptor(parsed.return_type, method.owner),
             linker.ReflectionExceptionTypes(id)};
 }
 

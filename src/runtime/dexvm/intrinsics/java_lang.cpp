@@ -42,8 +42,7 @@ IntrinsicClassDecl Declare_dalvik_system_VMRuntime_Natives(const CoreIntrinsicSe
             if (!element.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "elementClass == null"};
             if (length < 0) throw VmJavaThrow{"Ljava/lang/NegativeArraySizeException;", "negative array length"};
             const auto element_class = c.vm.Model().ClassOfClassObject(element);
-            const auto descriptor = c.vm.Linker().Class(element_class).descriptor;
-            return VmValue::Ref(BuildReflectArray(c.vm, descriptor, std::array{length}));
+            return VmValue::Ref(BuildReflectArray(c.vm, element_class, std::array{length}));
         },
         kAccPublic | kAccNative);
     b.VirtualMethod(

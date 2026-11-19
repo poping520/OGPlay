@@ -96,12 +96,7 @@ IntrinsicClassDecl Declare_java_lang_VMClassLoader_Natives(const CoreIntrinsicSe
         [](IntrinsicContext& c) {
             const auto name = c.vm.StringUtf8(IntrinsicCall(c).NonNullRef(1, "name"));
             auto& loaders = c.vm.ClassLoaders();
-            const auto loader = c.arguments[0].ref;
-            const auto role = !loader.IsValid() || loader == loaders.BootstrapLoader()
-                                  ? std::optional<VmClassLoaderId>(kBootstrapLoader)
-                              : loaders.IsRomApplicationLoader(loader)
-                                  ? std::optional<VmClassLoaderId>(kApplicationLoader)
-                                  : std::nullopt;
+            const auto role = loaders.RoleOf(c.arguments[0].ref);
             if (!role) return VmValue::Ref(VmObjectRef{});
             const auto type = loaders.FindLoadedClass(*role, name);
             return VmValue::Ref(type ? c.vm.Model().ClassObject(*type) : VmObjectRef{});
@@ -117,8 +112,10 @@ IntrinsicClassDecl Declare_java_lang_VMClassLoader_Natives(const CoreIntrinsicSe
                 // dvmFindClassByName returns null with a pending ClassNotFoundException.
                 c.vm.SetPendingException(c.vm.MakeThrowable("Ljava/lang/ClassNotFoundException;", name));
                 return VmValue::Ref(VmObjectRef{});
-            } catch (const DexVmError& error) {
-                if (error.Reason() != DexVmErrorReason::unknown_class) throw;
+            } catch (const JavaLinkageError& error) {
+                if (error.Kind() != JavaLinkageKind::no_class ||
+                    c.vm.Linker().FindClass(kBootstrapLoader, ClassNameCodec::BinaryNameToDescriptor(name)))
+                    throw;
                 // dvmFindClassByName returns null with a pending ClassNotFoundException.
                 c.vm.SetPendingException(c.vm.MakeThrowable("Ljava/lang/ClassNotFoundException;", name));
                 return VmValue::Ref(VmObjectRef{});

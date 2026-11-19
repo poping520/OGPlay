@@ -422,6 +422,19 @@ public:
     [[nodiscard]] DexClassLinker& Linker() noexcept;
     [[nodiscard]] JavaObjectModel& Model() noexcept;
     [[nodiscard]] ClassLoaderFacade& ClassLoaders() noexcept;
+    [[nodiscard]] std::optional<VmClassLoaderId> JniClassLoader() const;
+
+    class JniClassLoaderScope final {
+    public:
+        JniClassLoaderScope(Interpreter& vm, VmClassLoaderId loader);
+        ~JniClassLoaderScope();
+        JniClassLoaderScope(const JniClassLoaderScope&) = delete;
+        JniClassLoaderScope& operator=(const JniClassLoaderScope&) = delete;
+
+    private:
+        std::optional<VmClassLoaderId>& slot_;
+        std::optional<VmClassLoaderId> previous_;
+    };
     [[nodiscard]] ReflectionRuntime& Reflection() noexcept;
     [[nodiscard]] UnsafeRuntime& Unsafe() noexcept;
     [[nodiscard]] AnnotationRuntime& Annotations() noexcept;
@@ -469,6 +482,7 @@ public:
     [[nodiscard]] VmObjectRef NewStringUtf8(std::string_view utf8);
     [[nodiscard]] std::string StringUtf8(VmObjectRef string_ref) const;
     [[nodiscard]] VmObjectRef MakeThrowable(std::string_view descriptor, std::string_view message);
+    [[nodiscard]] VmObjectRef MakeThrowable(DexClassId java_class, std::string_view message);
     // Intrinsic-only propagation path for an already materialized guest
     // throwable. Preserves its object identity and side-table state.
     void SetPendingException(VmObjectRef throwable);

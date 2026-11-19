@@ -334,6 +334,7 @@ void Interpreter::Impl::EnsureInitialized(InterpreterExecutionState& execution, 
     linker->MutableClass(java_class).clinit_thread = execution.token;
     RecordTrace(DexVmTraceKind::class_init_begin, execution, nullptr, 0, 0, java_class.Value());
     try {
+        linker->ValidateLoaderConstraints(java_class);
         // Superclass first (interfaces are not initialized transitively).
         if (super.has_value()) {
             EnsureInitialized(execution, *super);
@@ -386,7 +387,7 @@ void Interpreter::Impl::EnsureInitialized(InterpreterExecutionState& execution, 
                 write_slot(0, InternDexString(*dex_unit, value.index).Value());
                 break;
             case DexEncodedValueKind::type_index:
-                write_slot(0, model->ClassObject(linker->ResolveTypeIndex(*dex_unit, value.index)).Value());
+                write_slot(0, model->ClassObject(linker->ResolveTypeIndex(*dex_unit, value.index, java_class)).Value());
                 break;
             case DexEncodedValueKind::null_reference: write_slot(0, 0); break;
             }
@@ -726,6 +727,9 @@ VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution, const
         // Exception unwinding (02 §8; catch matching follows AOSP
         // vm/Exception.cpp dvmFindCatchBlock: declaration order, then
         // catch-all, then pop).
+        const auto exception = std::exchange(pending_exception, VmObjectRef{});
+        const auto exception_class = std::exchange(pending_exception_class, DexClassId{});
+        const auto exception_root = owner->ProtectReferences(std::array{exception});
         while (frames.size() > entry_depth) {
             auto& frame = frames.back();
             const auto& method = *frame.method;
@@ -736,8 +740,16 @@ VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution, const
                         continue;
                     }
                     for (const auto& handler : block.typed_handlers) {
-                        const auto handler_class = linker->ResolveTypeIndex(*method.dex_unit, handler.type_index);
-                        if (linker->IsAssignable(handler_class, pending_exception_class)) {
+                        DexClassId handler_class;
+                        try {
+                            handler_class =
+                                linker->ResolveTypeIndex(*method.dex_unit, handler.type_index, method.owner);
+                        } catch (const JavaLinkageError&) {
+                            continue;
+                        } catch (const VmJavaThrow&) {
+                            continue;
+                        }
+                        if (linker->IsAssignable(handler_class, exception_class)) {
                             frame.pc = handler.handler_pc;
                             frame.fast_ip = kInvalidFastIndex;
                             handled = true;
@@ -753,29 +765,24 @@ VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution, const
                 }
             }
             if (handled) {
-                RecordTrace(DexVmTraceKind::exception_catch, execution, frame.method, frame.pc, 0,
-                            pending_exception.Value());
-                frame.caught = pending_exception;
-                pending_exception = VmObjectRef{};
-                pending_exception_class = DexClassId{};
+                RecordTrace(DexVmTraceKind::exception_catch, execution, frame.method, frame.pc, 0, exception.Value());
+                frame.caught = exception;
                 break;
             }
             RecordTrace(DexVmTraceKind::method_exit, execution, frame.method, frame.pc, 0, 1);
             ReleaseFrameMonitor(frame);
             frames.pop_back();
         }
-        if (pending_exception.IsValid() && frames.size() <= entry_depth) {
-            outcome.exception = pending_exception;
-            outcome.exception_class = pending_exception_class;
-            const auto state = throwables.find(pending_exception.Value());
+        if (frames.size() <= entry_depth) {
+            outcome.exception = exception;
+            outcome.exception_class = exception_class;
+            const auto state = throwables.find(exception.Value());
             if (state != throwables.end()) {
-                outcome.exception_message = (owner->ThrowableMessage(pending_exception).IsValid()
-                                                 ? owner->StringUtf8(owner->ThrowableMessage(pending_exception))
+                outcome.exception_message = (owner->ThrowableMessage(exception).IsValid()
+                                                 ? owner->StringUtf8(owner->ThrowableMessage(exception))
                                                  : std::string{});
                 outcome.exception_stack = state->second.stack;
             }
-            pending_exception = VmObjectRef{};
-            pending_exception_class = DexClassId{};
             return outcome;
         }
     }
@@ -984,6 +991,17 @@ ClassLoaderFacade& Interpreter::ClassLoaders() noexcept {
     return *impl_->class_loaders;
 }
 
+std::optional<VmClassLoaderId> Interpreter::JniClassLoader() const {
+    return impl_->Execution().jni_class_loader;
+}
+
+Interpreter::JniClassLoaderScope::JniClassLoaderScope(Interpreter& vm, VmClassLoaderId loader)
+    : slot_(vm.impl_->Execution().jni_class_loader), previous_(std::exchange(slot_, loader)) {}
+
+Interpreter::JniClassLoaderScope::~JniClassLoaderScope() {
+    slot_ = previous_;
+}
+
 UnsafeRuntime& Interpreter::Unsafe() noexcept {
     return *impl_->unsafe;
 }
@@ -1147,6 +1165,12 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id, const std::span<cons
         }
         }
         throw DexVmError(DexVmErrorReason::internal_invariant, "unreachable method kind");
+    } catch (const VmJavaThrow& error) {
+        VmCallOutcome outcome;
+        outcome.exception = error.existing.IsValid() ? error.existing : MakeThrowable(error.descriptor, error.message);
+        outcome.exception_class = impl_->model->ObjectClass(outcome.exception);
+        outcome.exception_message = error.message;
+        return outcome;
     } catch (const JavaLinkageError& error) {
         VmCallOutcome outcome;
         outcome.exception = MakeThrowable(error.Descriptor(), error.what());
@@ -1274,10 +1298,19 @@ std::string Interpreter::StringUtf8(const VmObjectRef string_ref) const {
 }
 
 VmObjectRef Interpreter::MakeThrowable(const std::string_view descriptor, const std::string_view message) {
+    const auto java_class = impl_->linker->FindClass(descriptor);
+    if (!java_class) {
+        throw DexVmError(DexVmErrorReason::unknown_class,
+                         "throwable class is not registered: " + std::string(descriptor));
+    }
+    return MakeThrowable(*java_class, message);
+}
+
+VmObjectRef Interpreter::MakeThrowable(const DexClassId java_class, const std::string_view message) {
     auto& constructing = impl_->Execution().constructing_throwable;
     if (constructing)
-        throw DexVmError(DexVmErrorReason::internal_invariant,
-                         "recursive failure while constructing VM exception: " + std::string(descriptor));
+        throw DexVmError(DexVmErrorReason::internal_invariant, "recursive failure while constructing VM exception: " +
+                                                                   impl_->linker->ClassHeader(java_class).descriptor);
 
     struct ConstructionScope {
         bool& active;
@@ -1295,15 +1328,10 @@ VmObjectRef Interpreter::MakeThrowable(const std::string_view descriptor, const 
         }
     } scope(constructing, *impl_->model);
 
-    const auto java_class = impl_->linker->FindClass(descriptor);
-    if (!java_class.has_value()) {
-        throw DexVmError(DexVmErrorReason::unknown_class,
-                         "throwable class is not registered: " + std::string(descriptor));
-    }
     // VM exception construction, like dvmThrowVirtualMachineError, may allocate
     // an abstract Throwable class; only guest new-instance rejects abstract types.
-    impl_->linker->EnsureClassLinked(*java_class);
-    const auto throwable = impl_->model->NewInstance(*java_class, impl_->linker->Class(*java_class).instance_slots);
+    impl_->linker->EnsureClassLinked(java_class);
+    const auto throwable = impl_->model->NewInstance(java_class, impl_->linker->Class(java_class).instance_slots);
     const auto root = ProtectReferences(std::array{throwable});
     const auto stack = impl_->CaptureStack();
     InitializeThrowable(throwable, message.empty() ? VmObjectRef{} : NewStringUtf8(message));

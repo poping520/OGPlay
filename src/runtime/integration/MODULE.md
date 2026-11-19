@@ -21,8 +21,9 @@ DexVM bridge 拥有 JNI 反射转换适配：FromReflected 使用 ReflectionRunt
 取得已有 registry ID；ToReflected 根据声明成员还原真实 Method/Constructor/Field wrapper。
 校验引用类型、声明类与 static 标志，在 VM 执行锁内发布调用线程 local reference；ID 不
 拥有 wrapper，不另建字段存储。销毁前先停止调用，再清除 JniEnvironment 的反射 hooks。
-JNI FindClass 的显式 resolver 在 VM 执行锁内按需链接并发布 own 成员，保留平台注册表
-既有实现；被动 FindClass 不递归调用 resolver。启动时预发布类身份和声明层级，
+JNI FindClass 的线程 resolver 按正在执行的 native 方法、JNI_OnLoad 的加载参数或 ROM system
+loader 查找并发布真实类身份，保留平台注册表既有实现。按类 ID 发布层级及 own 成员。
+被动 FindClass 查询默认注册名。启动时预发布类身份和声明层级，
 新登记的 BootDex 类由显式类或成员查询按需发布成员，过程受 VM 执行锁保护。
 预发布遇到实现类型非 interface 等 Java 链接错误时延后到真实 Java/JNI 使用，
 不因未使用的非法类使进程装配失败；失败发布不保留递归标记。

@@ -31,6 +31,7 @@ namespace ogplay::runtime::dexvm {
 struct IntrinsicContext;
 struct VmValue;
 class Interpreter;
+class VmExecutionLock;
 using IntrinsicHandler = std::function<VmValue(IntrinsicContext&)>;
 using HostStateDestructor = std::function<void(std::uint64_t)>;
 
@@ -300,7 +301,6 @@ struct LinkedClass final {
     std::string descriptor;
     std::optional<DexClassId> super;
     VmClassLoaderId defining_loader{kBootstrapLoader};
-    std::uint8_t initiating_loader_mask{};
     std::vector<DexClassId> direct_interfaces;
     std::vector<DexClassId> interfaces;  // direct + inherited, flattened
     std::uint32_t access_flags{};
@@ -311,6 +311,7 @@ struct LinkedClass final {
     bool admit_boot_native_methods{};
     bool merges_boot_class{};
     std::string array_element_descriptor;
+    std::optional<DexClassId> array_element_class;
     std::uint16_t instance_slots{};
     std::vector<VmFieldId> own_instance_fields;
     std::vector<VmFieldId> own_static_fields;
@@ -401,6 +402,16 @@ public:
     DexUnitId RegisterBootDex(std::vector<std::uint8_t> dex_bytes);
     DexUnitId RegisterDex(std::vector<std::uint8_t> dex_bytes);
     void Link();
+    // Runtime mutations and resolution are serialized by the VM execution lock.
+    [[nodiscard]] DexUnitId OpenDex(std::vector<std::uint8_t> bytes,
+                                    const std::function<void(std::span<const std::uint8_t>)>& write_output);
+    [[nodiscard]] std::optional<DexUnitId> ApplicationUnit() const;
+    [[nodiscard]] bool IsUserDex(DexUnitId unit) const;
+    void CloseDex(DexUnitId unit);
+    [[nodiscard]] std::optional<DexClassId> DefineDexClass(DexUnitId unit, VmClassLoaderId loader,
+                                                           std::string_view descriptor);
+    void SetLoaderResolver(VmExecutionLock* lock,
+                           std::function<DexClassId(VmClassLoaderId, std::string_view)> resolver);
     // Replay early link warnings when the session logger becomes available.
     void SetLogger(core::Logger* logger);
     // Diagnostic snapshot; links without initialization and preserves per-class failures.
@@ -408,12 +419,20 @@ public:
 
     [[nodiscard]] bool IsLinked() const noexcept;
     [[nodiscard]] std::optional<DexClassId> FindClass(std::string_view descriptor) const;
+    [[nodiscard]] std::optional<DexClassId> FindClass(VmClassLoaderId defining_loader,
+                                                      std::string_view descriptor) const;
+    [[nodiscard]] std::optional<DexClassId> FindInitiatedClass(VmClassLoaderId loader,
+                                                               std::string_view descriptor) const;
     // Completes deferred hierarchy linking when a registered class is first
     // used. Unavailable hierarchy nodes fail here (or become recorded survey
     // stubs in gap-survey mode), never during the whole-DEX startup scan.
     void EnsureClassLinked(DexClassId id);
+    void ValidateLoaderConstraints(DexClassId id);
     // Resolves (and synthesizes on first use) an array class.
     [[nodiscard]] DexClassId ResolveDescriptor(std::string_view descriptor);
+    [[nodiscard]] DexClassId ResolveDescriptor(std::string_view descriptor, VmClassLoaderId loader);
+    [[nodiscard]] DexClassId ResolveDescriptor(std::string_view descriptor, DexClassId caller);
+    [[nodiscard]] DexClassId ArrayClass(DexClassId component);
 
     // After Link(): synthesize a concrete class that implements an already
     // loaded annotation interface. Storage is appended to the stable deque;
@@ -505,6 +524,7 @@ public:
 
 private:
     void MarkVerificationFailed(DexClassId id);
+    [[nodiscard]] DexClassId ResolveDescriptorImpl(std::string_view descriptor, std::optional<VmClassLoaderId> loader);
     [[nodiscard]] DexUnitId RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, bool boot);
     class Impl;
     std::unique_ptr<Impl> impl_;

@@ -163,7 +163,7 @@ public:
             item.declaring_class = declaring_class;
             item.access_flags = method.access_flags;
             for (const auto& type : parsed.parameters) {
-                item.parameter_types.push_back(linker->ResolveDescriptor(type));
+                item.parameter_types.push_back(linker->ResolveDescriptor(type, method.owner));
             }
             item.exception_types = linker->ReflectionExceptionTypes(method_id);
             pending.push_back(std::move(item));
@@ -208,9 +208,9 @@ public:
         item.access_flags = method.access_flags;
         item.invoke_kind = method.declared_invoke_kind;
         for (const auto& type : parsed.parameters) {
-            item.parameter_types.push_back(linker->ResolveDescriptor(type));
+            item.parameter_types.push_back(linker->ResolveDescriptor(type, method.owner));
         }
-        item.return_type = linker->ResolveDescriptor(parsed.return_type);
+        item.return_type = linker->ResolveDescriptor(parsed.return_type, method.owner);
         item.exception_types = linker->ReflectionExceptionTypes(method_id);
         target.methods.push_back(std::move(item));
     }
@@ -227,10 +227,12 @@ public:
 
     [[nodiscard]] bool MethodParametersMatch(const VmMethodId method_id,
                                              const std::span<const DexClassId> parameter_types) const {
-        const auto parsed = ClassNameCodec::ParseMethod(linker->Method(method_id).descriptor);
+        const auto& method = linker->Method(method_id);
+        const auto parsed = ClassNameCodec::ParseMethod(method.descriptor);
         if (parsed.parameters.size() != parameter_types.size()) return false;
         for (std::size_t index = 0; index < parameter_types.size(); ++index) {
-            if (parsed.parameters[index] != linker->Class(parameter_types[index]).descriptor) {
+            if (parsed.parameters[index] != linker->ClassHeader(parameter_types[index]).descriptor ||
+                linker->ResolveDescriptor(parsed.parameters[index], method.owner) != parameter_types[index]) {
                 return false;
             }
         }
@@ -275,7 +277,7 @@ public:
         item.slot = static_cast<std::uint32_t>(target.fields.size());
         item.field = field_id;
         item.declaring_class = declaring_class;
-        item.type = linker->ResolveDescriptor(field.descriptor);
+        item.type = linker->ResolveDescriptor(field.descriptor, field.owner);
         item.access_flags = field.access_flags;
         target.fields.push_back(std::move(item));
     }

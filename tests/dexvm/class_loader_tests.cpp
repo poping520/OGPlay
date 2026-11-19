@@ -1,4 +1,5 @@
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
+#include "ogplay/runtime/jni/jni_native_registry.h"
 #include "boot_dex.h"
 #include "container_traversal_fixture.h"
 #include "../runtime/resources_test_support.h"
@@ -45,12 +46,13 @@ struct LoaderVm final {
     Interpreter& interpreter;
 
     explicit LoaderVm(const InterpreterBackend backend = InterpreterBackend::threaded,
-                      CoreIntrinsicServices services = {})
+                      CoreIntrinsicServices services = {}, const char* main_dex = "interp.dex",
+                      std::vector<ogplay::loader::ApkNativeLibrary> libraries = {})
         : runtime([&] {
               ogplay::test::BindBootDexArchive(*context);
               context->package_name = "test";
               context->package_resource_path = "/data/app/test-1.apk";
-              auto dex = ReadFixture("interp.dex");
+              auto dex = ReadFixture(main_dex);
               const auto bytes = std::as_bytes(std::span{dex});
               std::vector<std::pair<std::string, std::vector<std::byte>>> entries{
                   {"classes.dex", std::vector(bytes.begin(), bytes.end())}};
@@ -60,11 +62,11 @@ struct LoaderVm final {
                       if (data) entries.emplace_back(name, *data);
                   }
                   const auto data =
-                      services.read_classpath_resource({"/system/framework/bootdex.jar", "java/lang/boot.txt"});
+                      services.read_classpath_resource({"/system/framework/test-resources.jar", "java/lang/boot.txt"});
                   if (data) {
                       const std::array boot_entries{std::pair{std::string("java/lang/boot.txt"), *data}};
                       BootClasspathJar jar;
-                      jar.guest_path = "/system/framework/bootdex.jar";
+                      jar.guest_path = "/system/framework/test-resources.jar";
                       jar.bytes = ogplay::test::resources::Zip(boot_entries);
                       jar.archive = ogplay::loader::ParseApkArchive(jar.bytes);
                       context->boot_classpath.push_back(std::move(jar));
@@ -76,7 +78,7 @@ struct LoaderVm final {
               filesystem.PutFile(context->package_resource_path, *context->sealed_apk_bytes, false);
               return std::make_unique<ogplay::test::container_traversal::AndroidTestRuntime>(
                   context, ledger, logger, AndroidIntrinsicCatalog(context), std::move(dex),
-                  InterpreterConfig{.backend = backend}, &filesystem);
+                  InterpreterConfig{.backend = backend}, &filesystem, std::move(libraries));
           }()),
           model(runtime->bridge->Model()), linker(runtime->bridge->Linker()), interpreter(runtime->bridge->Vm()) {}
 
@@ -156,7 +158,7 @@ TEST_CASE("Class and ClassLoader resource streams preserve loader and package se
         [](const CoreIntrinsicServices::ClasspathResource& resource) -> std::optional<std::vector<std::byte>> {
         return std::vector<std::byte>{resource.entry_name == "app.txt" ? std::byte{'a'} : std::byte{'b'}};
     };
-    LoaderVm vm(InterpreterBackend::switch_dispatch, std::move(services));
+    LoaderVm vm(InterpreterBackend::threaded, std::move(services));
     const auto read = [&](const VmObjectRef stream) {
         REQUIRE(stream.IsValid());
         return vm.Virtual(stream, "read", "()I").value.AsInt();
@@ -186,7 +188,7 @@ TEST_CASE("Class resource URLs preserve API19 names and open actual streams") {
         using Resource = CoreIntrinsicServices::ClasspathResource;
         CoreIntrinsicServices services;
         services.read_classpath_resource = [](const Resource& resource) -> std::optional<std::vector<std::byte>> {
-            if (resource.archive_path != "/system/framework/bootdex.jar" &&
+            if (resource.archive_path != "/system/framework/test-resources.jar" &&
                 resource.archive_path != "/data/app/test-1.apk") {
                 throw std::invalid_argument("unregistered archive");
             }
@@ -225,7 +227,7 @@ TEST_CASE("Class resource URLs preserve API19 names and open actual streams") {
         CHECK_FALSE(lookup(app, "/root %.txt").IsValid());
         const auto string = vm.model.ClassObject(vm.linker.ResolveDescriptor("Ljava/lang/String;"));
         CHECK(text(lookup(string, "boot.txt"), "toExternalForm") ==
-              "jar:file:/system/framework/bootdex.jar!/java/lang/boot.txt");
+              "jar:file:/system/framework/test-resources.jar!/java/lang/boot.txt");
         CHECK_FALSE(lookup(string, "/root %.txt").IsValid());
         const auto counter = vm.model.ClassObject(vm.linker.ResolveDescriptor("LCounter;"));
         CHECK(lookup(counter, "/root %.txt").IsValid());
@@ -402,7 +404,7 @@ TEST_CASE("ClassLoader findLoadedClass accepts slash-separated names like Dalvik
     ExpectClassNotFound(vm, load("java/lang/NoSuchClass"));
 }
 
-TEST_CASE("ClassLoader refuses dynamic namespaces and bootstrap app lookup") {
+TEST_CASE("ClassLoader preserves bootstrap isolation and ROM delegation") {
     LoaderVm vm;
     const auto system = vm.interpreter.ClassLoaders().ApplicationLoader();
     const auto boot = vm.interpreter.ClassLoaders().BootstrapLoader();
@@ -472,7 +474,8 @@ TEST_CASE("Class forName follows API19 caller loader initialization and errors")
         ExpectClassNotFound(vm, find_with_loader("Counter", false, boot));
 
         const auto custom = vm.interpreter.NewIntrinsicInstance("Ljava/lang/ClassLoader;");
-        REQUIRE_FALSE(vm.Direct(custom, "<init>", "()V").exception.IsValid());
+        REQUIRE_FALSE(
+            vm.Direct(custom, "<init>", "(Ljava/lang/ClassLoader;)V", {VmValue::Ref(system)}).exception.IsValid());
         CHECK(Ref(find_with_loader("Counter", false, custom)) ==
               vm.model.ClassObject(vm.linker.ResolveDescriptor("LCounter;")));
 
@@ -504,6 +507,161 @@ std::vector<IntrinsicClassDecl> ParentFirstCatalog() {
     return catalog;
 }
 }  // namespace
+
+TEST_CASE("ClassLoader sees secondary classes after app dexElements is extended") {
+    LoaderVm vm;
+    const auto app = vm.interpreter.ClassLoaders().ApplicationLoader();
+    const auto for_name = [&] {
+        return vm.Static("Ljava/lang/Class;", "forName",
+                         "(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;",
+                         {VmValue::Ref(vm.String("fixture.Aps5")), VmValue::Int(0), VmValue::Ref(app)});
+    };
+    ExpectClassNotFound(vm, for_name());
+
+    const auto dex = ReadFixture("aps5.dex");
+    const auto raw = std::as_bytes(std::span(dex));
+    const std::array entries{std::pair{std::string("classes.dex"), std::vector(raw.begin(), raw.end())}};
+    vm.filesystem.SetApplicationOwner("/data/local", vm.context->application_uid);
+    vm.filesystem.PutFile("/data/local/secondary.zip", ogplay::test::resources::Zip(entries), false);
+    const auto loader = vm.interpreter.NewIntrinsicInstance("Ldalvik/system/DexClassLoader;");
+    const auto init =
+        vm.Direct(loader, "<init>", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/ClassLoader;)V",
+                  {VmValue::Ref(vm.String("/data/local/secondary.zip")), VmValue::Ref(vm.String("/data/local")),
+                   VmValue::Ref(VmObjectRef{}), VmValue::Ref(vm.interpreter.ClassLoaders().BootstrapLoader())});
+    INFO(init.exception_message);
+    REQUIRE_FALSE(init.exception.IsValid());
+
+    const auto output = vm.filesystem.Open("/data/local/secondary.dex", {.read = true});
+    std::vector<std::uint8_t> written(dex.size());
+    const auto count = vm.filesystem.Read(output, std::as_writable_bytes(std::span(written)));
+    vm.filesystem.Close(output);
+    CHECK(count == dex.size());
+    CHECK(written == dex);
+    CHECK_FALSE(vm.linker.FindClass("Lfixture/Aps5;"));
+    ExpectClassNotFound(vm, for_name());
+
+    const auto ref_slot = [&](VmObjectRef object, const char* name, const char* descriptor) -> Slot& {
+        const auto field = vm.linker.FindFieldRecursive(vm.model.ObjectClass(object), name, descriptor);
+        REQUIRE(field);
+        return vm.model.InstanceSlots(object)[vm.linker.Field(*field).slot];
+    };
+    const auto path_list = [&](VmObjectRef object) {
+        return VmObjectRef(ref_slot(object, "pathList", "Ldalvik/system/DexPathList;").bits);
+    };
+    constexpr auto elements_type = "[Ldalvik/system/DexPathList$Element;";
+    auto& field = ref_slot(path_list(app), "dexElements", elements_type);
+    const auto primary = VmObjectRef(field.bits);
+    const auto secondary = VmObjectRef(ref_slot(path_list(loader), "dexElements", elements_type).bits);
+    const auto primary_count = vm.model.ArrayLength(primary);
+    REQUIRE(vm.model.ArrayLength(secondary) == 1);
+    const auto array = vm.model.ObjectClass(primary);
+    const auto combined =
+        vm.model.NewObjectArray(array, *vm.linker.ClassHeader(array).array_element_class, primary_count + 1);
+    for (JniSize i = 0; i < primary_count; ++i)
+        vm.model.SetObjectElement(combined, i, vm.model.GetObjectElement(primary, i));
+    vm.model.SetObjectElement(combined, primary_count, vm.model.GetObjectElement(secondary, 0));
+    field = {combined.Value(), SlotTag::ref};
+
+    const auto type = vm.model.ClassOfClassObject(Ref(for_name()));
+    CHECK(vm.linker.ClassHeader(type).defining_loader == kApplicationLoader);
+    CHECK(vm.interpreter.ClassLoaders().FindLoadedClass(kApplicationLoader, "fixture.Aps5") == type);
+}
+
+TEST_CASE("ClassLoader resolves JNI FindClass in the native method's external namespace") {
+    using namespace ogplay::test::native_library;
+    auto image = AppElf({"libloader_probe.so", "", kJniVersion1_6});
+    // Static native: return env->IsSameObject(owner, env->FindClass("Fixture")).
+    const std::array code{
+        0xe92d4070U,  // push {r4,r5,r6,lr}
+        0xe1a04000U,  // mov r4,r0 (JNIEnv)
+        0xe1a05001U,  // mov r5,r1 (owner)
+        0xe5902000U,  // ldr r2,[r0]
+        0xe592c018U,  // ldr ip,[r2,#24] (FindClass)
+        0xe28f101cU,  // adr r1,name
+        0xe12fff3cU,  // blx ip
+        0xe1a02000U,  // mov r2,r0 (result)
+        0xe1a01005U,  // mov r1,r5
+        0xe1a00004U,  // mov r0,r4
+        0xe5903000U,  // ldr r3,[r0]
+        0xe593c060U,  // ldr ip,[r3,#96] (IsSameObject)
+        0xe12fff3cU,  // blx ip
+        0xe8bd8070U,  // pop {r4,r5,r6,pc}
+    };
+    constexpr std::size_t code_offset = 0x20U;
+    constexpr std::size_t file_offset = 0x1000U + code_offset;
+    for (std::size_t i = 0; i < code.size(); ++i)
+        Put32(image, file_offset + i * 4U, code[i]);
+    constexpr std::string_view name = "Fixture";
+    std::ranges::copy(name, reinterpret_cast<char*>(image.data() + file_offset + code.size() * 4U));
+    LoaderVm vm(InterpreterBackend::threaded, {}, "core.dex", {Library("libloader_probe.so", std::move(image))});
+    const auto bytes = ReadFixture("core.dex");
+    vm.filesystem.PutFile("/data/local/external.dex", std::as_bytes(std::span(bytes)), false);
+
+    const auto boot = vm.interpreter.ClassLoaders().BootstrapLoader();
+    const auto loader = vm.interpreter.NewIntrinsicInstance("Ldalvik/system/PathClassLoader;");
+    REQUIRE_FALSE(vm.Direct(loader, "<init>", "(Ljava/lang/String;Ljava/lang/ClassLoader;)V",
+                            {VmValue::Ref(vm.String("/data/local/external.dex")), VmValue::Ref(boot)})
+                      .exception.IsValid());
+    const auto external =
+        Ref(vm.Virtual(loader, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;", {VmValue::Ref(vm.String(name))}));
+    const auto type = vm.model.ClassOfClassObject(external);
+    const auto app = vm.linker.ResolveDescriptor("LFixture;");
+    CHECK(app != type);
+    CHECK_FALSE(vm.linker.IsAssignable(app, type));
+    CHECK_FALSE(vm.linker.IsAssignable(vm.linker.ArrayClass(app), vm.linker.ArrayClass(type)));
+    auto& bridge = *vm.runtime->bridge;
+    static_cast<void>(bridge.PublishLocal(external));
+    const auto identity = bridge.RegisteredClassIdentity(type);
+    REQUIRE(identity);
+    CHECK(identity != bridge.RegisteredClassIdentity(app));
+
+    auto& session = *vm.runtime->session;
+    const auto lib = vm.runtime->libraries->LoadPath(NativeLibraryLoader::SyntheticGuestPath("libloader_probe.so"),
+                                                     vm.context->application_class_loader_token);
+    const auto code_address = session.Process().FindModuleExport(lib.module_index, "JNI_OnLoad").Add(code_offset);
+    const std::array natives{JniNativeMethod{"nativeHook", "(I)I", code_address}};
+    session.Natives().RegisterNatives(*identity, natives);
+    const auto method = vm.linker.FindDirectMethod(type, "nativeHook", "(I)I");
+    REQUIRE(method);
+    const auto result = vm.interpreter.Call(*method, std::array{VmValue::Int(0)});
+    INFO(result.exception_message);
+    REQUIRE_FALSE(result.exception.IsValid());
+    CHECK(result.value.AsInt() == 1);
+}
+
+TEST_CASE("ClassLoader maps DexFile VFS and format failures to Java exceptions") {
+    LoaderVm vm;
+    constexpr auto owner = "Ldalvik/system/DexFile;";
+    const auto open = [&](VmObjectRef path, VmObjectRef output = VmObjectRef{}) {
+        return vm.Static(owner, "openDexFileNative", "(Ljava/lang/String;Ljava/lang/String;I)I",
+                         {VmValue::Ref(path), VmValue::Ref(output), VmValue::Int(0)});
+    };
+    const auto opt = [&](VmObjectRef path) {
+        return vm.Static(owner, "isDexOptNeeded", "(Ljava/lang/String;)Z", {VmValue::Ref(path)});
+    };
+    const auto missing = vm.String("/missing.dex");
+    ExpectException(vm, open(VmObjectRef{}), "Ljava/lang/NullPointerException;");
+    ExpectException(vm, open(missing), "Ljava/io/IOException;");
+    ExpectException(vm, opt(VmObjectRef{}), "Ljava/lang/NullPointerException;");
+    ExpectException(vm, opt(missing), "Ljava/io/FileNotFoundException;");
+    ExpectException(vm, open(vm.String("/system/framework/bootdex.jar")), "Ljava/io/IOException;");
+
+    const auto corrupt = vm.String("/data/local/corrupt.dex");
+    vm.filesystem.PutFile("/data/local/corrupt.dex", std::array{std::byte{0}}, true);
+    ExpectException(vm, open(corrupt), "Ljava/io/IOException;");
+    vm.filesystem.Chmod("/data/local/corrupt.dex", 0);
+    ExpectException(vm, opt(corrupt), "Ljava/io/IOException;");
+
+    const auto bytes = ReadFixture("aps5.dex");
+    vm.filesystem.PutFile("/data/local/readable.dex", std::as_bytes(std::span(bytes)), false);
+    const auto readable = vm.String("/data/local/readable.dex");
+    const auto needed = opt(readable);
+    REQUIRE_FALSE(needed.exception.IsValid());
+    CHECK(needed.value.AsInt() == 0);
+    vm.filesystem.CreateDirectory("/data/local/readonly");
+    vm.filesystem.Chmod("/data/local/readonly", 0555);
+    ExpectException(vm, open(readable, vm.String("/data/local/readonly/out.dex")), "Ljava/io/IOException;");
+}
 
 TEST_CASE("ClassLoader parent-first registration preserves bootstrap identity and app-only classes") {
     for (const auto backend : ogplay::test::InterpreterBackends()) {

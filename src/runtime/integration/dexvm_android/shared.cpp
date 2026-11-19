@@ -368,6 +368,9 @@ dx::IntrinsicHandler PlatformSystemLoadHandlerImpl(const Context& context, const
             // Loading can wait on process call/load locks and invoke guest
             // constructors/JNI_OnLoad. JNI reentry acquires the VM lock itself.
             auto& execution_lock = call.vm.ExecutionLock();
+            const auto loader_id = call.vm.ClassLoaders().RoleOf(call.arguments[1].ref);
+            if (!loader_id) throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "unknown class loader"};
+            const dx::Interpreter::JniClassLoaderScope jni_loader(call.vm, *loader_id);
             const auto depth = execution_lock.ReleaseForBlocking();
             try {
                 if (application_path)

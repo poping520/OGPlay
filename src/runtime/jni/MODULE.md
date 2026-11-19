@@ -16,8 +16,9 @@ Bionic、syscall、execution 或 integration。
 
 ## 不变量
 
-- `JniClassRegistry::FindClass` 为被动查询；`ResolveClass` 可经 owner 的显式 resolver
-  按需链接/发布类。显式类查询和成员查找可请求 owner 补齐延迟发布的类成员，
+- `JniClassRegistry::FindClass` 被动查询默认名字目录，`ResolveClass` 可调用 owner resolver。
+  guest JNI FindClass 使用携带线程身份的 resolver。VM 可按父类与接口身份发布另一个同名类，
+  类、方法和字段的 JNI 身份独立。显式类查询和成员查找可请求 owner 补齐延迟发布的类成员，
   继承搜索按原声明顺序进行。回调在注册表锁外执行，owner 负责串行发布，并在停止调用后撤销。
 - 有 DexVM 时，`ResolveClass` 接受数组描述符，返回 VM 的 `Class` 对象身份。
   数组类的名称、父类、接口、类型关系和方法查询由显式 owner hooks 提供，沿用同一引用表和 JNI 成员 ID。

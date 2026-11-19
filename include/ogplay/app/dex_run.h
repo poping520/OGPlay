@@ -12,12 +12,18 @@ namespace ogplay::app {
 // `ogplay-cli dexvm run-dex`: runs a standalone dex/jar `main` on the
 // production platform class sources (core/Android intrinsics, BootDex), the way `dalvikvm -cp <file> <class>` would. No APK, Manifest,
 // graphics or audio presentation.
+struct DexRunFile final {
+    std::filesystem::path host_path;
+    std::string guest_path;
+};
+
 struct DexRunOptions final {
     std::filesystem::path input;           // classes.dex or a jar/zip holding it
     std::string main_class{"Main"};        // binary name, '.' or '/' separated
     std::string backend{"threaded"};       // switch | threaded
     std::filesystem::path ledger_json;     // optional unimplemented-hit report
     std::filesystem::path native_lib_dir;  // optional ARM application lib*.so directory
+    std::vector<DexRunFile> vfs_files;
     bool merge_console{false};             // AOSP run-test merges Java stdout/stderr, excluding host diagnostics.
     bool enable_assertions{false};         // dalvikvm -ea
     std::vector<std::string> arguments;    // passed to main(String[])

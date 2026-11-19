@@ -53,9 +53,7 @@ namespace {
 }
 
 [[nodiscard]] std::optional<DexClassId> ComponentType(IntrinsicContext& context, const DexClassId represented) {
-    const auto descriptor = context.vm.Linker().Class(represented).descriptor;
-    if (!descriptor.starts_with("[")) return std::nullopt;
-    return context.vm.Linker().ResolveDescriptor(std::string_view(descriptor).substr(1));
+    return context.vm.Linker().ClassHeader(represented).array_element_class;
 }
 
 [[nodiscard]] std::vector<DexClassId> DirectInterfaces(IntrinsicContext& context, const DexClassId represented) {
@@ -81,12 +79,8 @@ namespace {
                kAccJavaFlagsMask;
     }
 
-    std::string_view leaf = linked.descriptor;
-    while (leaf.starts_with("["))
-        leaf.remove_prefix(1);
-    const auto leaf_class = linker.ResolveDescriptor(leaf);
-    return ((ClassModifiers(context, leaf_class, ignore_inner) & kAccJavaFlagsMask) & ~kAccInterface) | kAccFinal |
-           kAccAbstract;
+    return ((ClassModifiers(context, *linked.array_element_class, ignore_inner) & kAccJavaFlagsMask) & ~kAccInterface) |
+           kAccFinal | kAccAbstract;
 }
 
 [[nodiscard]] VmObjectRef EnclosingExecutable(IntrinsicContext& context, const bool constructor) {
@@ -113,6 +107,7 @@ namespace {
 
 [[nodiscard]] VmValue SetClassNotFound(IntrinsicContext& context, const std::string_view name,
                                        const VmObjectRef cause = VmObjectRef{}) {
+    const auto roots = context.vm.ProtectReferences(std::array{cause});
     const auto wrapper = context.vm.MakeThrowable("Ljava/lang/ClassNotFoundException;", name);
     if (cause.IsValid()) {
         const auto field = context.vm.Linker().FindFieldRecursive(context.vm.Model().ObjectClass(wrapper), "ex",
@@ -134,6 +129,10 @@ namespace {
         java_class = context.vm.ClassLoaders().LoadClass(loader, name);
     } catch (const ClassNameCodecError&) {
         return SetClassNotFound(context, name);
+    } catch (const VmJavaThrow& error) {
+        const auto cause =
+            error.existing.IsValid() ? error.existing : context.vm.MakeThrowable(error.descriptor, error.message);
+        return SetClassNotFound(context, name, cause);
     } catch (const JavaLinkageError& error) {
         const auto cause = context.vm.MakeThrowable(error.Descriptor(), error.what());
         return SetClassNotFound(context, name, cause);
@@ -439,7 +438,7 @@ VmValue SignatureFragments(Interpreter& vm, const std::optional<std::u16string>&
 VmObjectRef NewReflectionArray(IntrinsicContext& c, const std::vector<std::int32_t>& dimensions) {
     for (const auto length : dimensions)
         if (length < 0) throw VmJavaThrow{"Ljava/lang/NegativeArraySizeException;", std::to_string(length)};
-    return detail::BuildReflectArray(c.vm, c.vm.Linker().Class(ReflectionClass(c, 0)).descriptor, dimensions);
+    return detail::BuildReflectArray(c.vm, ReflectionClass(c, 0), dimensions);
 }
 }  // namespace
 

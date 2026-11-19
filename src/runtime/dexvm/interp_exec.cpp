@@ -355,7 +355,7 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
             }
             const auto& element = linked.array_element_descriptor;
             if (element.starts_with("L") || element.starts_with("[")) {
-                const auto element_class = linker->ResolveDescriptor(element);
+                const auto element_class = *linked.array_element_class;
                 PrepareSafeAllocation(
                     JavaObjectModel::EstimateObjectArrayBytes(length),
                     "new-array");
@@ -415,7 +415,7 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
                 }
                 frame.last_result = VmValue::Ref(array);
             } else if (element.starts_with("L") || element.starts_with("[")) {
-                const auto element_class = linker->ResolveDescriptor(element);
+                const auto element_class = *linked.array_element_class;
                 PrepareSafeAllocation(
                     JavaObjectModel::EstimateObjectArrayBytes(
                         static_cast<JniSize>(registers.size())),

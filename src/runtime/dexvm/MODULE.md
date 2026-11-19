@@ -47,18 +47,24 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   survey 沿用既有显式记账/替身策略，不为这些失败添加中性返回。
 - `PrecheckMethod` 懒校验 opcode、寄存器/wide pair、invoke 参数、branch/payload 与
   move-result；对照 API 19 `CodeVerify.cpp`，不做全量数据流。
-- 类加载器身份与字段来自 ROM：BootClassLoader.getInstance 单例、ClassLoader.getSystemClassLoader
-  返回的系统 PathClassLoader、LoadedApk/ApplicationLoaders 创建且打开封存 APK cookie 的应用
-  PathClassLoader 分别绑定并保活；基本类型 Class loader 为 null，其他启动类为 ROM boot 单例。
-  ClassLoaderFacade 为 VMClassLoader/DexFile/VMStack native 提供已登记类目录与身份查询，不拦截
-  Java loadClass/getResource 等普通方法。独立 run-dex 无 APK 时以 ROM 空路径 PathClassLoader 表示
-  已登记应用命名空间，仅 VM Class.forName 可直接查询它；不授予动态定义权限。
-  链接器仍从 DEX 常量池直接解析已登记类，不回调 Java loadClass。findLoadedClass 不链接或初始化，
-  类名按 dvmDotToDescriptor 只把 '.' 换成 '/'、不做校验（JNI 风格斜杠名同样命中）；
-  动态 classpath、自定义 defineClass、MultiDex 和多 namespace 仍拒绝，不登记 classes2.dex。
-  VMClassLoader 按启动类路径顺序查询资源，ROM ClassLoader/ZipFile 提供 APK 资源与 Enumeration；
-  jar:file URL 只读取封存 guest 归档，不开放宿主文件或网络归档；条目名保留原文，
-  只解码归档路径；Class 的资源查询执行 ROM Java，与 ClassLoader 使用相同的原始条目名。
+- 类由（defining loader ID、描述符）唯一标识。ROM BootClassLoader 单例对应 bootstrap，
+  APK 的 ApplicationLoaders 返回应用 PathClassLoader。独立 run-dex 以 ROM system loader
+  定义主 DEX。APK 进程的 system loader 通过封存 APK 路径查资源，主 DEX 定义由应用
+  loader 提供。其余 ClassLoader 对象各获独立 ID，并由 GC 根保活至 VM 退出。
+  基本类型的 Class loader 为 null，数组的 defining loader 来自其组件类。
+- 主 DEX 在启动时预登记。DexFile 打开外部 VFS DEX 或归档时登记独立 unit，定义延后到
+  ROM DexPathList 或自定义 loader 调用 defineClassNative。ROM MultiDex 追加 dexElements 后，
+  应用 loader 才能访问这些类。defineClassNative 定义的类链接失败时按 dvmDefineClass 从该
+  loader 类表撤下，重试重新定义并报原错误。unit 与类保活至 VM 退出，支持关闭未用 cookie，不卸载类，
+  不接受 ClassLoader.defineClass(byte[]/ByteBuffer)，不做 dexopt。
+- 常量池缓存按（DEX unit、引用类的 defining loader）隔离。非 bootstrap 解析先查已 initiate
+  的名字，再调用真实 loader 的 ROM loadClass 并记录成功结果。应用 loader 对 boot 或主 DEX
+  命中保留直连路径。findLoadedClass 只读当前 loader 的已加载记录，按 Dalvik 接受斜杠名字。
+  懒链接和目录修改由 VM 执行锁串行化，等待其他线程链接时释放执行锁。
+  父类、接口、反射签名和注解按相应声明或引用类的 loader 解析，跨 loader 的覆盖签名在类
+  初始化前验证类型身份。宿主的无 loader FindClass 保留 bootstrap 后 application 查询。
+- VMClassLoader 按启动类路径顺序查询资源，ROM ClassLoader/ZipFile 提供 APK 资源与
+  Enumeration。jar:file URL 读取已封存的 guest 归档，条目名保留原文，只解码归档路径。
 - Class 与 AnnotationAccess 的字段和普通方法归 ROM；Class 仅绑定 pinned core.jar 的原版 native。
   Class.forName 的 Java 层决定 null loader 的归一化（当前 pinned libdvm ROM 为 system loader），
   classForName 只消费传入的 loader 身份；Class.newInstanceImpl 跳过 ROM newInstance 帧检查 caller。

@@ -100,15 +100,19 @@ Posix.mmap/munmap/msync 经 CoreIntrinsicServices 接入进程的 syscall 映射
 
 ## 类加载、反射、集合与并发
 
-- ClassLoader/BootClassLoader/BaseDexClassLoader/PathClassLoader 的字段和普通方法归 ROM。
-  boot、system、application 分别绑定 ROM boot 单例、系统 PathClassLoader 与封存 APK 的应用
-  PathClassLoader；ClassLoaderFacade 仅为 native 提供身份与封存目录后端，常量池解析仍直接查 linker。
-  VMClassLoader 提供五个原版 native（boot load/findLoaded/primitive 与按 jar 索引的资源查询），
-  DexFile 仅接受封存 APK cookie，支持定义已登记应用类与原版类名枚举；动态 classpath/MultiDex 拒绝。
-  findLibrary 执行 ROM DexPathList 的 VFS 查找，无 integration 普通方法覆盖。
-  Class.forName 的调用方 loader 与 null 归一化由 ROM Java/VMStack 决定；资源名处理归 ROM。
-  ROM ClassLoader 资源查询与 Enumeration 经过 VMClassLoader 或 DexPathList/ZipFile；jar:file URL
-  只读已登记归档，url/connected/input 为 guest GC 字段，无宿主侧表。完整约束见 [DexVM](../MODULE.md)。
+- ClassLoader、BootClassLoader、BaseDexClassLoader、PathClassLoader、DexClassLoader、
+  DexPathList 和 DexFile 的普通方法执行 ROM。VMClassLoader 的 boot lookup、findLoadedClass、
+  primitive 与 boot 资源查询由 Facade 和链接器提供。
+- DexFile native 经 VFS 打开裸 .dex 或归档的 classes.dex。每次外部打开返回独立 cookie，
+  封存 APK 使用主 unit cookie。指定输出路径时写原始 DEX 字节。拒绝重开 boot classpath，
+  无法读取、解析或写出时抛 IOException。isDexOptNeeded 对可读文件返回 false，对缺失文件抛
+  FileNotFoundException，对不可读文件抛 IOException。
+- defineClassNative 只从指定 unit 查找新定义，找不到时返回 null，定义和委托沿用真实 loader
+  身份。getClassNameList 查询该 unit。关闭可停用未用 cookie，已定义的类及其 DEX 保活至退出。
+  findLibrary 执行 ROM DexPathList 的 VFS 查找，库加载能力沿用现有 integration 后端。
+- Class.forName 的调用方和 null loader 归一化由 ROM Java/VMStack 决定；资源名处理归 ROM。
+  封存归档资源由 VMClassLoader 或 DexPathList/ZipFile 读取，jar:file URL 的状态由 guest 字段持有。
+  完整约束见 [DexVM](../MODULE.md)。
 - Class/Method/Field/Constructor/AccessibleObject/reflect.Array 的字段与普通方法执行 ROM Java，
   宿主仅实现 Dalvik 原版 native，委托 linker、ReflectionRuntime、ReflectionCodec 和 typed array store。
   成员按 (declaringClass, slot) 定位；方法与构造器共用 own direct 后接 own virtual 的稳定序号，

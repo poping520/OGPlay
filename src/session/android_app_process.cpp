@@ -388,8 +388,16 @@ public:
                     context->activity_inventory_known = true;
                     context->service_inventory_known = true;
                     context->receiver_inventory_known = true;
-                    context->granted_permissions.insert(manifest.requested_permissions.begin(),
-                                                        manifest.requested_permissions.end());
+                    for (const auto& permission : manifest.requested_permissions) {
+                        // The local AppOps service enforces these platform-only permissions through AMS.
+                        if (permission == "android.permission.GET_APP_OPS_STATS" ||
+                            permission == "android.permission.UPDATE_APP_OPS_STATS")
+                            continue;
+                        if (permission == "android.permission.MANAGE_USERS" ||
+                            permission == "android.permission.READ_LOGS")
+                            continue;
+                        context->granted_permissions.insert(permission);
+                    }
                     context->system_features.insert("android.hardware.touchscreen");
                     context->system_features.insert(request.surface_width >= request.surface_height
                                                         ? "android.hardware.screen.landscape"

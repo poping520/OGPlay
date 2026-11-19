@@ -1202,6 +1202,153 @@ TEST_CASE("Local device services enforce permissions and retain session changes"
     denied(f.OnOutcome(service("iphonesubinfo"), "getCompleteVoiceMailNumber", "()Ljava/lang/String;"));
 }
 
+TEST_CASE("ROM AppOpsManager uses the local AppOps service") {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
+        AndroidValueVm f(backend);
+        f.context->requested_permissions.emplace_back("android.permission.GET_APP_OPS_STATS");
+        f.context->requested_permissions.emplace_back("android.permission.UPDATE_APP_OPS_STATS");
+        const auto context = f.New("Landroid/content/Context;");
+        const auto manager = f.On(context, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                                  {VmValue::Ref(f.vm.NewStringUtf8("appops"))})
+                                 .ref;
+        REQUIRE(manager.IsValid());
+        const auto manager_root = f.vm.ProtectReferences(std::array{manager});
+        const auto package_ref = f.vm.NewStringUtf8(f.context->package_name);
+        const auto package_root = f.vm.ProtectReferences(std::array{package_ref});
+        const auto package = VmValue::Ref(package_ref);
+        const auto uid = VmValue::Int(static_cast<std::int32_t>(f.context->application_uid));
+        const auto expect_exception = [&](const VmCallOutcome& outcome, const char* type) {
+            CHECK_MESSAGE((outcome.exception.IsValid() && f.linker.Class(outcome.exception_class).descriptor == type),
+                          outcome.exception_message);
+        };
+        f.On(manager, "checkPackage", "(ILjava/lang/String;)V", {uid, package});
+        expect_exception(f.OnOutcome(manager, "checkPackage", "(ILjava/lang/String;)V",
+                                     {uid, VmValue::Ref(f.vm.NewStringUtf8("fixture.missing"))}),
+                         "Ljava/lang/SecurityException;");
+
+        const auto location = VmValue::Int(0);    // OP_COARSE_LOCATION
+        const auto write_sms = VmValue::Int(15);  // OP_WRITE_SMS
+        constexpr auto kOpQuery = "(IILjava/lang/String;)I";
+        CHECK(f.On(manager, "checkOp", kOpQuery, {location, uid, package}).AsInt() == 0);   // MODE_ALLOWED
+        CHECK(f.On(manager, "checkOp", kOpQuery, {write_sms, uid, package}).AsInt() == 1);  // MODE_IGNORED
+        const auto invalid = f.OnOutcome(manager, "checkOp", kOpQuery, {VmValue::Int(999), uid, package});
+        expect_exception(invalid, "Ljava/lang/IllegalArgumentException;");
+        CHECK(invalid.exception_message == "Bad operation #999");
+
+        const auto all_ops = VmValue::Ref(VmObjectRef{});
+        expect_exception(f.OnOutcome(manager, "getPackagesForOps", "([I)Ljava/util/List;", {all_ops}),
+                         "Ljava/lang/SecurityException;");
+        expect_exception(f.OnOutcome(manager, "getOpsForPackage", "(ILjava/lang/String;[I)Ljava/util/List;",
+                                     {uid, package, all_ops}),
+                         "Ljava/lang/SecurityException;");
+        expect_exception(f.OnOutcome(manager, "resetAllModes", "()V"), "Ljava/lang/SecurityException;");
+
+        CHECK(f.On(manager, "startOp", kOpQuery, {location, uid, package}).AsInt() == 0);
+        constexpr auto kFinishOp = "(IILjava/lang/String;)V";
+        f.On(manager, "finishOp", kFinishOp, {location, uid, package});
+        expect_exception(f.OnOutcome(manager, "finishOp", kFinishOp, {location, uid, package}),
+                         "Ljava/lang/IllegalStateException;");
+    }
+}
+
+TEST_CASE("ROM UserManager uses the local owner and application restrictions") {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
+        AndroidValueVm f(backend);
+        f.context->requested_permissions.emplace_back("android.permission.MANAGE_USERS");
+        const auto base = f.New("Landroid/content/Context;");
+        const auto string = [&](const char* text) { return VmValue::Ref(f.vm.NewStringUtf8(text)); };
+        const auto manager =
+            f.On(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", {string("user")}).ref;
+        REQUIRE(manager.IsValid());
+        const auto manager_root = f.vm.ProtectReferences(std::array{manager});
+
+        const auto package = VmValue::Ref(f.vm.NewStringUtf8(f.context->package_name));
+        const auto package_root = f.vm.ProtectReferences(std::array{package.ref});
+        const auto owner = f.New("Landroid/os/UserHandle;", "(I)V", {VmValue::Int(0)});
+        const auto key = string("choices");
+        const auto roots = f.vm.ProtectReferences(std::array{owner, key.ref});
+        constexpr auto kGetRestrictions = "(Ljava/lang/String;)Landroid/os/Bundle;";
+        const auto get = [&] { return f.On(manager, "getApplicationRestrictions", kGetRestrictions, {package}).ref; };
+        const auto initial = get();
+        const auto initial_root = f.vm.ProtectReferences(std::array{initial});
+        CHECK(f.On(initial, "isEmpty", "()Z").AsInt() == 1);
+        CHECK(get() != initial);
+        const auto global = f.On(manager, "getUserRestrictions", "()Landroid/os/Bundle;").ref;
+        CHECK(f.On(global, "isEmpty", "()Z").AsInt() == 1);
+        CHECK(f.On(manager, "getSerialNumberForUser", "(Landroid/os/UserHandle;)J", {VmValue::Ref(owner)}).AsLong() ==
+              0);
+
+        const auto bundle = f.New("Landroid/os/Bundle;");
+        const auto bundle_root = f.vm.ProtectReferences(std::array{bundle});
+        const auto values = f.model.NewObjectArray(f.linker.ResolveDescriptor("[Ljava/lang/String;"),
+                                                   f.linker.ResolveDescriptor("Ljava/lang/String;"), 1);
+        const auto value_root = f.vm.ProtectReferences(std::array{values});
+        f.model.SetObjectElement(values, 0, string("saved").ref);
+        f.On(bundle, "putStringArray", "(Ljava/lang/String;[Ljava/lang/String;)V", {key, VmValue::Ref(values)});
+        f.On(manager, "setApplicationRestrictions", "(Ljava/lang/String;Landroid/os/Bundle;Landroid/os/UserHandle;)V",
+             {package, VmValue::Ref(bundle), VmValue::Ref(owner)});
+        f.model.SetObjectElement(values, 0, string("changed input").ref);
+        static_cast<void>(f.vm.CollectGarbage("app-restrictions-snapshot"));
+        const auto get_choices = [&] {
+            return f.On(get(), "getStringArray", "(Ljava/lang/String;)[Ljava/lang/String;", {key}).ref;
+        };
+        const auto first = get_choices();
+        const auto first_root = f.vm.ProtectReferences(std::array{first});
+        CHECK(f.vm.StringUtf8(f.model.GetObjectElement(first, 0)) == "saved");
+        f.model.SetObjectElement(first, 0, string("changed output").ref);
+        CHECK(f.vm.StringUtf8(f.model.GetObjectElement(get_choices(), 0)) == "saved");
+
+        const auto denied = [&](const VmCallOutcome& outcome, const char* message) {
+            REQUIRE_MESSAGE(outcome.exception.IsValid(), outcome.exception_message);
+            CHECK(f.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/SecurityException;");
+            CHECK(outcome.exception_message == message);
+        };
+        denied(f.OnOutcome(manager, "getUsers", "()Ljava/util/List;"),
+               "You need MANAGE_USERS permission to: query users");
+        denied(f.OnOutcome(manager, "getApplicationRestrictions", kGetRestrictions, {string("fixture.missing")}),
+               "You need MANAGE_USERS permission to: Only system can get restrictions for other users/apps");
+    }
+}
+
+TEST_CASE("ROM DropBoxManager filters local entries and denies log reads") {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
+        AndroidValueVm f(backend);
+        f.context->requested_permissions.emplace_back("android.permission.READ_LOGS");
+        f.context->preferences["__android.settings.global"].emplace("dropbox:fixture.disabled",
+                                                                    std::string("disabled"));
+        const auto base = f.New("Landroid/content/Context;");
+        f.context->application_base_context = base;
+        const auto string = [&](const char* text) { return VmValue::Ref(f.vm.NewStringUtf8(text)); };
+        const auto manager =
+            f.On(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", {string("dropbox")}).ref;
+        REQUIRE(manager.IsValid());
+        const auto manager_root = f.vm.ProtectReferences(std::array{manager});
+        constexpr auto kQueryTag = "(Ljava/lang/String;)Z";
+        const auto tag = string("fixture.enabled");
+        const auto tag_root = f.vm.ProtectReferences(std::array{tag.ref});
+        CHECK(f.On(manager, "isTagEnabled", kQueryTag, {tag}).AsInt() == 1);
+        CHECK(f.On(manager, "isTagEnabled", kQueryTag, {string("fixture.disabled")}).AsInt() == 0);
+        f.On(manager, "addText", "(Ljava/lang/String;Ljava/lang/String;)V", {tag, string("text")});
+
+        // DropBoxManager's public entry points cannot pass an IS_EMPTY entry to the service.
+        const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(manager), "mService",
+                                                       "Lcom/android/internal/os/IDropBoxManagerService;");
+        REQUIRE(field.has_value());
+        const auto service = VmObjectRef{f.model.InstanceSlots(manager)[f.linker.Field(*field).slot].bits};
+        const auto entry =
+            f.New("Landroid/os/DropBoxManager$Entry;", "(Ljava/lang/String;J)V", {tag, VmValue::Long(0)});
+        const auto empty = f.OnOutcome(service, "add", "(Landroid/os/DropBoxManager$Entry;)V", {VmValue::Ref(entry)});
+        REQUIRE(empty.exception.IsValid());
+        CHECK(f.linker.Class(empty.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+
+        const auto read = f.OnOutcome(manager, "getNextEntry", "(Ljava/lang/String;J)Landroid/os/DropBoxManager$Entry;",
+                                      {tag, VmValue::Long(0)});
+        REQUIRE(read.exception.IsValid());
+        CHECK(f.linker.Class(read.exception_class).descriptor == "Ljava/lang/SecurityException;");
+        CHECK(read.exception_message == "READ_LOGS permission required");
+    }
+}
+
 TEST_CASE("Local AIDL coverage tracks unbound abstract methods") {
     AndroidValueVm f;
     constexpr std::string_view prefix = "Lorg/ogplay/framework/";

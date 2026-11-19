@@ -547,6 +547,37 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint64_t, BinderThreadState> binder_threads;
     // Runtime-installed local Binder objects, protected by the VM execution lock.
     std::map<std::string, dexvm::VmObjectRef, std::less<>> local_binder_services;
+
+    struct AppOpsState final {
+        using Package = std::pair<std::int32_t, std::u16string>;
+        using OperationKey = std::pair<Package, std::int32_t>;
+
+        struct Operation {
+            std::int32_t mode;
+            std::int64_t time{}, reject_time{};
+            std::int32_t duration{};
+            std::size_t nesting{};
+        };
+
+        struct Client {
+            dexvm::VmObjectRef token;
+            std::map<OperationKey, std::size_t> started;
+        };
+
+        struct Watch {
+            dexvm::VmObjectRef binder, callback;
+            std::int32_t op;
+            std::optional<std::u16string> package;
+        };
+
+        std::map<OperationKey, Operation> operations;
+        std::map<dexvm::VmObjectRef, Client> clients;
+        std::vector<Watch> watches;
+    } app_ops;
+
+    // Defensive Bundle snapshots for the single owner user.
+    std::map<std::u16string, dexvm::VmObjectRef> application_restrictions;
+
     // Staged ROM WMS; the projection path remains active until the P3 switch.
     std::shared_ptr<RomWindowState> rom_windows;
     std::shared_ptr<RomActivityState> rom_activities;

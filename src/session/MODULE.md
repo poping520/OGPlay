@@ -19,8 +19,9 @@ guest 主线程在独立宿主线程持续执行 ROM Looper.loop。session 提�
   主队列首次空闲后发布 ROM Application，再允许启动 launcher。SDL 操作归宿主前端。
 
    把同一 sealed Manifest 的 package/version/target SDK/application
-  label/icon/meta-data/requested permissions 注入 DexVM Android context；requested permissions
-  是 bounded compatibility process 的显式 granted set，不宣称模拟 protection level。
+  label/icon/meta-data/requested permissions 注入 DexVM Android context；兼容授权集合来自 requested permissions，
+  其中 GET_APP_OPS_STATS 和 UPDATE_APP_OPS_STATS 保留为平台权限。
+  MANAGE_USERS 和 READ_LOGS 同样保留为平台权限。
   安装事实装配后显式封存单包清单，当前 guest 仅安装本次 APK；独立未装配 context
   不视为空安装清单，也不读取宿主或 Launcher 的应用列表。
   同一 sealed Manifest 的 activity/activity-alias 也注入 context，供 `getPackageInfo`

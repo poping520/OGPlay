@@ -235,6 +235,16 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRo
     }
     for (const auto& [_, service] : context.local_binder_services)
         root(service);
+    for (const auto& [client_token, client] : context.app_ops.clients) {
+        root(client_token);
+        root(client.token);
+    }
+    for (const auto& watch : context.app_ops.watches) {
+        root(watch.binder);
+        root(watch.callback);
+    }
+    for (const auto& [_, restrictions] : context.application_restrictions)
+        root(restrictions);
     for (const auto& [_, value] : context.singletons)
         root(value);
     for (const auto& [_, value] : context.bitmap_lock_roots)

@@ -412,6 +412,8 @@ constexpr std::array kLocalServices{
     LocalService{"account", "Lorg/ogplay/framework/LocalAccountService;", "Landroid/accounts/IAccountManager$Stub;"},
     LocalService{"activity", "Lorg/ogplay/framework/LocalActivityService;", "Landroid/app/ActivityManagerNative;"},
     LocalService{"alarm", "Lorg/ogplay/framework/LocalAlarmService;", "Landroid/app/IAlarmManager$Stub;"},
+    LocalService{"appops", "Lorg/ogplay/framework/LocalAppOpsService;",
+                 "Lcom/android/internal/app/IAppOpsService$Stub;"},
     LocalService{"audio", "Lorg/ogplay/framework/LocalAudioService;", "Landroid/media/IAudioService$Stub;"},
     LocalService{"backup", "Lorg/ogplay/framework/LocalBackupService;", "Landroid/app/backup/IBackupManager$Stub;"},
     LocalService{"clipboard", "Lorg/ogplay/framework/LocalClipboardService;", "Landroid/content/IClipboard$Stub;"},
@@ -420,6 +422,8 @@ constexpr std::array kLocalServices{
     LocalService{"content", "Lorg/ogplay/framework/LocalContentService;", "Landroid/content/IContentService$Stub;"},
     LocalService{"display", "Lorg/ogplay/framework/LocalDisplayService;",
                  "Landroid/hardware/display/IDisplayManager$Stub;"},
+    LocalService{"dropbox", "Lorg/ogplay/framework/LocalDropBoxService;",
+                 "Lcom/android/internal/os/IDropBoxManagerService$Stub;"},
     LocalService{"input", "Lorg/ogplay/framework/LocalInputService;", "Landroid/hardware/input/IInputManager$Stub;"},
     LocalService{"input_method", "Lorg/ogplay/framework/LocalInputMethodService;",
                  "Lcom/android/internal/view/IInputMethodManager$Stub;"},
@@ -442,6 +446,7 @@ constexpr std::array kLocalServices{
                  "Lcom/android/internal/textservice/ITextServicesManager$Stub;"},
     LocalService{"uimode", "Lorg/ogplay/framework/LocalUiModeService;", "Landroid/app/IUiModeManager$Stub;"},
     LocalService{"usb", "Lorg/ogplay/framework/LocalUsbService;", "Landroid/hardware/usb/IUsbManager$Stub;"},
+    LocalService{"user", "Lorg/ogplay/framework/LocalUserManagerService;", "Landroid/os/IUserManager$Stub;"},
     LocalService{"vibrator", "Lorg/ogplay/framework/LocalVibratorService;", "Landroid/os/IVibratorService$Stub;"},
     LocalService{"wifi", "Lorg/ogplay/framework/LocalWifiService;", "Landroid/net/wifi/IWifiManager$Stub;"},
     LocalService{"window", "Lorg/ogplay/framework/LocalWindowService;", "Landroid/view/IWindowManager$Stub;"},
@@ -536,6 +541,290 @@ Decl Declare_local_ServiceManager_Class(const Context& context) {
     DenyServiceMethod(builder, "addService", "(Ljava/lang/String;Landroid/os/IBinder;Z)V", "ADD_SERVICE");
     DenyServiceMethod(builder, "setPermissionController", "(Landroid/os/IPermissionController;)V",
                       "SET_PERMISSION_CONTROLLER");
+    return std::move(builder).Build();
+}
+
+namespace {
+
+constexpr char kUserHandle[] = "Landroid/os/UserHandle;";
+constexpr char kUserInfo[] = "Landroid/content/pm/UserInfo;";
+constexpr char kPackageManager[] = "Landroid/content/pm/PackageManager;";
+constexpr char kGlobalSettings[] = "Landroid/provider/Settings$Global;";
+
+dx::VmValue CallServiceStatic(dx::Interpreter& vm, const char* owner, const char* name, const char* descriptor,
+                              std::span<const dx::VmValue> arguments = {}) {
+    const auto method = vm.Linker().FindDirectMethod(vm.Linker().ResolveDescriptor(owner), name, descriptor);
+    if (!method) throw std::logic_error(std::string(owner) + " method is unavailable: " + name);
+    return RequireLocalBinderCall(vm, vm.Call(*method, arguments));
+}
+
+std::uint32_t ServiceStaticSlot(dx::Interpreter& vm, const char* owner, const char* name, const char* descriptor) {
+    auto& linker = vm.Linker();
+    const auto type = linker.ResolveDescriptor(owner);
+    static_cast<void>(RequireLocalBinderCall(vm, vm.EnsureClassInitialized(type)));
+    const auto field = linker.FindFieldRecursive(type, name, descriptor);
+    if (!field) throw std::logic_error(std::string(owner) + " field is unavailable: " + name);
+    const auto& definition = linker.Field(*field);
+    return linker.Class(definition.owner).static_storage[definition.slot];
+}
+
+std::int32_t ServiceIntConstant(dx::Interpreter& vm, const char* owner, const char* name) {
+    return static_cast<std::int32_t>(ServiceStaticSlot(vm, owner, name, "I"));
+}
+
+bool HasLocalServicePermission(dx::Interpreter& vm, const Context& context, const char* permission) {
+    const auto activity = GetLocalServiceInterface(vm, "activity", "Landroid/app/ActivityManagerNative;",
+                                                   "Landroid/app/IActivityManager;");
+    const auto name =
+        dx::VmObjectRef{ServiceStaticSlot(vm, "Landroid/Manifest$permission;", permission, "Ljava/lang/String;")};
+    const auto result = CallAndroidMethod(vm, activity, "checkPermission", "(Ljava/lang/String;II)I",
+                                          {dx::VmValue::Ref(name), dx::VmValue::Int(kGuestProcessId),
+                                           dx::VmValue::Int(static_cast<std::int32_t>(context->application_uid))});
+    return result.AsInt() == ServiceIntConstant(vm, kPackageManager, "PERMISSION_GRANTED");
+}
+
+void RequireManageUsers(dx::Interpreter& vm, const Context& context, const char* message) {
+    const auto uid = static_cast<std::int32_t>(context->application_uid);
+    if (uid != 0 && uid != ServiceIntConstant(vm, "Landroid/os/Process;", "SYSTEM_UID") &&
+        !HasLocalServicePermission(vm, context, "MANAGE_USERS"))
+        throw dx::VmJavaThrow{"Ljava/lang/SecurityException;",
+                              std::string("You need MANAGE_USERS permission to: ") + message};
+}
+
+std::int32_t UserOwner(dx::Interpreter& vm) {
+    return ServiceIntConstant(vm, kUserHandle, "USER_OWNER");
+}
+
+dx::VmObjectRef NewOwnerUserInfo(dx::Interpreter& vm) {
+    constexpr auto resources_type = "Landroid/content/res/Resources;";
+    const auto flag = [&](const char* name) { return ServiceIntConstant(vm, kUserInfo, name); };
+    const auto flags = flag("FLAG_ADMIN") | flag("FLAG_PRIMARY") | flag("FLAG_INITIALIZED");
+    const auto owner_name = ServiceIntConstant(vm, "Lcom/android/internal/R$string;", "owner_name");
+    const auto resources = CallServiceStatic(vm, resources_type, "getSystem", "()Landroid/content/res/Resources;").ref;
+    const auto name =
+        CallAndroidMethod(vm, resources, "getString", "(I)Ljava/lang/String;", {dx::VmValue::Int(owner_name)}).ref;
+    const auto name_root = vm.ProtectReferences(std::array{name});
+    return NewPlatformObject(vm, kUserInfo, "(ILjava/lang/String;I)V",
+                             {dx::VmValue::Int(UserOwner(vm)), dx::VmValue::Ref(name), dx::VmValue::Int(flags)});
+}
+
+std::int32_t ApplicationRestrictionsPackageUid(dx::Interpreter& vm, dx::VmObjectRef package, std::int32_t user) {
+    if (!package.IsValid()) return -1;
+    const auto flags = ServiceIntConstant(vm, kPackageManager, "GET_UNINSTALLED_PACKAGES");
+    const auto manager = GetLocalServiceInterface(vm, "package", "Landroid/content/pm/IPackageManager$Stub;",
+                                                  "Landroid/content/pm/IPackageManager;");
+    const auto info = CallAndroidMethod(vm, manager, "getApplicationInfo",
+                                        "(Ljava/lang/String;II)Landroid/content/pm/ApplicationInfo;",
+                                        {dx::VmValue::Ref(package), dx::VmValue::Int(flags), dx::VmValue::Int(user)})
+                          .ref;
+    // ApplicationPackageManager reports the local PMS's null result as NameNotFoundException.
+    if (!info.IsValid()) return -1;
+    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(info), "uid", "I");
+    if (!field) throw std::logic_error("ApplicationInfo.uid is unavailable");
+    return static_cast<std::int32_t>(vm.Model().InstanceSlots(info)[vm.Linker().Field(*field).slot].bits);
+}
+
+std::int32_t RestrictionsCallingUser(dx::Interpreter& vm, const Context& context) {
+    return CallServiceStatic(vm, kUserHandle, "getUserId", "(I)I",
+                             std::array{dx::VmValue::Int(static_cast<std::int32_t>(context->application_uid))})
+        .AsInt();
+}
+
+void CheckApplicationRestrictionsCaller(dx::Interpreter& vm, const Context& context, dx::VmObjectRef package,
+                                        std::int32_t calling_user, std::int32_t user, const char* message) {
+    if (user == calling_user) {
+        const auto uid = ApplicationRestrictionsPackageUid(vm, package, calling_user);
+        if (CallServiceStatic(vm, kUserHandle, "isSameApp", "(II)Z",
+                              std::array{dx::VmValue::Int(static_cast<std::int32_t>(context->application_uid)),
+                                         dx::VmValue::Int(uid)})
+                .AsInt())
+            return;
+    }
+    RequireManageUsers(vm, context, message);
+}
+
+std::u16string RestrictionsPackageName(dx::Interpreter& vm, dx::VmObjectRef package) {
+    return package.IsValid() ? vm.Model().StringValue(package) : std::u16string{};
+}
+
+dx::VmValue ReadApplicationRestrictions(dx::IntrinsicContext& call, const Context& context, std::int32_t calling_user,
+                                        std::int32_t user) {
+    auto& vm = call.vm;
+    const auto package = call.arguments[0].ref;
+    CheckApplicationRestrictionsCaller(vm, context, package, calling_user, user,
+                                       "Only system can get restrictions for other users/apps");
+    if (user == UserOwner(vm)) {
+        const auto& restrictions = context->application_restrictions;
+        if (const auto entry = restrictions.find(RestrictionsPackageName(vm, package)); entry != restrictions.end())
+            return dx::VmValue::Ref(NewAndroidBundle(vm, entry->second));
+    }
+    return dx::VmValue::Ref(NewAndroidBundle(vm));
+}
+
+dx::VmObjectRef SnapshotApplicationRestrictions(dx::Interpreter& vm, dx::VmObjectRef source) {
+    // Keep the stored Bundle parcelled so each read can copy it without sharing mutable values.
+    const auto parcel = CallServiceStatic(vm, "Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+    const auto parcel_root = vm.ProtectReferences(std::array{parcel});
+    const auto recycle = [&] { static_cast<void>(CallAndroidMethod(vm, parcel, "recycle", "()V")); };
+    dx::VmObjectRef snapshot;
+    try {
+        static_cast<void>(
+            CallAndroidMethod(vm, parcel, "writeBundle", "(Landroid/os/Bundle;)V", {dx::VmValue::Ref(source)}));
+        static_cast<void>(CallAndroidMethod(vm, parcel, "setDataPosition", "(I)V", {dx::VmValue::Int(0)}));
+        const auto loader = CallAndroidMethod(vm, source, "getClassLoader", "()Ljava/lang/ClassLoader;").ref;
+        snapshot = CallAndroidMethod(vm, parcel, "readBundle", "(Ljava/lang/ClassLoader;)Landroid/os/Bundle;",
+                                     {dx::VmValue::Ref(loader)})
+                       .ref;
+    } catch (const dx::VmJavaThrow& error) {
+        const auto exception_root = vm.ProtectReferences(std::array{error.existing});
+        recycle();
+        throw;
+    }
+    const auto snapshot_root = vm.ProtectReferences(std::array{snapshot});
+    recycle();
+    return snapshot;
+}
+
+bool DropBoxTagEnabled(dx::Interpreter& vm, const Context& context, dx::VmObjectRef tag) {
+    auto base = context->application_base_context;
+    if (!base.IsValid()) {
+        constexpr auto activity_thread = "Landroid/app/ActivityThread;";
+        const auto thread =
+            CallServiceStatic(vm, activity_thread, "currentActivityThread", "()Landroid/app/ActivityThread;").ref;
+        base = CallAndroidMethod(vm, thread, "getSystemContext", "()Landroid/app/ContextImpl;").ref;
+    }
+    const auto resolver = CallAndroidMethod(vm, base, "getContentResolver", "()Landroid/content/ContentResolver;").ref;
+    const auto resolver_root = vm.ProtectReferences(std::array{resolver});
+    const auto prefix =
+        dx::VmObjectRef{ServiceStaticSlot(vm, kGlobalSettings, "DROPBOX_TAG_PREFIX", "Ljava/lang/String;")};
+    auto key = vm.Model().StringValue(prefix);
+    key.append(tag.IsValid() ? vm.Model().StringChars(tag) : std::u16string_view(u"null"));
+    const auto value =
+        CallServiceStatic(vm, kGlobalSettings, "getString",
+                          "(Landroid/content/ContentResolver;Ljava/lang/String;)Ljava/lang/String;",
+                          std::array{dx::VmValue::Ref(resolver), dx::VmValue::Ref(vm.Model().NewString(key))})
+            .ref;
+    return !value.IsValid() || vm.Model().StringChars(value) != u"disabled";
+}
+
+}  // namespace
+
+Decl Declare_local_UserManagerService_Class(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalUserManagerService;",
+                                                    "Landroid/os/IUserManager$Stub;");
+    builder.VirtualMethod("getApplicationRestrictions", "(Ljava/lang/String;)Landroid/os/Bundle;",
+                          [context](dx::IntrinsicContext& call) {
+                              const auto user = RestrictionsCallingUser(call.vm, context);
+                              return ReadApplicationRestrictions(call, context, user, user);
+                          });
+    builder.VirtualMethod("getApplicationRestrictionsForUser", "(Ljava/lang/String;I)Landroid/os/Bundle;",
+                          [context](dx::IntrinsicContext& call) {
+                              return ReadApplicationRestrictions(
+                                  call, context, RestrictionsCallingUser(call.vm, context), call.arguments[1].AsInt());
+                          });
+    builder.VirtualMethod("setApplicationRestrictions", "(Ljava/lang/String;Landroid/os/Bundle;I)V",
+                          [context](dx::IntrinsicContext& call) {
+                              auto& vm = call.vm;
+                              const auto package = call.arguments[0].ref;
+                              const auto user = call.arguments[2].AsInt();
+                              CheckApplicationRestrictionsCaller(
+                                  vm, context, package, RestrictionsCallingUser(vm, context), user,
+                                  "Only system can set restrictions for other users/apps");
+                              if (user == UserOwner(vm)) {
+                                  const auto source = dx::IntrinsicCall(call).NonNullRef(1, "restrictions");
+                                  const auto name = RestrictionsPackageName(vm, package);
+                                  const auto snapshot = SnapshotApplicationRestrictions(vm, source);
+                                  context->application_restrictions.insert_or_assign(name, snapshot);
+                              }
+                              return dx::VmValue::Void();
+                          });
+    builder.VirtualMethod("getUserRestrictions", "(I)Landroid/os/Bundle;", [](dx::IntrinsicContext& call) {
+        return dx::VmValue::Ref(
+            dx::VmObjectRef{ServiceStaticSlot(call.vm, "Landroid/os/Bundle;", "EMPTY", "Landroid/os/Bundle;")});
+    });
+    for (const auto* method : {"isRestricted", "isGuestEnabled", "hasRestrictionsChallenge"})
+        builder.VirtualMethod(method, "()Z", [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    builder.VirtualMethod("getUserSerialNumber", "(I)I", [](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(call.arguments[0].AsInt() == UserOwner(call.vm) ? 0 : -1);
+    });
+    builder.VirtualMethod("getUserHandle", "(I)I", [](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(call.arguments[0].AsInt() == 0 ? UserOwner(call.vm) : -1);
+    });
+    builder.VirtualMethod("getUsers", "(Z)Ljava/util/List;", [context](dx::IntrinsicContext& call) {
+        auto& vm = call.vm;
+        RequireManageUsers(vm, context, "query users");
+        const auto owner = NewOwnerUserInfo(vm);
+        const auto root = vm.ProtectReferences(std::array{owner});
+        const auto list = NewPlatformObject(vm, "Ljava/util/ArrayList;", "()V", {});
+        static_cast<void>(CallAndroidMethod(vm, list, "add", "(Ljava/lang/Object;)Z", {dx::VmValue::Ref(owner)}));
+        return dx::VmValue::Ref(list);
+    });
+    builder.VirtualMethod("getUserInfo", "(I)Landroid/content/pm/UserInfo;", [context](dx::IntrinsicContext& call) {
+        RequireManageUsers(call.vm, context, "query user");
+        return dx::VmValue::Ref(call.arguments[0].AsInt() == UserOwner(call.vm) ? NewOwnerUserInfo(call.vm)
+                                                                                : dx::VmObjectRef{});
+    });
+    builder.VirtualMethod("getUserIcon", "(I)Landroid/graphics/Bitmap;", [context](dx::IntrinsicContext& call) {
+        RequireManageUsers(call.vm, context, "read users");
+        return dx::VmValue::Ref(dx::VmObjectRef{});
+    });
+    builder.VirtualMethod("checkRestrictionsChallenge", "(Ljava/lang/String;)I", [context](dx::IntrinsicContext& call) {
+        RequireManageUsers(call.vm, context, "Only system can verify the restrictions pin");
+        return dx::VmValue::Int(
+            ServiceIntConstant(call.vm, "Landroid/os/UserManager;", "PIN_VERIFICATION_FAILED_NOT_SET"));
+    });
+    builder.VirtualMethod("wipeUser", "(I)V", [context](dx::IntrinsicContext& call) {
+        RequireManageUsers(call.vm, context, "wipe user");
+        return dx::VmValue::Void();  // API 19 has no implementation after the permission check.
+    });
+    for (const auto& [name, descriptor, message] : {
+             std::array{"createUser", "(Ljava/lang/String;I)Landroid/content/pm/UserInfo;",
+                        "Only the system can create users"},
+             std::array{"removeUser", "(I)Z", "Only the system can remove users"},
+             std::array{"setUserName", "(ILjava/lang/String;)V", "rename users"},
+             std::array{"setUserIcon", "(ILandroid/graphics/Bitmap;)V", "update users"},
+             std::array{"setGuestEnabled", "(Z)V", "enable guest users"},
+             std::array{"setUserRestrictions", "(Landroid/os/Bundle;I)V", "setUserRestrictions"},
+             std::array{"setRestrictionsChallenge", "(Ljava/lang/String;)Z",
+                        "Only system can modify the restrictions pin"},
+             std::array{"removeRestrictions", "()V", "Only system can remove restrictions"},
+         }) {
+        const auto capability = std::string("android.os.IUserManager.") + name + descriptor;
+        builder.VirtualMethod(name, descriptor,
+                              [context, message, capability](dx::IntrinsicContext& call) -> dx::VmValue {
+                                  RequireManageUsers(call.vm, context, message);
+                                  if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented(capability, 0);
+                                  throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", capability};
+                              });
+    }
+    return std::move(builder).Build();
+}
+
+Decl Declare_local_DropBoxService_Class(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalDropBoxService;",
+                                                    "Lcom/android/internal/os/IDropBoxManagerService$Stub;");
+    builder.VirtualMethod("isTagEnabled", "(Ljava/lang/String;)Z", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(DropBoxTagEnabled(call.vm, context, call.arguments[0].ref));
+    });
+    builder.VirtualMethod("add", "(Landroid/os/DropBoxManager$Entry;)V", [context](dx::IntrinsicContext& call) {
+        auto& vm = call.vm;
+        const auto entry = dx::IntrinsicCall(call).NonNullRef(0, "entry");
+        const auto tag = CallAndroidMethod(vm, entry, "getTag", "()Ljava/lang/String;").ref;
+        const auto tag_root = vm.ProtectReferences(std::array{tag});
+        const auto flags = CallAndroidMethod(vm, entry, "getFlags", "()I").AsInt();
+        if ((flags & ServiceIntConstant(vm, "Landroid/os/DropBoxManager;", "IS_EMPTY")) != 0)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", ""};
+        // Apply the ROM tag filter. Enabled entries are accepted into a sink with no stored records.
+        static_cast<void>(DropBoxTagEnabled(vm, context, tag));
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("getNextEntry", "(Ljava/lang/String;J)Landroid/os/DropBoxManager$Entry;",
+                          [context](dx::IntrinsicContext& call) {
+                              if (!HasLocalServicePermission(call.vm, context, "READ_LOGS"))
+                                  throw dx::VmJavaThrow{"Ljava/lang/SecurityException;",
+                                                        "READ_LOGS permission required"};
+                              return dx::VmValue::Ref(dx::VmObjectRef{});
+                          });
     return std::move(builder).Build();
 }
 

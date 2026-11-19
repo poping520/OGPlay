@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstring>
 #include <limits>
 #include <utility>
@@ -144,6 +145,262 @@ Decl Declare_local_BackupService_Class(const Context&) {
              std::pair{"clearBackupData", "(Ljava/lang/String;Ljava/lang/String;)V"},
          }) {
         builder.VirtualMethod(name, descriptor, [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    }
+    return std::move(builder).Build();
+}
+
+namespace {
+
+using AppOpsState = DexVmAndroidContext::AppOpsState;
+
+constexpr char kAppOpsManager[] = "Landroid/app/AppOpsManager;";
+constexpr char kProcess[] = "Landroid/os/Process;";
+
+dx::VmValue AppOpsCallResult(dx::Interpreter& vm, const dx::VmCallOutcome& outcome) {
+    if (outcome.exception.IsValid())
+        throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
+                              outcome.exception};
+    return outcome.value;
+}
+
+std::int32_t AppOpsConstant(dx::Interpreter& vm, const char* name, const char* owner = kAppOpsManager) {
+    auto& linker = vm.Linker();
+    const auto type = linker.ResolveDescriptor(owner);
+    static_cast<void>(AppOpsCallResult(vm, vm.EnsureClassInitialized(type)));
+    const auto field = linker.FindFieldRecursive(type, name, "I");
+    if (!field) throw std::logic_error("AppOps constant is unavailable: " + std::string(name));
+    const auto& definition = linker.Field(*field);
+    return static_cast<std::int32_t>(linker.Class(definition.owner).static_storage[definition.slot]);
+}
+
+std::int32_t AppOpsStaticInt(dx::Interpreter& vm, const char* owner, const char* method, std::int32_t value) {
+    auto& linker = vm.Linker();
+    const auto entry = linker.FindDirectMethod(linker.ResolveDescriptor(owner), method, "(I)I");
+    if (!entry) throw std::logic_error("AppOps Java method is unavailable: " + std::string(method));
+    return AppOpsCallResult(vm, vm.Call(*entry, std::array{dx::VmValue::Int(value)})).AsInt();
+}
+
+std::int32_t VerifyAppOp(dx::Interpreter& vm, dx::VmValue argument) {
+    const auto op = argument.AsInt();
+    if (op < 0 || op >= AppOpsConstant(vm, "_NUM_OP"))
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Bad operation #" + std::to_string(op)};
+    return op;
+}
+
+AppOpsState::Package AppOpsPackage(dx::Interpreter& vm, std::int32_t uid, dx::VmObjectRef package) {
+    if (uid == 0) return {uid, u"root"};
+    if (uid == AppOpsConstant(vm, "SHELL_UID", kProcess)) return {uid, u"com.android.shell"};
+    return {uid, package.IsValid() ? vm.Model().StringValue(package) : std::u16string{}};
+}
+
+bool ValidateAppOpsPackage(dx::Interpreter& vm, const AppOpsState::Package& package) {
+    const auto& [uid, name] = package;
+    if (uid == 0) return true;
+    const auto user = AppOpsStaticInt(vm, "Landroid/os/UserHandle;", "getUserId", uid);
+    const auto pm = GetLocalServiceInterface(vm, "package", "Landroid/content/pm/IPackageManager$Stub;",
+                                             "Landroid/content/pm/IPackageManager;");
+    const auto package_name = vm.Model().NewString(name);
+    const auto package_uid = CallAndroidMethod(vm, pm, "getPackageUid", "(Ljava/lang/String;I)I",
+                                               {dx::VmValue::Ref(package_name), dx::VmValue::Int(user)})
+                                 .AsInt();
+    // ApplicationPackageManager converts the local PMS's negative result to NameNotFoundException.
+    if (package_uid >= 0) return package_uid == uid;
+    return name == u"media" && uid == AppOpsConstant(vm, "MEDIA_UID", kProcess);
+}
+
+AppOpsState::Client& AppOpsClient(AppOpsState& state, dx::VmObjectRef token) {
+    if (!token.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "token"};
+    const auto client =
+        std::ranges::find_if(state.clients, [&](const auto& entry) { return entry.second.token == token; });
+    if (client == state.clients.end())
+        throw dx::VmJavaThrow{"Ljava/lang/ClassCastException;", "Not an AppOps client token"};
+    return client->second;
+}
+
+dx::VmValue NoteOrStartAppOp(dx::IntrinsicContext& call, const Context& context, bool start) {
+    auto& vm = call.vm;
+    const auto op_args = call.arguments.subspan(start ? 1 : 0);
+    const auto op = VerifyAppOp(vm, op_args[0]);
+    const auto package = AppOpsPackage(vm, op_args[1].AsInt(), op_args[2].ref);
+    if (!ValidateAppOpsPackage(vm, package)) return dx::VmValue::Int(AppOpsConstant(vm, "MODE_ERRORED"));
+
+    const auto allowed = AppOpsConstant(vm, "MODE_ALLOWED");
+    const auto switch_op = AppOpsStaticInt(vm, kAppOpsManager, "opToSwitch", op);
+    const auto default_mode = AppOpsStaticInt(vm, kAppOpsManager, "opToDefaultMode", op);
+    const auto switch_default =
+        switch_op == op ? default_mode : AppOpsStaticInt(vm, kAppOpsManager, "opToDefaultMode", switch_op);
+    auto& state = context->app_ops;
+    auto* client = start ? &AppOpsClient(state, call.arguments[0].ref) : nullptr;
+    const AppOpsState::OperationKey key{package, op};
+    auto& operation = state.operations.try_emplace(key, AppOpsState::Operation{default_mode}).first->second;
+    const auto mode =
+        state.operations
+            .try_emplace(AppOpsState::OperationKey{package, switch_op}, AppOpsState::Operation{switch_default})
+            .first->second.mode;
+    if (!start) operation.duration = 0;
+    const auto now = context->WallTimeMillis();
+    if (mode != allowed) {
+        operation.reject_time = now;
+        return dx::VmValue::Int(mode);
+    }
+    if (!start || operation.nesting == 0) {
+        operation.time = now;
+        operation.reject_time = 0;
+        operation.duration = start ? -1 : 0;
+    }
+    if (client) {
+        ++client->started[key];
+        ++operation.nesting;
+    }
+    return dx::VmValue::Int(allowed);
+}
+
+dx::VmValue FinishAppOp(dx::IntrinsicContext& call, const Context& context) {
+    auto& vm = call.vm;
+    const auto op = VerifyAppOp(vm, call.arguments[1]);
+    const auto package_ref = call.arguments[3].ref;
+    const auto package = AppOpsPackage(vm, call.arguments[2].AsInt(), package_ref);
+    if (!ValidateAppOpsPackage(vm, package)) return dx::VmValue::Void();
+
+    auto& state = context->app_ops;
+    auto& client = AppOpsClient(state, call.arguments[0].ref);
+    const AppOpsState::OperationKey key{package, op};
+    const auto started = client.started.find(key);
+    if (started == client.started.end())
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                              "Operation not started: uid" + std::to_string(package.first) +
+                                  " pkg=" + (package_ref.IsValid() ? vm.StringUtf8(package_ref) : "null") +
+                                  " op=" + std::to_string(op)};
+    auto& operation = state.operations.at(key);
+    if (--started->second == 0) client.started.erase(started);
+    if (--operation.nesting == 0) {
+        operation.duration = static_cast<std::int32_t>(context->WallTimeMillis() - operation.time);
+        operation.time += operation.duration;
+    }
+    return dx::VmValue::Void();
+}
+
+dx::VmValue SetAppOpMode(dx::IntrinsicContext& call, const Context& context) {
+    auto& vm = call.vm;
+    const auto op = AppOpsStaticInt(vm, kAppOpsManager, "opToSwitch", VerifyAppOp(vm, call.arguments[0]));
+    const auto package_ref = call.arguments[2].ref;
+    const auto package = AppOpsPackage(vm, call.arguments[1].AsInt(), package_ref);
+    if (!ValidateAppOpsPackage(vm, package)) return dx::VmValue::Void();
+    const auto default_mode = AppOpsStaticInt(vm, kAppOpsManager, "opToDefaultMode", op);
+    const auto mode = call.arguments[3].AsInt();
+    auto& state = context->app_ops;
+    const auto entry =
+        state.operations.try_emplace(AppOpsState::OperationKey{package, op}, AppOpsState::Operation{default_mode})
+            .first;
+    auto& operation = entry->second;
+    if (operation.mode == mode) return dx::VmValue::Void();
+    operation.mode = mode;
+    if (mode == default_mode && operation.time == 0 && operation.reject_time == 0 && operation.nesting == 0)
+        state.operations.erase(entry);
+
+    std::vector<dx::VmObjectRef> callbacks;
+    for (const auto& watch : state.watches)
+        if (watch.op == op) callbacks.push_back(watch.callback);
+    if (package_ref.IsValid()) {
+        const auto name = vm.Model().StringChars(package_ref);
+        for (const auto& watch : state.watches)
+            if (watch.package && *watch.package == name) callbacks.push_back(watch.callback);
+    }
+    // Snapshot before calling Java so observers can reenter and change registrations.
+    const auto roots = vm.ProtectReferences(callbacks);
+    for (const auto callback : callbacks) {
+        try {
+            static_cast<void>(CallAndroidMethod(vm, callback, "opChanged", "(ILjava/lang/String;)V",
+                                                {dx::VmValue::Int(op), dx::VmValue::Ref(package_ref)}));
+        } catch (const dx::VmJavaThrow& error) {
+            if (error.descriptor != "Landroid/os/RemoteException;") throw;
+        }
+    }
+    return dx::VmValue::Void();
+}
+
+}  // namespace
+
+Decl Declare_local_AppOpsService_Class(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Lorg/ogplay/framework/LocalAppOpsService;",
+                                                    "Lcom/android/internal/app/IAppOpsService$Stub;");
+    builder.VirtualMethod("checkPackage", "(ILjava/lang/String;)I", [](dx::IntrinsicContext& call) {
+        const auto package = AppOpsPackage(call.vm, call.arguments[0].AsInt(), call.arguments[1].ref);
+        return dx::VmValue::Int(
+            AppOpsConstant(call.vm, ValidateAppOpsPackage(call.vm, package) ? "MODE_ALLOWED" : "MODE_ERRORED"));
+    });
+    builder.VirtualMethod("checkOperation", "(IILjava/lang/String;)I", [context](dx::IntrinsicContext& call) {
+        auto& vm = call.vm;
+        const auto op = VerifyAppOp(vm, call.arguments[0]);
+        const auto switch_op = AppOpsStaticInt(vm, kAppOpsManager, "opToSwitch", op);
+        const auto package = AppOpsPackage(vm, call.arguments[1].AsInt(), call.arguments[2].ref);
+        const auto& operations = context->app_ops.operations;
+        const auto entry = operations.find({package, switch_op});
+        return dx::VmValue::Int(entry != operations.end() ? entry->second.mode
+                                                          : AppOpsStaticInt(vm, kAppOpsManager, "opToDefaultMode", op));
+    });
+    builder.VirtualMethod("noteOperation", "(IILjava/lang/String;)I",
+                          [context](dx::IntrinsicContext& call) { return NoteOrStartAppOp(call, context, false); });
+    builder.VirtualMethod("startOperation", "(Landroid/os/IBinder;IILjava/lang/String;)I",
+                          [context](dx::IntrinsicContext& call) { return NoteOrStartAppOp(call, context, true); });
+    builder.VirtualMethod("finishOperation", "(Landroid/os/IBinder;IILjava/lang/String;)V",
+                          [context](dx::IntrinsicContext& call) { return FinishAppOp(call, context); });
+    builder.VirtualMethod(
+        "getToken", "(Landroid/os/IBinder;)Landroid/os/IBinder;", [context](dx::IntrinsicContext& call) {
+            const auto client = dx::IntrinsicCall(call).NonNullRef(0, "clientToken");
+            auto& clients = context->app_ops.clients;
+            if (const auto entry = clients.find(client); entry != clients.end())
+                return dx::VmValue::Ref(entry->second.token);
+            const auto token = NewPlatformObject(call.vm, "Landroid/os/Binder;", "()V", {});
+            return dx::VmValue::Ref(clients.try_emplace(client, AppOpsState::Client{token, {}}).first->second.token);
+        });
+    builder.VirtualMethod(
+        "startWatchingMode", "(ILjava/lang/String;Lcom/android/internal/app/IAppOpsCallback;)V",
+        [context](dx::IntrinsicContext& call) {
+            auto& vm = call.vm;
+            const auto op = call.arguments[0].AsInt();
+            const auto switch_op =
+                op == AppOpsConstant(vm, "OP_NONE") ? op : AppOpsStaticInt(vm, kAppOpsManager, "opToSwitch", op);
+            const auto package = call.arguments[1].ref;
+            const auto callback = call.arguments[2].ref;
+            const auto binder = CallAndroidMethod(vm, callback, "asBinder", "()Landroid/os/IBinder;").ref;
+            auto& watches = context->app_ops.watches;
+            const auto prior = std::ranges::find(watches, binder, &AppOpsState::Watch::binder);
+            watches.push_back({binder, prior == watches.end() ? callback : prior->callback, switch_op,
+                               package.IsValid() ? std::optional(vm.Model().StringValue(package)) : std::nullopt});
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod(
+        "stopWatchingMode", "(Lcom/android/internal/app/IAppOpsCallback;)V", [context](dx::IntrinsicContext& call) {
+            const auto binder =
+                CallAndroidMethod(call.vm, call.arguments[0].ref, "asBinder", "()Landroid/os/IBinder;").ref;
+            std::erase_if(context->app_ops.watches, [binder](const auto& watch) { return watch.binder == binder; });
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("setMode", "(IILjava/lang/String;I)V",
+                          [context](dx::IntrinsicContext& call) { return SetAppOpMode(call, context); });
+    for (const auto& [name, descriptor, permission] : {
+             std::array{"getPackagesForOps", "([I)Ljava/util/List;", "android.permission.GET_APP_OPS_STATS"},
+             std::array{"getOpsForPackage", "(ILjava/lang/String;[I)Ljava/util/List;",
+                        "android.permission.GET_APP_OPS_STATS"},
+             std::array{"resetAllModes", "()V", "android.permission.UPDATE_APP_OPS_STATS"},
+         }) {
+        const auto capability = std::string("com.android.internal.app.IAppOpsService.") + name + descriptor;
+        builder.VirtualMethod(
+            name, descriptor, [context, permission, capability](dx::IntrinsicContext& call) -> dx::VmValue {
+                auto& vm = call.vm;
+                const auto am = GetLocalServiceInterface(vm, "activity", "Landroid/app/ActivityManagerNative;",
+                                                         "Landroid/app/IActivityManager;");
+                const auto result =
+                    CallAndroidMethod(vm, am, "checkPermission", "(Ljava/lang/String;II)I",
+                                      {MakeString(call, permission), dx::VmValue::Int(kGuestProcessId),
+                                       dx::VmValue::Int(static_cast<std::int32_t>(context->application_uid))});
+                if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented(capability, 0);
+                if (result.AsInt() != 0)
+                    throw dx::VmJavaThrow{"Ljava/lang/SecurityException;",
+                                          std::string("Permission required: ") + permission};
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", capability};
+            });
     }
     return std::move(builder).Build();
 }

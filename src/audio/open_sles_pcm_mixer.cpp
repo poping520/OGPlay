@@ -131,9 +131,10 @@ bool OpenSlesPcmMixer::Enqueue(const PlayerId player,
     return true;
 }
 
-OpenSlesEnqueueResult OpenSlesPcmMixer::EnqueueBlocking(
-    const PlayerId player, const std::span<const std::byte> pcm,
-    const std::size_t maximum_queued_bytes) {
+OpenSlesEnqueueResult OpenSlesPcmMixer::EnqueueBlocking(const PlayerId player, const std::span<const std::byte> pcm,
+                                                        const std::size_t maximum_queued_bytes,
+                                                        OpenSlesEnqueueProgress* progress) {
+    if (progress != nullptr) progress->bytes = 0U;
     std::unique_lock lock(mutex_);
     auto found = players_.find(player);
     if (found == players_.end()) {
@@ -150,16 +151,22 @@ OpenSlesEnqueueResult OpenSlesPcmMixer::EnqueueBlocking(
     }
     if (found->second.kind == OpenSlesPlayerKind::audio_track_static) {
         ReplaceStatic(found->second, pcm);
+        if (progress != nullptr) progress->bytes = pcm.size();
         return OpenSlesEnqueueResult::enqueued;
     }
-    const auto stop_generation = found->second.stop_generation;
-    const auto ready = [this, player, size = pcm.size(), byte_budget,
-                        stop_generation] {
+    if (byte_budget < bytes_per_frame) {
+        throw std::invalid_argument("OpenSL PCM byte budget must fit at least one frame");
+    }
+    auto stop_generation = found->second.stop_generation;
+    if (progress != nullptr) {
+        stop_generation = progress->stop_generation.value_or(stop_generation);
+        progress->stop_generation = stop_generation;
+    }
+    const auto ready = [this, player, bytes_per_frame, byte_budget, stop_generation] {
         const auto current = players_.find(player);
-        return interrupted_ || current == players_.end() ||
-               current->second.stop_generation != stop_generation ||
+        return interrupted_ || current == players_.end() || current->second.stop_generation != stop_generation ||
                (current->second.queue.size() < current->second.capacity &&
-                QueuedBytes(current->second) <= byte_budget - size);
+                QueuedBytes(current->second) <= byte_budget - bytes_per_frame);
     };
     if (!ready()) {
         ++blocking_writers_;
@@ -174,8 +181,10 @@ OpenSlesEnqueueResult OpenSlesPcmMixer::EnqueueBlocking(
     if (found->second.stop_generation != stop_generation) {
         return OpenSlesEnqueueResult::interrupted;
     }
-    found->second.queue.push_back(
-        Buffer{found->second.next_sequence++, {pcm.begin(), pcm.end()}});
+    const auto available = byte_budget - QueuedBytes(found->second);
+    const auto portion = pcm.first(std::min(pcm.size(), available - available % bytes_per_frame));
+    found->second.queue.push_back(Buffer{found->second.next_sequence++, {portion.begin(), portion.end()}});
+    if (progress != nullptr) progress->bytes = portion.size();
     return OpenSlesEnqueueResult::enqueued;
 }
 

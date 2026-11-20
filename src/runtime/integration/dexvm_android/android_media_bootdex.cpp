@@ -85,26 +85,27 @@ constexpr auto kPrivNat = dx::kAccPrivate | dx::kAccNative;
     }
     std::size_t written{};
     auto remaining = bytes;
+    audio::OpenSlesEnqueueProgress progress;
     while (!remaining.empty()) {
         const auto chunk = std::min(remaining.size(), buffer_size);
         auto& execution_lock = call.vm.ExecutionLock();
         const auto depth = execution_lock.ReleaseForBlocking();
         audio::OpenSlesEnqueueResult enqueue{};
         try {
-            enqueue = context->pcm_playback->EnqueueBlocking(player, remaining.first(chunk), buffer_size);
+            enqueue = context->pcm_playback->EnqueueBlocking(player, remaining.first(chunk), buffer_size, &progress);
         } catch (...) {
             execution_lock.ReacquireAfterBlocking(depth);
             throw;
         }
         execution_lock.ReacquireAfterBlocking(depth);
+        written += progress.bytes;
         state = FindTrack(context, call.receiver);
         if (enqueue != audio::OpenSlesEnqueueResult::enqueued || state == nullptr || state->player != player) {
             if (written > 0U) return static_cast<std::int32_t>(written);
             return kErrorInvalidOperation;
         }
-        written += chunk;
-        state->written_frames += chunk / frame_bytes;
-        remaining = remaining.subspan(chunk);
+        state->written_frames += progress.bytes / frame_bytes;
+        remaining = remaining.subspan(progress.bytes);
     }
     return static_cast<std::int32_t>(written);
 }

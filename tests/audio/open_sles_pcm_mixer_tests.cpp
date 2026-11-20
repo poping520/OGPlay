@@ -61,9 +61,8 @@ TEST_CASE("AudioTrack byte budget blocks until playback frees space") {
     CHECK(mixer.QueuedBytes(player) == pcm.size());
 
     std::atomic result{ogplay::audio::OpenSlesEnqueueResult::interrupted};
-    std::jthread writer([&] {
-        result = mixer.EnqueueBlocking(player, pcm, pcm.size());
-    });
+    ogplay::audio::OpenSlesEnqueueProgress progress;
+    std::jthread writer([&] { result = mixer.EnqueueBlocking(player, pcm, pcm.size(), &progress); });
     bool parked{};
     for (std::size_t attempt = 0; attempt < 100000U; ++attempt) {
         if (mixer.BlockingWriterCount() == 1U) {
@@ -77,11 +76,58 @@ TEST_CASE("AudioTrack byte budget blocks until playback frees space") {
     CHECK(mixer.QueuedBytes(player) == pcm.size());
 
     mixer.SetPlayState(player, ogplay::audio::OpenSlesPlayState::playing);
-    std::array<std::int16_t, 8> output{};
+    std::array<std::int16_t, 2> output{};
     static_cast<void>(mixer.MixAdditiveStereoPcm16(output, 48000U));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (mixer.QueuedBytes(player) < pcm.size() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::yield();
+    }
+    if (mixer.QueuedBytes(player) < pcm.size()) {
+        static_cast<void>(mixer.InterruptBlockingWaits());
+    }
     writer.join();
     CHECK(result.load() == ogplay::audio::OpenSlesEnqueueResult::enqueued);
+    CHECK(progress.bytes == 2U);
     CHECK(mixer.QueuedBytes(player) == pcm.size());
+}
+
+TEST_CASE("AudioTrack budget-sized write refills in parts before the queue drains") {
+    using namespace ogplay::audio;
+    OpenSlesPcmMixer mixer;
+    const auto player = mixer.CreatePlayer({48000U, 1U, 16U}, 255U);
+    mixer.SetPlayerKind(player, OpenSlesPlayerKind::audio_track_stream);
+    const auto pcm = Pcm16({1000, 2000, 3000, 4000});
+    REQUIRE(mixer.EnqueueBlocking(player, pcm, pcm.size()) == OpenSlesEnqueueResult::enqueued);
+    mixer.SetPlayState(player, OpenSlesPlayState::playing);
+
+    std::atomic<std::size_t> written{};
+    std::jthread writer([&] {
+        OpenSlesEnqueueProgress progress;
+        auto remaining = std::span<const std::byte>{pcm};
+        while (!remaining.empty() &&
+               mixer.EnqueueBlocking(player, remaining, pcm.size(), &progress) == OpenSlesEnqueueResult::enqueued) {
+            remaining = remaining.subspan(progress.bytes);
+            written.store(pcm.size() - remaining.size());
+        }
+    });
+
+    for (const std::size_t expected : {4U, 8U}) {
+        std::array<std::int16_t, 4> output{};
+        static_cast<void>(mixer.MixAdditiveStereoPcm16(output, 48000U));
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (written.load() < expected && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::yield();
+        }
+        const auto actual = written.load();
+        if (actual != expected) {
+            static_cast<void>(mixer.InterruptBlockingWaits());
+            writer.join();
+        }
+        REQUIRE(actual == expected);
+        CHECK(mixer.QueuedBytes(player) == pcm.size());
+    }
+    writer.join();
+    CHECK(mixer.Snapshot(player).underrun_count == 0U);
 }
 
 TEST_CASE("AudioTrack blocking enqueue is interrupted by teardown") {

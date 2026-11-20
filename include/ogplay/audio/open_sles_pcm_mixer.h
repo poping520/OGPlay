@@ -49,6 +49,11 @@ enum class OpenSlesEnqueueResult : std::uint8_t {
     player_destroyed,
 };
 
+struct OpenSlesEnqueueProgress final {
+    std::size_t bytes{};
+    std::optional<std::uint64_t> stop_generation;
+};
+
 class OpenSlesPcmMixer final {
 public:
     using PlayerId = std::uint64_t;
@@ -64,11 +69,11 @@ public:
     void SetLoop(PlayerId player, std::uint32_t start_frame,
                  std::uint32_t end_frame, std::int32_t loop_count);
     [[nodiscard]] bool Enqueue(PlayerId player, std::span<const std::byte> pcm);
-    // AudioTrack MODE_STREAM writes block against its Android buffer-size
-    // byte budget. The item capacity remains only a bounded memory guard.
-    [[nodiscard]] OpenSlesEnqueueResult EnqueueBlocking(
-        PlayerId player, std::span<const std::byte> pcm,
-        std::size_t maximum_queued_bytes);
+    // Enqueues the frames that fit once at least one frame and queue item fit.
+    // Reuse progress for all portions of one AudioTrack MODE_STREAM write.
+    [[nodiscard]] OpenSlesEnqueueResult EnqueueBlocking(PlayerId player, std::span<const std::byte> pcm,
+                                                        std::size_t maximum_queued_bytes,
+                                                        OpenSlesEnqueueProgress* progress = nullptr);
     [[nodiscard]] std::size_t QueuedBytes(PlayerId player) const;
     [[nodiscard]] OpenSlesPlayerSnapshot Snapshot(PlayerId player) const;
     [[nodiscard]] std::optional<OpenSlesPlayerSnapshot> TrySnapshot(PlayerId player) const;

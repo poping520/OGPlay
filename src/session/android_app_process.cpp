@@ -237,8 +237,13 @@ public:
         const auto guest_jni = std::find_if(request.system_libraries.begin(), request.system_libraries.end(),
                                             [](const auto& source) { return source.name == "libogplay_jni.so"; });
         if (guest_jni != request.system_libraries.end()) {
-            if (request.icu_data.empty()) Fail("API 19 guest JNI requires the pinned ICU data");
-            request.filesystem->PutFile("/system/usr/icu/icudt51l.dat", request.icu_data, false);
+            constexpr auto missing_icu = "API 19 guest JNI requires the pinned ICU data";
+            try {
+                const auto info = request.filesystem->Stat("/system/usr/icu/icudt51l.dat");
+                if (info.is_directory || info.size == 0) Fail(missing_icu);
+            } catch (const runtime::VfsError&) {
+                Fail(missing_icu);
+            }
         }
         const auto launcher = loader::ResolveLauncherComponent(manifest);
         launcher_descriptor = Descriptor(launcher.activity_class);

@@ -53,6 +53,7 @@ void Put32(std::vector<std::byte>& bytes, const std::size_t offset, const std::u
 [[nodiscard]] std::vector<std::uint8_t> ReadDexFixture(const std::string& name);
 
 [[nodiscard]] std::vector<std::byte> ReadPayloadBytes(const std::string& relative);
+void MountTestSystemPayload(ogplay::runtime::VirtualFileSystem& filesystem);
 
 [[nodiscard]] ogplay::loader::AndroidManifestFacts AppManifest(const std::string& activity,
                                                                const bool has_launcher = true);

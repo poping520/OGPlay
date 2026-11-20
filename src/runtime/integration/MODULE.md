@@ -141,6 +141,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   registry：同 loader 幂等、同线程递归返回现有 handle、跨 loader 拒绝、Failed 重试稳定失败。
   app resolver 只用 selected-ABI inventory，basename 为身份，DT_SONAME 为受检别名；
   DT_NEEDED 可用二者，别名歧义、ET_DYN、依赖/重定位、constructor/JNI version 均受检。
+  API 19 动态装载时，带路径的 DT_NEEDED 在精确查询未命中后可按文件名复用进程命名空间中已装载的库。
+  静态导入审计没有进程装载历史，仍按精确依赖名解析。
   显式加载完成日志附 ELF 加载基址及映射起止，A32 故障的模块偏移从同一 linker namespace 的实际映射区间查得。
 - [ADR-0135](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/runtime.md#adr-0135)：共享来源快照拥有 APK/系统库字节，process
   经显式 native callback 持有；Java registry 退役不悬空其来源。Java/native 共用 namespace

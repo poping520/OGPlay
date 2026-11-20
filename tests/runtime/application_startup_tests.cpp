@@ -406,8 +406,7 @@ TEST_CASE("DVM-264 ROM application binding publishes tmpdir before Application c
         request.dex_bytes = ReadDexFixture("platform_tables.dex");
         request.boot_dex_files = test::ReadBootDex();
         request.system_libraries = system;
-        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-        request.tzdata = ReadPayloadBytes("zoneinfo/tzdata");
+        MountTestSystemPayload(filesystem);
         request.context = std::make_shared<runtime::DexVmAndroidContext>();
         test::BindBootDexArchive(*request.context);
         const std::array entries{std::pair{std::string("fixture"), std::vector<std::byte>{}}};

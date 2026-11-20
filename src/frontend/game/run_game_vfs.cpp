@@ -4,11 +4,13 @@
 
 #include <algorithm>
 #include <fstream>
+#include <map>
 #include <mutex>
 #include <unordered_set>
 #include <array>
 #include <charconv>
 #include <stdexcept>
+#include <system_error>
 #include <string_view>
 #include <vector>
 
@@ -71,15 +73,82 @@ constexpr core::RateLimitPolicy kUnrestrictedLog{.mode = core::RateLimitMode::no
 
 }  // namespace
 
-void MountFrameworkPayload(runtime::VirtualFileSystem& filesystem, const std::filesystem::path& directory) {
-    const auto mount = [&](std::string_view name) {
-        const auto file = hal::OpenHostReadFile(directory / name);
-        filesystem.PutReadOnlyFile(std::string("/system/framework/") + std::string(name), file->Info().size,
+std::function<std::vector<std::byte>(std::string_view)>
+MountApi19SystemPayload(runtime::VirtualFileSystem& filesystem, const std::filesystem::path& payload_root) {
+    const auto open = [&](std::string_view relative) {
+        const auto path = payload_root / relative;
+        try {
+            auto file = hal::OpenHostReadFile(path);
+            if (file->Info().size == 0) throw std::runtime_error("empty API 19 system payload file: " + PathUtf8(path));
+            return file;
+        } catch (const std::system_error& error) {
+            throw std::runtime_error("cannot open API 19 system payload file " + PathUtf8(path) + ": " + error.what());
+        }
+    };
+    constexpr std::string_view manifest_name = "manifest.json";
+    const auto manifest_path = PathUtf8(payload_root / manifest_name);
+    const auto manifest = open(manifest_name);
+    if (manifest->Info().size > core::JsonDocument::kDefaultMaximumBytes)
+        throw std::runtime_error("API 19 system payload manifest is too large: " + manifest_path);
+    const auto mapping = manifest->Map();
+    const std::string_view json(reinterpret_cast<const char*>(mapping.bytes.data()), mapping.bytes.size());
+    core::JsonParseError error;
+    const auto document = core::JsonDocument::ParseStrict(json, error);
+    if (!document)
+        throw std::runtime_error("invalid API 19 system payload manifest " + manifest_path + ": " + error.message);
+
+    struct SystemFile {
+        std::string relative;
+        std::string guest;
+        std::shared_ptr<const hal::HostReadFile> backing{};
+    };
+
+    std::vector<SystemFile> files{
+        {"framework/" + std::string(runtime::kBootClasspathJar),
+         "/system/framework/" + std::string(runtime::kBootClasspathJar)},
+        {"framework/framework-res.apk", "/system/framework/framework-res.apk"},
+        {"icu/icudt51l.dat", "/system/usr/icu/icudt51l.dat"},
+        {"zoneinfo/tzdata", "/system/usr/share/zoneinfo/tzdata"},
+    };
+    constexpr std::string_view font_prefix = "/system/fonts/";
+    std::map<std::string, std::shared_ptr<const hal::HostReadFile>, std::less<>> fonts;
+    const auto add_fonts = [&](const core::JsonValue entries) {
+        if (!entries.IsArray() || entries.Size() == 0)
+            throw std::runtime_error("missing font list in " + manifest_path);
+        for (std::size_t i = 0; i < entries.Size(); ++i) {
+            const auto path = entries.Element(i)->Member("path").value_or(core::JsonValue{}).String().value_or("");
+            const auto name = path.starts_with("fonts/") ? path.substr(6) : std::string_view{};
+            if (!name.ends_with(".ttf") || name.find_first_of("/\\:") != std::string_view::npos ||
+                name.find('\0') != std::string_view::npos) {
+                throw std::runtime_error("invalid font path in " + manifest_path + ": " + std::string(path));
+            }
+            if (fonts.try_emplace(std::string(name)).second)
+                files.push_back({std::string(path), std::string(font_prefix) + std::string(name)});
+        }
+    };
+    const auto root = document->Root();
+    add_fonts(root.Member("system_fonts").value_or(core::JsonValue{}));
+    add_fonts(root.Member("ui_fallback_font").value_or(core::JsonValue{}).Member("fonts").value_or(core::JsonValue{}));
+
+    for (auto& file : files)
+        file.backing = open(file.relative);
+    for (const auto& [relative, guest, file] : files) {
+        filesystem.PutReadOnlyFile(guest, file->Info().size,
                                    [file](std::uint64_t offset, std::span<std::byte> destination,
                                           std::stop_token stop) { return file->ReadAt(offset, destination, stop); });
+        if (guest.starts_with(font_prefix)) fonts.at(guest.substr(font_prefix.size())) = file;
+    }
+
+    return [fonts = std::move(fonts), payload_root](std::string_view name) {
+        const auto font = fonts.find(name);
+        if (font == fonts.end())
+            throw std::runtime_error("font is absent from the API 19 system payload: " + std::string(name));
+        const auto& file = font->second;
+        std::vector<std::byte> bytes(static_cast<std::size_t>(file->Info().size));
+        if (file->ReadAt(0, bytes) != bytes.size())
+            throw std::runtime_error("API 19 font was truncated: " + PathUtf8(payload_root / "fonts" / name));
+        return bytes;
     };
-    mount(runtime::kBootClasspathJar);
-    mount("framework-res.apk");
 }
 
 void SandboxSession::RemoveTemporaryRoot::operator()(std::filesystem::path* path) const noexcept {

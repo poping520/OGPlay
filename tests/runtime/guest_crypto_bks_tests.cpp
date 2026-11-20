@@ -103,7 +103,7 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
         request.manifest = AppManifest("fixture.MainActivity");
         request.system_libraries = libraries;
         request.dex_bytes = ReadDexFixture("cipher.dex");
-        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
+        MountTestSystemPayload(filesystem);
         request.boot_dex_files = test::ReadBootDex();
         request.boot_dex_files.push_back(ReadDexFixture("bks_callback.dex"));
         request.context = context;
@@ -1304,7 +1304,7 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
         reload_request.manifest = AppManifest("fixture.MainActivity");
         reload_request.system_libraries = libraries;
         reload_request.dex_bytes = ReadDexFixture("cipher.dex");
-        reload_request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
+        MountTestSystemPayload(reload_filesystem);
         reload_request.boot_dex_files = test::ReadBootDex();
         reload_request.context = std::make_shared<runtime::DexVmAndroidContext>();
         test::BindBootDexArchive(*reload_request.context);

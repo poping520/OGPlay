@@ -50,8 +50,9 @@
 - 全局锁只用于路径、FD 表和必要元数据；backing 读取、CRC/解压均在锁外。锁序为
   open-state → node → global metadata；不得持 global 等待 backing/node IO。同步沙盒
   fsync/Close/rename 仍允许阻塞落盘，本模块不创建后台预读或线程池。
-- `ListDirectory` 合并显式/隐式目录并返回排序去重快照；`OpenDirectory` 的 cursor 在打开
-  时冻结。目录树 rename、mmap、跨进程锁、WAL 与通用 POSIX 扩展不在本模块范围。
+- `ListDirectory` 合并显式/隐式目录，按 ASCII 折叠键排序去重，条目名保留发布、创建或改名时的拼写。
+  沙盒重载从现有落盘名称或同一路径的底层节点恢复拼写。`OpenDirectory` 的 cursor 在打开时冻结。
+  目录树 rename、mmap、跨进程锁、WAL 与通用 POSIX 扩展不在本模块范围。
 
 ## 文件系统统计
 
@@ -81,7 +82,8 @@ data 与 sdcard 共用安装身份 fsid。总量按配额向下取整，剩余�
 stat 与 fstat 通过同一 VFS 元数据报告属主、权限位和修改时间。应用私有目录以会话注入的
 UID 作为 uid/gid，系统、APK 和共享存储使用确定性的 guest 属主。chmod/fchmod 及文件时间
 设置仅更新已存在的可写节点，随进程结束丢弃。mode 用于报告，I/O 准入继续遵循 VFS 写域，
-宿主权限和持久化格式不参与。只读系统分区 chmod 返回 EROFS，其他只读节点返回 EPERM。
+宿主权限和持久化格式不参与。`/system` 的显式和隐式目录均只读，写打开、创建、
+删除、文件重命名和 chmod 返回 EROFS。其他只读节点 chmod 返回 EPERM。
 
 `RegisterGeneratedReadOnly` 注册有界 provider，stat 大小为 0；每次 open 先预留最大输出
 预算，再在 VFS 锁外生成独立不可变快照。read/readAt/seek/fstat/lease 共用既有 FD 语义；

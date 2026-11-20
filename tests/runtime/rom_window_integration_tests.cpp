@@ -1,4 +1,5 @@
 #include "native_library_fixture.h"
+#include "frontend/game/run_game_vfs.h"
 
 #include <algorithm>
 #include <array>
@@ -34,12 +35,7 @@ struct RomWindowApp {
         const auto android = std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19";
         context = AssembleAndroidContext(ReadBootClasspath(android / "framework"));
         context->framework_resource_apk = android / "framework/framework-res.apk";
-        context->system_font_source = [android](std::string_view name) {
-            std::ifstream stream(android / "fonts" / name, std::ios::binary);
-            const std::vector<char> bytes{std::istreambuf_iterator<char>(stream), {}};
-            const auto data = std::as_bytes(std::span{bytes});
-            return std::vector<std::byte>{data.begin(), data.end()};
-        };
+        context->system_font_source = frontend::MountApi19SystemPayload(filesystem, android);
         if (video::FfmpegAvailable())
             context->video_source_player_factory = video::MakeFfmpegVideoSourcePlayerFactory();
 
@@ -73,8 +69,6 @@ struct RomWindowApp {
         for (const auto byte : dex)
             request.dex_bytes.push_back(std::to_integer<std::uint8_t>(byte));
         request.boot_dex_files = BootClasspathDexFiles(context->boot_classpath);
-        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-        request.tzdata = ReadPayloadBytes("zoneinfo/tzdata");
         request.filesystem = &filesystem;
         request.surface_width = 320;
         request.surface_height = 400;

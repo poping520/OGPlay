@@ -453,11 +453,12 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     if (guest_width != 0 && guest_height != 0) control_mapper.SetSurface(guest_width, guest_height);
     McpPointerDispatcher mcp_pointer;
     {
-        MountFrameworkPayload(filesystem, bundled_data.root / bionic.data_directory / "framework");
+        const auto payload_root = bundled_data.root / bionic.data_directory;
+        auto system_font_source = MountApi19SystemPayload(filesystem, payload_root);
         std::shared_ptr<runtime::DexVmAndroidContext> dex_context;
         {
-            dex_context = runtime::AssembleAndroidContext(
-                runtime::ReadBootClasspath(bundled_data.root / bionic.data_directory / "framework"));
+            dex_context = runtime::AssembleAndroidContext(runtime::ReadBootClasspath(payload_root / "framework"));
+            dex_context->system_font_source = std::move(system_font_source);
             dex_context->native_output_sample_rate = kDesktopAudioOutputSpec.sample_rate;
             dex_context->native_output_buffer_frames = session::AudioOutputPump::kChunkFrames;
             dex_context->native_output_target_queued_frames = session::AudioOutputPump::kTargetQueuedFrames;
@@ -467,8 +468,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                     const auto context = ctx.lock();
                     return context ? context->uptime_nanos.load() : std::int64_t{0};
                 });
-            dex_context->framework_resource_apk =
-                bundled_data.root / bionic.data_directory / "framework/framework-res.apk";
+            dex_context->framework_resource_apk = payload_root / "framework/framework-res.apk";
             dex_context->apk_bytes = std::move(apk_bytes);
             dex_context->archive = archive;
             dex_context->package_name = manifest.package;
@@ -572,11 +572,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         app_request.system_libraries = system_sources;
         app_request.boot_dex_files = runtime::BootClasspathDexFiles(dex_context->boot_classpath);
         app_request.dex_bytes = std::move(dex_bytes);
-        app_request.icu_data = ReadBytes(bundled_data.root / bionic.data_directory / "icu" / "icudt51l.dat");
-        app_request.tzdata = ReadBytes(bundled_data.root / bionic.data_directory / "zoneinfo" / "tzdata");
         app_request.context = dex_context;
-        dex_context->system_font_source = [fonts = bundled_data.root / bionic.data_directory /
-                                                   "fonts"](std::string_view file) { return ReadBytes(fonts / file); };
         app_request.api_level = api_level;
         app_request.surface_width = surface_width;
         app_request.surface_height = surface_height;

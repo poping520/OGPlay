@@ -65,7 +65,7 @@ VfsFileInfo VirtualFileSystem::Impl::FileInfoLocked(const File& file, std::uint3
 }
 
 VfsFileMetadata& VirtualFileSystem::Impl::PathMetadataLocked(const std::string& path, const VfsFileInfo& info) {
-    if (path == "/system" || path.starts_with("/system/")) throw VfsError(30, "read-only VFS system partition");
+    if (IsSystemPartitionPath(path)) throw VfsError(kErofs, "read-only VFS system partition");
     if (!info.writable || (sandbox_ && !IsWritableNamespaceLocked(path)))
         throw VfsError(1, "VFS metadata is not writable by the application");
     return info.is_directory ? directory_metadata_[path] : files_.at(path)->metadata;
@@ -102,7 +102,7 @@ void VirtualFileSystem::Impl::Fchmod(std::int32_t fd, std::uint32_t mode) {
     std::scoped_lock lock(mutex_);
     const auto open = FindDescriptor(fd);
     if (open->directory ? open->directory->system_partition : open->system_partition)
-        throw VfsError(30, "read-only VFS system partition");
+        throw VfsError(kErofs, "read-only VFS system partition");
     if (open->directory && !open->directory->unlinked) {
         const auto& path = open->directory->path;
         auto& metadata = PathMetadataLocked(path, open->directory->info);
@@ -178,8 +178,9 @@ GuestFileSystemStats VirtualFileSystem::Impl::VolumeStatsLocked(std::string_view
         bytes += file->size;
         ++nodes;
     }
-    for (auto it = directories_.lower_bound("/system"); it != directories_.end() && it->starts_with("/system"); ++it) {
-        if ((*it == "/system" || it->starts_with("/system/")) && !tombstones_.contains(*it)) ++nodes;
+    for (auto it = directories_.lower_bound("/system"); it != directories_.end() && it->first.starts_with("/system");
+         ++it) {
+        if (IsSystemPartitionPath(it->first) && !tombstones_.contains(it->first)) ++nodes;
     }
     stats.values[2] = bytes / kFilesystemBlockSize + (bytes % kFilesystemBlockSize != 0);
     stats.values[5] = nodes;
@@ -221,36 +222,37 @@ std::vector<VfsDirectoryEntry> VirtualFileSystem::Impl::ListDirectory(const std:
     std::scoped_lock lock(mutex_);
     auto prefix = ResolveDataPathLocked(path);
     if (prefix.empty() || prefix.back() != '/') prefix.push_back('/');
-    // Merged from both indexes and deduplicated by name, so getdents64 sees
-    // one stable order regardless of how a directory came to be.
-    std::map<std::string, bool, std::less<>> children;
-    std::set<std::string, std::less<>> character_devices;
-    const auto collect = [&](const std::string& key, const bool leaf_is_directory) {
+    // Order and deduplication use the folded keys, while names exposed to the guest keep their spelling.
+    std::map<std::string, VfsDirectoryEntry, std::less<>> children;
+    const auto collect = [&](const std::string& key, const std::string_view spelling, const bool leaf_is_directory,
+                             const bool character_device) {
         if (!key.starts_with(prefix)) return;
         const auto remainder = std::string_view(key).substr(prefix.size());
         if (remainder.empty()) return;
         const auto slash = remainder.find('/');
-        const bool is_directory = slash != std::string_view::npos || leaf_is_directory;
+        const bool is_leaf = slash == std::string_view::npos;
+        const bool is_directory = !is_leaf || leaf_is_directory;
         if (!is_directory && tombstones_.contains(key)) return;
-        auto& recorded = children[std::string(remainder.substr(0, slash))];
-        recorded = recorded || is_directory;
+        const auto name = remainder.substr(0, slash);
+        auto& entry = children[std::string(name)];
+        if (entry.name.empty() || (is_directory && !entry.is_directory) || (is_leaf && leaf_is_directory)) {
+            entry = {std::string(spelling.substr(prefix.size(), name.size())), is_directory,
+                     is_leaf && character_device};
+        }
     };
     for (auto it = files_.lower_bound(prefix); it != files_.end() && it->first.starts_with(prefix); ++it) {
         if ((!it->second->generated || it->second->generated->active) &&
             (!it->second->character_device || it->second->character_device->active)) {
-            collect(it->first, false);
-            const auto remainder = std::string_view(it->first).substr(prefix.size());
-            if (it->second->character_device && remainder.find('/') == std::string_view::npos)
-                character_devices.emplace(remainder);
+            collect(it->first, it->second->spelling, false, it->second->character_device != nullptr);
         }
     }
-    for (auto it = directories_.lower_bound(prefix); it != directories_.end() && it->starts_with(prefix); ++it) {
-        collect(*it, true);
+    for (auto it = directories_.lower_bound(prefix); it != directories_.end() && it->first.starts_with(prefix); ++it) {
+        collect(it->first, it->second, true, false);
     }
     std::vector<VfsDirectoryEntry> entries;
     entries.reserve(children.size());
-    for (auto& [name, is_directory] : children) {
-        entries.push_back({name, is_directory, !is_directory && character_devices.contains(name)});
+    for (auto& child : children) {
+        entries.push_back(std::move(child.second));
     }
     return entries;
 }
@@ -270,11 +272,11 @@ bool VirtualFileSystem::Impl::IsDirectoryLocked(const std::string& path) const {
         if (alias == path || alias.starts_with(prefix)) return true;
     }
     const auto directory = directories_.lower_bound(prefix);
-    return directory != directories_.end() && directory->starts_with(prefix);
+    return directory != directories_.end() && directory->first.starts_with(prefix);
 }
 
 VfsFileInfo VirtualFileSystem::Impl::DirectoryInfoLocked(const std::string& path) const {
-    const bool writable = sandbox_ == nullptr || IsWritableNamespaceLocked(path);
+    const bool writable = !IsSystemPartitionPath(path) && (sandbox_ == nullptr || IsWritableNamespaceLocked(path));
     VfsSource source = VfsSource::runtime;
     if (!writable) {
         auto prefix = path;
@@ -386,7 +388,7 @@ std::int32_t VirtualFileSystem::Impl::OpenDirectory(const std::string_view path,
     auto directory = std::make_shared<OpenDirectoryState>();
     directory->entries = std::move(entries);
     directory->info = DirectoryInfoLocked(normalized);
-    directory->system_partition = normalized == "/system" || normalized.starts_with("/system/");
+    directory->system_partition = IsSystemPartitionPath(normalized);
     directory->path = normalized;
     directory->spelling = PreserveSpelling(
         normalized, !path.empty() && path.front() == '/'
@@ -439,6 +441,7 @@ void VirtualFileSystem::Impl::CreateDirectory(const std::string_view path) {
     if (IsDirectoryLocked(normalized)) {
         throw VfsError(kEexist, "VFS directory already exists");
     }
+    if (IsSystemPartitionPath(normalized)) throw VfsError(kErofs, "read-only VFS system partition");
     if (sandbox_ != nullptr && !IsWritableNamespaceLocked(normalized)) {
         throw VfsError(kEacces, "VFS path is outside the writable namespace");
     }
@@ -447,8 +450,9 @@ void VirtualFileSystem::Impl::CreateDirectory(const std::string_view path) {
     if (parent != "/" && !IsDirectoryLocked(parent)) {
         throw VfsError(kEnoent, "VFS parent directory does not exist");
     }
+    auto spelling = NewPathSpellingLocked(normalized, path);
     PersistDirectoryLocked(normalized);
-    directories_.insert(normalized);
+    directories_.emplace(normalized, std::move(spelling));
 }
 
 void VirtualFileSystem::Impl::RemoveFile(const std::string_view path) {
@@ -461,6 +465,7 @@ void VirtualFileSystem::Impl::RemoveFile(const std::string_view path) {
         }
         throw VfsError(kEnoent, "VFS file not found");
     }
+    if (IsSystemPartitionPath(normalized)) throw VfsError(kErofs, "read-only VFS system partition");
     if (!found->second->writable) {
         throw VfsError(kEacces, "VFS file is read-only");
     }
@@ -486,6 +491,7 @@ void VirtualFileSystem::Impl::RemoveDirectory(const std::string_view path) {
     if (!IsDirectoryLocked(normalized)) {
         throw VfsError(kEnoent, "VFS directory not found");
     }
+    if (IsSystemPartitionPath(normalized)) throw VfsError(kErofs, "read-only VFS system partition");
     auto prefix = normalized;
     prefix.push_back('/');
     const auto child_file = files_.lower_bound(prefix);
@@ -493,7 +499,7 @@ void VirtualFileSystem::Impl::RemoveDirectory(const std::string_view path) {
         throw VfsError(kEnotempty, "VFS directory is not empty");
     }
     const auto child_directory = directories_.lower_bound(prefix);
-    if (child_directory != directories_.end() && child_directory->starts_with(prefix)) {
+    if (child_directory != directories_.end() && child_directory->first.starts_with(prefix)) {
         throw VfsError(kEnotempty, "VFS directory is not empty");
     }
     if (!directories_.contains(normalized)) {
@@ -534,6 +540,8 @@ void VirtualFileSystem::Impl::Rename(const std::string_view from, const std::str
         throw VfsError(kEnoent, "VFS rename source not found");
     }
     if (source == target) return;
+    if (IsSystemPartitionPath(source) || IsSystemPartitionPath(target))
+        throw VfsError(kErofs, "read-only VFS system partition");
     if (!found->second->writable) {
         throw VfsError(kEacces, "VFS rename source is read-only");
     }
@@ -549,6 +557,7 @@ void VirtualFileSystem::Impl::Rename(const std::string_view from, const std::str
         throw VfsError(kEacces, "VFS path is outside the writable namespace");
     }
     auto file = found->second;
+    auto spelling = NewPathSpellingLocked(target, to);
     RejectMappedMutationLocked(*file);
     if (target_file != files_.end()) RejectMappedMutationLocked(*target_file->second);
     const bool needs_materialization = sandbox_ != nullptr && file->dirty && !file->overlay_path.empty();
@@ -587,6 +596,7 @@ void VirtualFileSystem::Impl::Rename(const std::string_view from, const std::str
     }
     files_.insert_or_assign(target, file);
     file->canonical_path = std::move(canonical_target);
+    file->spelling = std::move(spelling);
     for (const auto& [fd, open] : descriptors_) {
         static_cast<void>(fd);
         if (open->file == file) open->owner_id = OwnerLocked(target);
@@ -723,6 +733,7 @@ void VirtualFileSystem::Impl::AttachSandbox(SandboxStore& store, const std::span
     // leaves the VFS exactly as it was.
     struct Pending final {
         std::string path;
+        std::string spelling;
         std::shared_ptr<File> file;
         bool is_directory{};
         bool is_tombstone{};
@@ -733,12 +744,19 @@ void VirtualFileSystem::Impl::AttachSandbox(SandboxStore& store, const std::span
         const auto normalized = NormalizePath(entry.path);
         Pending item;
         item.path = normalized;
+        item.spelling = PreserveSpelling(normalized, entry.path);
         item.is_directory = entry.is_directory;
         item.is_tombstone = entry.is_tombstone;
         if (!entry.is_directory && !entry.is_tombstone) {
             auto file = std::make_shared<File>();
             file->node_id = next_node_id_++;
             file->canonical_path = normalized;
+            file->spelling = item.spelling;
+            if (file->spelling == normalized) {
+                if (const auto base = files_.find(normalized); base != files_.end()) {
+                    file->spelling = base->second->spelling;
+                }
+            }
             file->size = entry.size;
             file->writable = true;
             file->source = VfsSource::sandbox;
@@ -753,7 +771,7 @@ void VirtualFileSystem::Impl::AttachSandbox(SandboxStore& store, const std::span
 
     for (auto& item : pending) {
         if (item.is_directory) {
-            directories_.insert(item.path);
+            directories_.insert_or_assign(std::move(item.path), std::move(item.spelling));
             continue;
         }
         if (item.is_tombstone) {
@@ -773,7 +791,8 @@ void VirtualFileSystem::Impl::AttachSandbox(SandboxStore& store, const std::span
     for (const auto& root : directory_roots) {
         for (std::size_t cursor = 1; cursor <= root.size(); ++cursor) {
             if (cursor == root.size() || root[cursor] == '/') {
-                directories_.insert(root.substr(0, cursor));
+                const auto prefix = root.substr(0, cursor);
+                directories_.try_emplace(prefix, prefix);
             }
         }
     }

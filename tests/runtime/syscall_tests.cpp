@@ -1549,7 +1549,7 @@ TEST_CASE("Android getdents64 emits aligned records and pages") {
     fixture.vfs.CreateDirectory("/sdcard");
     fixture.WriteString(0x20000, "/sdcard/dir");
     REQUIRE(fixture.Call(39, {0x20000, 0755, 0, 0, 0, 0}) == 0);
-    for (const auto* name : {"/sdcard/dir/a.sav", "/sdcard/dir/b.sav"}) {
+    for (const auto* name : {"/sdcard/dir/a.saV", "/sdcard/dir/B.sav"}) {
         fixture.WriteString(0x20100, name);
         const auto descriptor = fixture.Call(5, {0x20100, 0x40 | 1, 0, 0, 0, 0});
         REQUIRE(descriptor >= 3);
@@ -1575,10 +1575,10 @@ TEST_CASE("Android getdents64 emits aligned records and pages") {
     const auto reclen = fixture.ReadField(0x20400, 16, 2);
     CHECK(reclen % 8 == 0);
     CHECK(fixture.ReadField(0x20400, 18, 1) == 8);  // DT_REG
-    std::vector<std::byte> name(6);                 // "a.sav" plus its NUL
+    std::vector<std::byte> name(6);                 // "a.saV" plus its NUL
     fixture.memory.Read(GuestAddress{0x20400 + 19}, name);
     CHECK(static_cast<char>(name[0]) == 'a');
-    CHECK(static_cast<char>(name[4]) == 'v');
+    CHECK(static_cast<char>(name[4]) == 'V');
     CHECK(static_cast<char>(name[5]) == '\0');
     CHECK(static_cast<std::uint64_t>(written) == reclen);
 
@@ -1586,7 +1586,7 @@ TEST_CASE("Android getdents64 emits aligned records and pages") {
     CHECK(second == 32);
     std::vector<std::byte> second_name(6);
     fixture.memory.Read(GuestAddress{0x20400 + 19}, second_name);
-    CHECK(static_cast<char>(second_name[0]) == 'b');
+    CHECK(static_cast<char>(second_name[0]) == 'B');
     CHECK(fixture.Call(217, {static_cast<std::uint32_t>(directory), 0x20400, 32, 0, 0, 0}) == 0);
 
     // fstat64 sees a directory and fsync(dirfd) is a safe metadata barrier.

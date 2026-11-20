@@ -28,7 +28,9 @@ guest 主线程在独立宿主线程持续执行 ROM Looper.loop。session 提�
   在 `GET_ACTIVITIES` 下发布当前包 Activity 元数据；Activity 主题注册按组件名以后声明覆盖，
   alias 直接使用 loader 封存的继承主题。receiver 声明独立注入，供当前包
   `getReceiverInfo/queryBroadcastReceivers` 使用，逐过滤器事实不合并。`AndroidAppProcessRequest` 同时把显式 `GuestProcFacts` 原样传给 native process；session
-  接收按 manifest 顺序解包的原样 ROM 启动类路径 DEX，与应用 DEX 一起交给 bridge；
+  接收按 manifest 顺序解包的原样 ROM 启动类路径 DEX，与应用 DEX 一起交给 bridge。
+  系统数据由调用方预先挂载到 VFS。使用 guest JNI 时，创建进程前必须能在
+  `/system/usr/icu/icudt51l.dat` 找到非空 ICU 数据文件，否则启动失败。
   系统字体通过 payload 显式注入 ROM Typeface/Paint 的 Skia native，按 family/样式共享
   不可变字体；应用字体只经 APK assets 或 guest VFS，不读取宿主字体。
   不选择 Boot 类、不读取宿主内存，也不从 Profile 隐式覆盖虚拟设备 `/proc` 事实。

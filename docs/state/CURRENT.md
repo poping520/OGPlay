@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-11-19。
+更新：2026-11-20。
 
 本文件是项目当前状态的快照：只写“现在怎样”，不写过程。修改时覆盖对应行，不追加流水；
 跨会话在办事项写入任务单，完成后的过程、验证明细及证据留在提交说明中。能力见 [capabilities.toml](../../capabilities.toml)，
@@ -48,6 +48,7 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
 | POPClassic | macOS | 快速开始并跳过过场，进入第一关，关卡 AAC 环境音已提交非零 PCM 至 SDL。约 190 秒呈现 9,202 帧，SIGTERM 退出 0 | FFmpeg 离线解码 APK 中全部 91 个 MP3 成功，覆盖此前两处 SoundPool 加载失败。游戏内声音、后续关卡和跨平台待验 | — |
 | Assassin's Creed Pirates 2.9.1 | macOS | 原 APK 库诊断运行呈现 2,535 帧；MediaPlayer 构造错误和 Kontagent handler NPE 均为零 | Kontagent DNS resolver 初始化仍失败；上次关窗卡在 NativeActivity.onDestroy，CLI 退出 1；宿主关闭已改为 stop 后结束进程，原 APK 关窗及关卡待验 | — |
 | Anomaly HD 1.18 | macOS | 越过 GCM 的设备检查、清单检查和注册调用，读取主 OBB，进入 GameActivity 的原生初始化，呈现 8,883 帧 | 90 秒库诊断 SIGINT 退出 0，未见新的阻断错误；GCM 后首条错误日志为 Bionic 缺 tzdata，运行继续；菜单 AudioTrack 周期欠载爆音已修；画面与交互待验 | — |
+| Mass Effect Infiltrator 1.0.58（mod） | macOS | 原 APK 用既有数据越过路径型 `DT_NEEDED`、FreeType 和 EA Text 字体选择，Release 呈现 180 帧并按上限退出 0 | 180 帧后的进度与交互待验证 | — |
 
 ## 未闭合问题
 

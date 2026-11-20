@@ -38,6 +38,27 @@ constexpr BionicProfile kApi23{AndroidApi::api23, "6.0", "android/23",
     return module.name;
 }
 
+void ReuseLoadedDependencyNames(loader::Elf32LinkModule& module, std::span<const loader::Elf32LinkModule> loaded,
+                                const std::set<std::string, std::less<>>& present_names) {
+    for (auto& needed : module.dynamic.needed) {
+        const auto slash = needed.rfind('/');
+        if (slash == std::string::npos || present_names.contains(needed)) continue;
+        const auto basename = std::string_view(needed).substr(slash + 1U);
+        const auto existing = std::ranges::find(loaded, basename, &loader::Elf32LinkModule::name);
+        if (existing == loaded.end()) continue;
+
+        // Keep relocations and later constructor/handle lookups on the same dependency.
+        if (module.versions) {
+            for (auto& version : module.versions->symbols) {
+                if (version.kind == loader::Elf32SymbolVersionKind::requirement && version.dependency == needed) {
+                    version.dependency = CanonicalName(*existing);
+                }
+            }
+        }
+        needed = existing->name;
+    }
+}
+
 [[nodiscard]] const GuestSymbolOverrideDescriptor* FindGuestOverride(
     const std::string_view library, const std::string_view symbol) noexcept {
     const auto overrides = GuestSymbolOverrides();
@@ -362,7 +383,10 @@ loader::Elf32LinkNamespaceExtension ExtendBionicLinkNamespace(
     }
 
     std::set<std::string, std::less<>> required_boundaries;
-    for (const auto& module : modules) {
+    for (auto& module : modules) {
+        if (profile.api == AndroidApi::api19) {
+            ReuseLoadedDependencyNames(module, link_namespace.modules, present_names);
+        }
         for (const auto& needed : module.dynamic.needed) {
             if (!present_names.contains(needed) &&
                 IsAndroidBoundaryLibrary(profile.api, needed)) {

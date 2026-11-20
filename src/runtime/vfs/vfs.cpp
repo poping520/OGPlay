@@ -194,6 +194,7 @@ void VirtualFileSystem::Impl::RegisterGeneratedReadOnly(const std::string_view p
     auto file = std::make_shared<File>();
     file->node_id = next_node_id_++;
     file->canonical_path = normalized;
+    file->spelling = PreserveSpelling(normalized, path);
     file->generated = std::move(state);
     files_[normalized] = std::move(file);
 }
@@ -215,6 +216,7 @@ void VirtualFileSystem::Impl::PutFile(const std::string_view path, const std::sp
                                             {}});
     file->node_id = next_node_id_++;
     file->canonical_path = normalized;
+    file->spelling = PreserveSpelling(normalized, path);
     files_.emplace(normalized, std::move(file));
 }
 
@@ -238,6 +240,7 @@ void VirtualFileSystem::Impl::PutReadOnlyFile(const std::string_view path, const
         File{{}, size, std::move(read_all), std::move(read_at), false, VfsSource::runtime, false, {}});
     file->node_id = next_node_id_++;
     file->canonical_path = normalized;
+    file->spelling = PreserveSpelling(normalized, path);
     files_.emplace(normalized, std::move(file));
 }
 
@@ -258,6 +261,7 @@ void VirtualFileSystem::Impl::RegisterReadOnlyCharacterDevice(const std::string_
     auto file = std::make_shared<File>();
     file->node_id = next_node_id_++;
     file->canonical_path = normalized;
+    file->spelling = NewPathSpellingLocked(normalized, path);
     file->character_device = std::move(state);
     files_[normalized] = std::move(file);
 }
@@ -290,6 +294,7 @@ void VirtualFileSystem::Impl::Mount(const VfsSource source, const std::string_vi
             normalized,
             std::make_shared<File>(
                 File{entry.contents, entry.contents.size(), {}, {}, source == VfsSource::external, source, false, {}}));
+        pending.back().second->spelling = PreserveSpelling(normalized, combined);
     }
     std::scoped_lock lock(mutex_);
     for (const auto& [path, file] : pending) {
@@ -337,6 +342,7 @@ void VirtualFileSystem::Impl::MountLazy(const VfsSource source, const std::strin
         pending.emplace_back(
             normalized,
             std::make_shared<File>(File{{}, entry.size, entry.read_all, entry.read_at, writable, source, false, {}}));
+        pending.back().second->spelling = PreserveSpelling(normalized, combined);
         if (!host_backings.empty()) {
             pending.back().second->host_backing = host_backings[pending.size() - 1U];
             pending.back().second->host_mounted = true;
@@ -486,6 +492,28 @@ std::string VirtualFileSystem::Impl::ResolveDataPathLocked(const std::string_vie
     return resolved;
 }
 
+std::string VirtualFileSystem::Impl::NewPathSpellingLocked(const std::string_view canonical,
+                                                           const std::string_view path) const {
+    const auto absolute =
+        path.starts_with('/') ? std::string(path) : working_directory_spelling_ + "/" + std::string(path);
+    auto spelling = PreserveSpelling(canonical, absolute);
+    if (spelling != canonical) return spelling;
+
+    // Resolving an alias or '..' can change the parent path while leaving the new leaf intact.
+    auto tail = path;
+    for (auto end = tail.find_last_not_of('/'); end != std::string_view::npos; end = tail.find_last_not_of('/')) {
+        tail = tail.substr(0, end + 1U);
+        const auto basename_offset = tail.rfind('/') + 1U;
+        const auto basename = tail.substr(basename_offset);
+        if (basename != ".") {
+            return PreserveSpelling(canonical, std::string(canonical.substr(0, canonical.rfind('/') + 1U)) +
+                                                   std::string(basename));
+        }
+        tail = tail.substr(0, basename_offset);
+    }
+    return spelling;
+}
+
 void VirtualFileSystem::Impl::SetWorkingDirectory(const std::string_view path) {
     std::scoped_lock lock(mutex_);
     if (path.empty()) throw VfsError(kEnoent, "VFS working directory path is empty");
@@ -571,6 +599,9 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path, const Vf
     if (options.create && options.exclusive && (found != files_.end() || IsDirectoryLocked(normalized))) {
         throw VfsError(kEexist, "VFS exclusive create path already exists");
     }
+    const bool system_partition = IsSystemPartitionPath(normalized);
+    if (system_partition && (options.write || (options.create && found == files_.end())))
+        throw VfsError(kErofs, "read-only VFS system partition");
     if (found == files_.end()) {
         if (options.non_blocking) throw VfsError(kEinval, "VFS nonblocking IO requires a character device");
         if (!options.create) throw VfsError(kEnoent, "VFS file not found");
@@ -580,11 +611,13 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path, const Vf
         if (sandbox_ != nullptr && !IsWritableNamespaceLocked(normalized)) {
             throw VfsError(kEacces, "VFS path is outside the writable namespace");
         }
+        auto spelling = NewPathSpellingLocked(normalized, path);
         found =
             files_.emplace(normalized, std::make_shared<File>(File{{}, 0, {}, {}, true, VfsSource::runtime, false, {}}))
                 .first;
         found->second->node_id = next_node_id_++;
         found->second->canonical_path = normalized;
+        found->second->spelling = std::move(spelling);
         // Creation makes the path visible immediately. The host-side
         // tombstone is cleared at the next flush, but it must stop
         // shadowing the new in-memory node in this session now.
@@ -668,7 +701,7 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path, const Vf
     const auto descriptor = AllocateDescriptor();
     auto opened = std::make_shared<OpenFile>(std::move(selected_file), 0, options.read, options.write, nullptr);
     opened->owner_id = OwnerLocked(normalized);
-    opened->system_partition = normalized == "/system" || normalized.starts_with("/system/");
+    opened->system_partition = system_partition;
     opened->append = options.append;
     opened->non_blocking = options.non_blocking;
     opened->large_file = options.large_file;

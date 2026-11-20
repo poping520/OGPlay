@@ -37,8 +37,13 @@ inline constexpr std::int32_t kEinval = 22;
 inline constexpr std::int32_t kEfbig = 27;
 inline constexpr std::int32_t kEspipe = 29;
 inline constexpr std::int32_t kEnospc = 28;
+inline constexpr std::int32_t kErofs = 30;
 inline constexpr std::int32_t kEnotempty = 39;
 inline constexpr std::int32_t kEcanceled = 125;
+
+[[nodiscard]] constexpr bool IsSystemPartitionPath(std::string_view path) {
+    return path == "/system" || path.starts_with("/system/");
+}
 
 [[nodiscard]] std::string NormalizeAbsolutePath(std::string_view path, bool allow_root);
 [[nodiscard]] std::string NormalizePath(std::string_view path);
@@ -77,6 +82,7 @@ struct File final {
     std::uint64_t node_id{};
     // Guarded by the metadata lock. Retained after unlink for open descriptors.
     std::string canonical_path;
+    std::string spelling;
     // Accessed only under the VFS metadata lock; weak tokens do not pin nodes.
     std::vector<std::weak_ptr<const std::function<void()>>> mapping_readers;
     std::shared_ptr<VfsGeneratedFileState> generated;
@@ -203,6 +209,7 @@ public:
     [[nodiscard]] GuestFileSystemStats VolumeStatsLocked(std::string_view path) const;
     [[nodiscard]] GuestFileSystemStats SandboxStatsLocked(std::uint32_t filesystem_type) const;
     [[nodiscard]] std::string ResolveDataPathLocked(std::string_view path) const;
+    [[nodiscard]] std::string NewPathSpellingLocked(std::string_view canonical, std::string_view path) const;
     [[nodiscard]] VfsFileInfo StatLocked(const std::string& normalized) const;
     [[nodiscard]] std::vector<VfsDirectoryEntry> ListDirectory(std::string_view path) const;
     void CreateDirectory(std::string_view path);
@@ -263,8 +270,8 @@ public:
     bool working_directory_unlinked_{};
     std::map<std::string, std::string, std::less<>> aliases_;
     std::map<std::string, std::shared_ptr<File>, std::less<>> files_;
-    // Directories created explicitly; implicit ones come from files_.
-    std::set<std::string, std::less<>> directories_;
+    // Folded path -> original spelling for explicit directories.
+    std::map<std::string, std::string, std::less<>> directories_;
     std::vector<VfsMountSnapshot> mounts_;
     std::map<std::int32_t, std::shared_ptr<OpenFile>> descriptors_;
     // Sandbox overlay (ADR-0020). Absent until AttachSandbox.

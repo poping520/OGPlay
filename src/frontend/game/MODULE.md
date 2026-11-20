@@ -20,8 +20,11 @@ VFS 装配、持久实例选择、MCP/诊断、Clock、输入与退出不变量�
 Profile v4 只提供身份匹配；启动固定 API 19，surface 使用 GameRunOptions 用户值，
 ABI/入口来自 APK，VM/guest call 使用默认值。OBB 原文件挂到标准包目录，cwd 为 `/`；
 外部目录由显式选项指定，不做 Profile 挂载、清单预检或音频替代。
-API19 framework payload 中的启动类路径归档和 `framework-res.apk` 以只读随机访问文件挂载到
-`/system/framework/`。run-game 与 run-dex 共用挂载入口。
+run-game 与 run-dex 从同一 API19 payload 根目录装配 guest `/system`。统一入口将
+`bootdex.jar` 和 `framework-res.apk` 挂至 `/system/framework/`，将 manifest 中的系统和回退
+字体挂至 `/system/fonts/`，将 `icudt51l.dat` 挂至 `/system/usr/icu/`，将 `tzdata` 挂至
+`/system/usr/share/zoneinfo/`。guest 通过 VFS 对宿主文件按需发起只读随机访问，目录可枚举，
+写打开返回 EROFS。缺少清单或任一文件时启动明确失败并报告路径。Skia 从同一批字体文件按需读取。
 
 输入仅内置默认 + 用户文件；用户文件位置沿用 --input-config、库条目/input.toml 或
 sandbox 旁的 <installation_id>.input.toml。缺文件为空布局，旧 template 字段拒绝。
@@ -54,8 +57,8 @@ ValidateExternalGuestDirectory 为 CLI、导入与游戏设置提供统一 /sdca
 启动与循环外 idle sleep。关闭时不读额外时间源，不输出逐帧明细。
 
 
-`AssembleAndroidContext` 在建立 VM 前校验 API19 启动类路径。会话将 framework-res 以
-只读方式挂载到 guest VFS。ROM AssetManager 从框架归档及当前应用 APK 建立资源视图。
+`AssembleAndroidContext` 在建立 VM 前校验 API19 启动类路径。ROM AssetManager 从框架归档
+及当前应用 APK 建立资源视图。
 
 启动建窗前只读取入口 Activity 的 screenOrientation（alias 用继承的入口配置）：
 portrait/sensorPortrait/reversePortrait/userPortrait 仅对继承全局或内置尺寸交换宽高，已有竖向或正方形尺寸不变。

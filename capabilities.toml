@@ -527,7 +527,7 @@ note = "文件元数据、目录分页和 ARM open flags 接同一 VFS。stat64 
 [runtime.vfs_directory_ops]
 status = "complete"
 test = "tests/runtime/vfs_tests.cpp"
-note = "VFS 目录创建/删除、文件删除/改名、Truncate/Flush/FlushAll，显式与隐式目录合并为稳定序供 getdents64；errno 与平台一致。目录子树 rename 返回 -EINVAL；未挂沙盒时 Flush 只校验 descriptor 不伪装落盘。"
+note = "VFS 目录创建/删除、文件删除/改名、Truncate/Flush/FlushAll。目录枚举按 ASCII 折叠键合并显式与隐式目录并排序，getdents64 返回条目原始拼写；errno 与平台一致。目录子树 rename 返回 -EINVAL；未挂沙盒时 Flush 只校验 descriptor 不伪装落盘。"
 
 [runtime.vfs_sandbox_persistence]
 status = "partial"
@@ -777,7 +777,7 @@ note = "抽出 AndroidGuestProcess rootless create：仅以 API 19 system module
 [runtime.dynamic_native_library_loader]
 status = "complete"
 test = "tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "Java load/native dlopen 共用 APK/系统源、进程 ELF 及构造器状态；所选 ABI 闭包按需装载，保留首次 guest 路径，不读宿主文件。装载可同线程重入、跨线程串行，依赖先初始化，失败禁止重跑构造器。native 不登记 ClassLoader/调用 JNI_OnLoad；Java 保持 loader 检查及一次 JNI 初始化。执行控制故障不降级 dlerror；保留进程生命周期模块及既有 dlsym 范围，不含真实 dlclose 卸载或动态 LD_LIBRARY_PATH。`/data/data/<包名>/lib` 别名先规范化，与 APK 库共用身份。"
+note = "Java load/native dlopen 共用 APK/系统源、所选 ABI 闭包及进程构造器状态，保留首次 guest 路径，不读宿主文件。API 19 路径型 DT_NEEDED 精确未命中时按文件名复用已装载库。装载可同线程重入、跨线程串行，依赖先初始化，失败不重跑构造器。Java 管理 ClassLoader 和一次 JNI_OnLoad。执行控制故障不降级 dlerror；模块保留到进程退出，不含真实 dlclose 卸载或动态 LD_LIBRARY_PATH。`/data/data/<包名>/lib` 与 APK 库共用身份。"
 
 [runtime.application_startup]
 status = "partial"
@@ -1971,8 +1971,8 @@ note = "API19 PermissionInfo 与 CREATOR 来自 ROM。仅查询当前 APK 注册
 
 [dexvm.typeface]
 status = "partial"
-test = "tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/graphics_text_tests.cpp"
-note = "ROM Typeface 使用注入的 API19 系统字体 family、别名及样式，按需共享不可变 SkTypeface。缺样式合成粗体和斜切。应用字体只经 APK asset 或 VFS，坏字体遵循 ROM RuntimeException。"
+test = "tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/graphics_text_tests.cpp; tests/runtime/resources_assets_tests.cpp#API19 system payload exposes read-only guest data and shared fonts"
+note = "ROM Typeface 使用注入的 API19 系统字体 family、别名及样式，按需共享不可变 SkTypeface。字体与 guest /system/fonts 共用 manifest 选定的只读文件。缺样式合成粗体和斜切。应用字体只经 APK asset 或 VFS，坏字体遵循 ROM RuntimeException。"
 
 [dexvm.text_appearance]
 status = "partial"
@@ -2046,8 +2046,8 @@ note = "本地 IAlarmManager 校验并按 PendingIntent 令牌登记、替换和
 
 [runtime.guest_timezone_data]
 status = "partial"
-test = "tools.android_payload_current; tests/runtime/guest_native_values_tests.cpp#DVM-219 pinned tzdata; tests/runtime/api19_guest_process_tests.cpp; tests/runtime/guest_icu_tests.cpp#DVM-376"
-note = "API19 Bionic tzdata 2014a 原版归档经来源/哈希/TZif 校验进入 payload，在 native 初始化前以只读 /system/usr/share/zoneinfo/tzdata 发布；初始 TZ=UTC，guest 可经 setenv/tzset 修改本进程时区；不读宿主 TZ。 让 Java TimeZone/ZoneInfo 从同一归档查询地区时区；完整时区枚举、外部更新、全部地区历史转换与 2038 边界未验收。"
+test = "tools.android_payload_current; tests/runtime/guest_native_values_tests.cpp#DVM-219 pinned tzdata; tests/runtime/api19_guest_process_tests.cpp; tests/runtime/guest_icu_tests.cpp#DVM-376; tests/runtime/resources_assets_tests.cpp#API19 system payload exposes read-only guest data and shared fonts"
+note = "API19 Bionic tzdata 2014a 原版归档经来源/哈希/TZif 校验进入 payload，run-game 和 run-dex 在 native 初始化前按需只读挂载至 /system/usr/share/zoneinfo/tzdata；初始 TZ=UTC，guest 可经 setenv/tzset 修改本进程时区；不读宿主 TZ。 让 Java TimeZone/ZoneInfo 从同一归档查询地区时区；完整时区枚举、外部更新、全部地区历史转换与 2038 边界未验收。"
 
 [dexvm.motion_sensors]
 status = "partial"

@@ -77,8 +77,7 @@ TEST_CASE("DVM-219 pinned tzdata serves real Bionic UTC and Shanghai queries") {
     request.ledger = &ledger;
     request.logger = &logger;
     request.platform.android_id = "0123456789abcdef";
-    request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-    request.tzdata = ReadPayloadBytes("zoneinfo/tzdata");
+    MountTestSystemPayload(filesystem);
     auto app = session::AndroidAppProcess::Create(std::move(request));
     auto& process = app->NativeProcess();
     CHECK(process.ProcessEnvironmentValue("TZ") == std::optional<std::string>{"UTC"});
@@ -245,7 +244,7 @@ TEST_CASE("DVM-215 API19 decimal JSON uses bounded guest BIGNUM arithmetic") {
         request.system_libraries = libraries;
         // Minimal APK fixture; math/JSON classes come from the audited BootDex.
         request.dex_bytes = ReadDexFixture("crc32.dex");
-        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
+        MountTestSystemPayload(filesystem);
         request.boot_dex_files = test::ReadBootDex();
         request.context = context;
         request.dexvm.interpreter.backend = backend;
@@ -520,7 +519,7 @@ void CheckPlatformPropertySources(bool load_icu) {
         request.manifest = AppManifest("fixture.MainActivity");
         request.system_libraries = libraries;
         request.dex_bytes = ReadDexFixture("platform_tables.dex");
-        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
+        if (load_icu) MountTestSystemPayload(filesystem);
         request.boot_dex_files = test::ReadBootDex();
         request.context = std::make_shared<runtime::DexVmAndroidContext>();
         request.dexvm.interpreter.backend = backend;

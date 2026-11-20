@@ -204,8 +204,13 @@ DexRunOptions ParseDexRunArgs(const std::span<const std::string_view> args) {
 
 int RunDex(const DexRunOptions& options, const DexConsole& console) {
     auto app_dex = ReadDex(options.input);
-    const auto data = BundledDataPaths().root;
-    const auto context = runtime::AssembleAndroidContext(runtime::ReadBootClasspath(data / "android/19/framework"));
+    const auto& bionic = runtime::SelectBionicProfile(19);
+    const auto payload_root = BundledDataPaths().root / bionic.data_directory;
+    runtime::VirtualFileSystem vfs;
+    auto system_font_source = frontend::MountApi19SystemPayload(vfs, payload_root);
+    const auto context = runtime::AssembleAndroidContext(runtime::ReadBootClasspath(payload_root / "framework"));
+    context->system_font_source = std::move(system_font_source);
+    context->framework_resource_apk = payload_root / "framework/framework-res.apk";
     context->standalone_dex_path = "/data/local/ogplay-main.dex";
     auto boot_dex = runtime::BootClasspathDexFiles(context->boot_classpath);
 
@@ -230,18 +235,14 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
 
     core::Logger logger;
     logger.AddSink(std::make_shared<core::ConsoleSink>(stderr), core::LogLevel::warn);
-    runtime::VirtualFileSystem vfs;
-    context->framework_resource_apk = data / "android/19/framework/framework-res.apk";
-    frontend::MountFrameworkPayload(vfs, data / "android/19/framework");
     vfs.PutFile(context->standalone_dex_path, std::as_bytes(std::span(app_dex)), false);
     for (const auto& file : options.vfs_files) {
         const auto bytes = ReadFile(file.host_path);
         vfs.PutFile(vfs.CanonicalPath(file.guest_path), std::as_bytes(std::span(bytes)), false);
     }
-    const auto& bionic = runtime::SelectBionicProfile(19);
     std::vector<runtime::BionicOwnedModule> owned_system;
     for (const auto name : bionic.guest_libraries) {
-        const auto bytes = ReadFile(data / bionic.data_directory / "lib" / name);
+        const auto bytes = ReadFile(payload_root / "lib" / name);
         std::vector<std::byte> image(bytes.size());
         std::memcpy(image.data(), bytes.data(), bytes.size());
         owned_system.push_back({std::string(name), std::move(image), memory::GuestAddress{0}});
@@ -258,12 +259,6 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
     }
     auto system = runtime::BuildBionicModuleSet(bionic, "libc.so", libc, dependencies);
     const auto inputs = system.Inputs();
-    const auto put_payload = [&](const char* guest_path, const char* relative_path) {
-        const auto bytes = ReadFile(data / bionic.data_directory / relative_path);
-        vfs.PutFile(guest_path, std::as_bytes(std::span(bytes)), false);
-    };
-    put_payload("/system/usr/icu/icudt51l.dat", "icu/icudt51l.dat");
-    put_payload("/system/usr/share/zoneinfo/tzdata", "zoneinfo/tzdata");
     runtime::AndroidGuestProcessRequest request;
     request.system_modules = inputs;
     request.width = 800;

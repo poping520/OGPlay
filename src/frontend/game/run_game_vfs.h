@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -20,8 +21,10 @@
 
 namespace ogplay::frontend {
 
-// Read-only raw framework archives, shared by Java IO and native VFS callers.
-void MountFrameworkPayload(runtime::VirtualFileSystem& filesystem, const std::filesystem::path& directory);
+// Mount API 19 system data with positioned reads. The returned Skia font source
+// shares the opened font files with the guest VFS.
+std::function<std::vector<std::byte>(std::string_view)>
+MountApi19SystemPayload(runtime::VirtualFileSystem& filesystem, const std::filesystem::path& payload_root);
 
 struct SandboxOptions final {
     // Explicit root wins; otherwise the platform user data directory.

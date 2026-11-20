@@ -27,9 +27,6 @@ inline std::vector<std::byte> ReadTlsFixture(const std::string_view name) {
 
 inline void InstallCaPack(runtime::VirtualFileSystem& vfs,
                           const std::string_view file = "cacerts.ogplay") {
-    vfs.CreateDirectory("/system");
-    vfs.CreateDirectory("/system/etc");
-    vfs.CreateDirectory("/system/etc/security");
     const auto pack = ReadTlsFixture(file);
     vfs.PutFile("/system/etc/security/cacerts.ogplay", pack, false);
 }

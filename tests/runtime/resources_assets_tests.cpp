@@ -1,7 +1,9 @@
 #include "resources_test_support.h"
 #include "frontend/game/run_game_vfs.h"
+#include "ogplay/core/json.h"
 #include <doctest/doctest.h>
 #include <algorithm>
+#include <set>
 using namespace ogplay::test::resources;
 
 TEST_CASE("resources core assets stream stored and deflated entries with bounded seek and FD rules") {
@@ -109,8 +111,7 @@ TEST_CASE("resources core framework mapping is initialized once and shared acros
 
 TEST_CASE("resources core payload archives are visible through read only guest VFS") {
     ogplay::runtime::VirtualFileSystem vfs;
-    ogplay::frontend::MountFrameworkPayload(vfs,
-                                            std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19/framework");
+    ogplay::frontend::MountApi19SystemPayload(vfs, std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19");
     for (auto name : {"bootdex.jar", "framework-res.apk"}) {
         auto path = std::string("/system/framework/") + name;
         auto info = vfs.Stat(path);
@@ -124,6 +125,94 @@ TEST_CASE("resources core payload archives are visible through read only guest V
         CHECK(magic[1] == std::byte{'K'});
         vfs.Close(fd);
     }
+}
+
+TEST_CASE("resources core API19 system payload exposes read-only guest data and shared fonts") {
+    using namespace ogplay;
+    const auto root = std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19";
+    const auto manifest = ReadSource(root / "manifest.json");
+    core::JsonParseError error;
+    const auto document = core::JsonDocument::ParseStrict(
+        {reinterpret_cast<const char*>(manifest.bytes.data()), manifest.bytes.size()}, error);
+    REQUIRE(document);
+
+    runtime::VirtualFileSystem vfs;
+    const auto font_source = frontend::MountApi19SystemPayload(vfs, root);
+    CHECK(vfs.IoStatistics().backing_read_bytes == 0);
+    const auto expect_read_only = [](auto action) {
+        try {
+            action();
+            FAIL("expected guest EROFS");
+        } catch (const runtime::VfsError& failure) {
+            CHECK(failure.ErrorNumber() == 30);  // API19 EROFS
+        }
+    };
+    const auto check_file = [&](const std::filesystem::path& relative, const std::string& guest) {
+        INFO(guest);
+        const auto expected = ReadSource(root / relative);
+        const auto info = vfs.Stat(guest);
+        CHECK_FALSE(info.is_directory);
+        CHECK_FALSE(info.writable);
+        CHECK(info.size == expected.bytes.size());
+        const auto fd = vfs.Open(guest, {.read = true, .require_positioned_read = true});
+        std::array<std::byte, 32> bytes{};
+        REQUIRE(expected.bytes.size() >= bytes.size());
+        CHECK(vfs.Read(fd, bytes) == bytes.size());
+        CHECK(std::ranges::equal(bytes, expected.bytes.first(bytes.size())));
+        vfs.Close(fd);
+        expect_read_only([&] { static_cast<void>(vfs.Open(guest, {.write = true})); });
+        expect_read_only([&] { vfs.RemoveFile(guest); });
+        expect_read_only([&] { vfs.Rename(guest, guest + ".bak"); });
+    };
+
+    check_file("framework/bootdex.jar", "/system/framework/bootdex.jar");
+    check_file("framework/framework-res.apk", "/system/framework/framework-res.apk");
+    check_file("icu/icudt51l.dat", "/system/usr/icu/icudt51l.dat");
+    check_file("zoneinfo/tzdata", "/system/usr/share/zoneinfo/tzdata");
+
+    std::set<std::string> fonts;
+    const auto manifest_root = document->Root();
+    for (const auto list :
+         {*manifest_root.Member("system_fonts"), *manifest_root.Member("ui_fallback_font")->Member("fonts")}) {
+        for (std::size_t i = 0; i < list.Size(); ++i)
+            fonts.emplace(*list.Element(i)->Member("path")->String());
+    }
+    REQUIRE(fonts.contains("fonts/DroidSans.ttf"));
+    REQUIRE(fonts.contains("fonts/DroidSansFallback.ttf"));
+    std::set<std::string> guest_fonts;
+    for (const auto& relative : fonts) {
+        const auto name = std::filesystem::path(relative).filename().string();
+        const auto guest = "/system/fonts/" + name;
+        check_file(relative, guest);
+        CHECK(std::ranges::equal(font_source(name), ReadSource(root / relative).bytes));
+        guest_fonts.insert(guest);
+    }
+
+    const auto check_directory = [&](const std::string& path, const std::set<std::string>& expected) {
+        INFO(path);
+        const auto info = vfs.Stat(path);
+        CHECK(info.is_directory);
+        CHECK_FALSE(info.writable);
+        const auto fd = vfs.OpenDirectory(path);
+        CHECK(vfs.DescriptorInfo(fd).is_directory);
+        std::set<std::string> names;
+        for (const auto& entry : vfs.ReadDirectory(fd, expected.size() + 1)) {
+            CHECK_FALSE(entry.is_directory);
+            names.insert(path + "/" + entry.name);
+        }
+        CHECK(names == expected);
+        CHECK(vfs.ReadDirectory(fd, 1).empty());
+        vfs.Close(fd);
+        expect_read_only([&] { static_cast<void>(vfs.Open(path + "/new-file", {.write = true, .create = true})); });
+        expect_read_only([&] { vfs.CreateDirectory(path + "/new-dir"); });
+        expect_read_only([&] { vfs.RemoveDirectory(path); });
+    };
+    check_directory("/system/framework", {"/system/framework/bootdex.jar", "/system/framework/framework-res.apk"});
+    check_directory("/system/fonts", guest_fonts);
+    check_directory("/system/usr/icu", {"/system/usr/icu/icudt51l.dat"});
+    check_directory("/system/usr/share/zoneinfo", {"/system/usr/share/zoneinfo/tzdata"});
+    CHECK(vfs.IoStatistics().backing_read_bytes == (fonts.size() + 4) * 32);
+    CHECK(vfs.IoStatistics().full_materialized_bytes == 0);
 }
 
 TEST_CASE("resources core opens the shipped application APK with its independent string pool") {

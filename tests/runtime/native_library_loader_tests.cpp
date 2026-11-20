@@ -203,6 +203,36 @@ TEST_CASE("native library loader resolves APK modules by inventory or ELF SONAME
     }
 }
 
+TEST_CASE("native library loader reuses a loaded API19 DT_NEEDED basename") {
+    using namespace ogplay;
+    FixtureProcess fixture;
+    loader::ApkNativeLibraryInventory inventory{{
+        Library("libapp.so", AppElf({"libapp.so", "D:/ndk/libdep.so", std::nullopt})),
+        Library("libdep.so", AppElf({"libalias.so", "", std::nullopt})),
+        Library("libother.so", AppElf({"libother.so", "D:/ndk/libalias.so", std::nullopt})),
+    }};
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
+    runtime::NativeLibraryLoader libraries(*fixture.process, selected);
+
+    SUBCASE("the loaded library is reused under its file name") {
+        const auto dependency = libraries.LoadLibrary("dep", 7U);
+        REQUIRE(dependency.initialized_modules == std::vector<std::string>{"libdep.so"});
+        const auto loaded = libraries.LoadLibrary("app", 7U);
+        CHECK(loaded.initialized_modules == std::vector<std::string>{"libapp.so"});
+        CHECK(fixture.process->ApplicationModuleCount() == 2U);
+    }
+    SUBCASE("an unloaded library is not selected by the path basename") {
+        CHECK_THROWS_WITH_AS(static_cast<void>(libraries.LoadLibrary("app", 7U)),
+                             "required ELF module is unavailable: D:/ndk/libdep.so", runtime::NativeLibraryLoadError);
+        CHECK(fixture.process->ApplicationModuleCount() == 0U);
+    }
+    SUBCASE("a SONAME alias is not a loaded file name") {
+        static_cast<void>(libraries.LoadLibrary("dep", 7U));
+        CHECK_THROWS_WITH_AS(static_cast<void>(libraries.LoadLibrary("other", 7U)),
+                             "required ELF module is unavailable: D:/ndk/libalias.so", runtime::NativeLibraryLoadError);
+    }
+}
+
 TEST_CASE("native library loader keeps malformed unresolved and bad JNI failures stable") {
     using namespace ogplay;
     FixtureProcess fixture;

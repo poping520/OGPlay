@@ -179,7 +179,6 @@ TEST_CASE("DVM-243 statvfs classifies paths and live descriptors by volume") {
     vfs.PutFile("/etc/config", Bytes("config"), false);
     vfs.PutFile("/system/lib/a", std::vector<std::byte>(4095), false);
     vfs.PutFile("/system/b", std::vector<std::byte>(2), false);
-    vfs.CreateDirectory("/system/empty");
     vfs.PutFile("/system-backup/file", std::vector<std::byte>(4096), false);
     const auto generated = vfs.RegisterGeneratedReadOnly("/proc/self/maps", 16, [] { return Bytes("maps"); });
     const auto device = vfs.RegisterReadOnlyCharacterDevice("/dev/urandom", 0x109, [](auto) { return 0U; });
@@ -194,7 +193,7 @@ TEST_CASE("DVM-243 statvfs classifies paths and live descriptors by volume") {
     CHECK(system.values[2] == 2);
     CHECK(system.values[3] == 0);
     CHECK(system.values[4] == 0);
-    CHECK(system.values[5] == 3);
+    CHECK(system.values[5] == 2);
     CHECK(system.values[6] == 0);
     CHECK(system.values[7] == 0);
     CHECK(system.values[9] == 1);
@@ -239,12 +238,12 @@ TEST_CASE("DVM-243 statvfs classifies paths and live descriptors by volume") {
     vfs.PutFile("/movable", {}, true);
     const auto moved = vfs.Open("/movable", {.read = true});
     CHECK(vfs.StatVfs(moved).filesystem_type == rootfs.filesystem_type);
-    vfs.Rename("/movable", "/system/movable");
-    CHECK(vfs.StatVfs(moved).values == vfs.StatVfs("/system/movable").values);
-    CHECK(vfs.StatVfs(moved).filesystem_type == system.filesystem_type);
-    vfs.RemoveFile("/system/movable");
-    CHECK(vfs.StatVfs(moved).values == system.values);
-    CHECK(vfs.StatVfs(moved).filesystem_type == system.filesystem_type);
+    vfs.Rename("/movable", "/proc/movable");
+    CHECK(vfs.StatVfs(moved).values == vfs.StatVfs("/proc/movable").values);
+    CHECK(vfs.StatVfs(moved).filesystem_type == proc.filesystem_type);
+    vfs.RemoveFile("/proc/movable");
+    CHECK(vfs.StatVfs(moved).values == proc.values);
+    CHECK(vfs.StatVfs(moved).filesystem_type == proc.filesystem_type);
     vfs.Close(moved);
 
     const TemporaryRoot root("statvfs-volumes");

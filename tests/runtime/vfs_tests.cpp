@@ -1236,16 +1236,22 @@ TEST_CASE("VFS mkdir requires a parent and refuses to collide") {
 
 TEST_CASE("VFS enumerates explicit and implicit directories in one order") {
     VirtualFileSystem vfs;
-    PutText(vfs, "/sdcard/game/b.dat", "b");
-    PutText(vfs, "/sdcard/game/sub/c.dat", "c");
-    vfs.CreateDirectory("/sdcard/game/a-empty");
+    PutText(vfs, "/sdcard/game/b.DAT", "b");
+    const std::array mounted{ogplay::runtime::VfsMountEntry{"Sub/C.dat", {std::byte{1}}}};
+    vfs.Mount(ogplay::runtime::VfsSource::apk, "/sdcard/game", mounted);
+    vfs.CreateDirectory("/sdcard/game/A-Empty");
 
     const auto entries = vfs.ListDirectory("/sdcard/game");
-    const std::vector<VfsDirectoryEntry> expected{
-        {"a-empty", true}, {"b.dat", false}, {"sub", true}};
+    const std::vector<VfsDirectoryEntry> expected{{"A-Empty", true}, {"b.DAT", false}, {"Sub", true}};
     CHECK(entries == expected);
     // An empty directory really is empty, not absent.
     CHECK(vfs.ListDirectory("/sdcard/game/a-empty").empty());
+    CHECK(vfs.ListDirectory("/sdcard/game/sub") == std::vector<VfsDirectoryEntry>{{"C.dat", false}});
+
+    vfs.SetWorkingDirectory("/sdcard/game/A-Empty");
+    vfs.Rename("../B.dat", "../Renamed.dat");
+    CHECK(vfs.ListDirectory("/sdcard/game") ==
+          std::vector<VfsDirectoryEntry>{{"A-Empty", true}, {"Renamed.dat", false}, {"Sub", true}});
 }
 
 TEST_CASE("VFS unlink and rmdir carry the platform errno contract") {

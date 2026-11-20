@@ -1,6 +1,7 @@
 #include "runtime/integration/dexvm_android/shared.h"
 #include "resources_test_support.h"
 #include "native_library_fixture.h"
+#include "frontend/game/run_game_vfs.h"
 #include "../dexvm/container_traversal_fixture.h"
 
 #include "ogplay/runtime/bionic/bionic_profile.h"
@@ -326,6 +327,10 @@ void WriteAps5OnLoad(std::vector<std::byte>& bytes, const std::uint32_t version)
     return result;
 }
 
+void MountTestSystemPayload(ogplay::runtime::VirtualFileSystem& filesystem) {
+    ogplay::frontend::MountApi19SystemPayload(filesystem, std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19");
+}
+
 [[nodiscard]] ogplay::loader::AndroidManifestFacts AppManifest(const std::string& activity, const bool has_launcher) {
     ogplay::loader::AndroidManifestFacts manifest;
     manifest.package = "fixture";
@@ -473,8 +478,7 @@ OrchestratedApp::OrchestratedApp(
     }
     request.native_libraries = std::move(libraries);
     request.system_libraries = system;
-    request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-    request.tzdata = ReadPayloadBytes("zoneinfo/tzdata");
+    MountTestSystemPayload(filesystem);
     request.dex_bytes = ReadDexFixture("application.dex");
     request.boot_dex_files = ogplay::test::ReadBootDex();
     ogplay::test::BindBootDexArchive(*context);

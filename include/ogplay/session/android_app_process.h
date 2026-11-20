@@ -47,7 +47,6 @@ struct AndroidAppProcessRequest final {
     std::span<const runtime::BionicModuleSource> system_libraries;
     std::vector<std::vector<std::uint8_t>> boot_dex_files;
     std::vector<std::uint8_t> dex_bytes;
-    std::vector<std::byte> icu_data;
     std::shared_ptr<runtime::DexVmAndroidContext> context;
     std::uint32_t api_level{19};
     std::uint32_t surface_width{800};
@@ -55,6 +54,7 @@ struct AndroidAppProcessRequest final {
     std::uint64_t maximum_ticks_per_call{runtime::kDefaultMaximumTicksPerCall};
     std::uint32_t supersample_factor{1};
     gles::AngleBackend backend;
+    // Caller mounts system data before creating the process.
     runtime::VirtualFileSystem* filesystem{};
     std::function<void(std::string_view)> progress;
     runtime::AndroidBoundaryOptions boundary_options;
@@ -69,8 +69,6 @@ struct AndroidAppProcessRequest final {
     runtime::GuestProcFacts proc_facts{};
     std::shared_ptr<runtime::debug::DiagnosticState> diagnostics;
     std::optional<std::thread::id> guest_call_slice_observer_thread;
-    // Pinned API19 system time-zone archive, mounted read-only when supplied.
-    std::vector<std::byte> tzdata;
 };
 
 class AndroidAppProcessError final : public std::runtime_error {

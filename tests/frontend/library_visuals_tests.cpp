@@ -309,23 +309,23 @@ struct ResourceConfig final {
     std::string value;
 };
 
-// Resource table whose one id (0x7f010000) has one entry per configuration, the way aapt
-// emits drawable-ldpi … drawable-xxxhdpi or values, values-en, values-zh-rTW.
+// Resource table with one entry per configuration for 0x7f010000 and an optional icon alias at 0x7f020000.
 std::vector<std::byte> ConfigResources(const std::string& type_name, const std::string& key,
-                                       const std::vector<ResourceConfig>& configs) {
+                                       const std::vector<ResourceConfig>& configs, const bool with_icon_alias = false) {
     std::vector<std::string> values;
     for (const auto& config : configs)
         values.push_back(config.value);
     const auto global = Utf8Pool(values);
-    const auto type_pool = Utf8Pool({type_name});
-    const auto key_pool = Utf8Pool({key});
+    const auto type_pool = with_icon_alias ? Utf8Pool({type_name, "string"}) : Utf8Pool({type_name});
+    const auto key_pool = with_icon_alias ? Utf8Pool({key, "icon_name"}) : Utf8Pool({key});
     std::vector<std::byte> types;
-    for (std::uint32_t index = 0; index < configs.size(); ++index) {
+    const auto append_type = [&](const ResourceConfig& config, const std::byte type_id, const std::uint32_t key_index,
+                                 const std::byte value_type, const std::uint32_t data) {
         std::vector<std::byte> type;
         Push16(type, 0x0201);
         Push16(type, 56);
         Push32(type, 0);
-        type.push_back(std::byte{1});
+        type.push_back(type_id);
         type.push_back(std::byte{0});
         Push16(type, 0);
         Push32(type, 1);
@@ -333,22 +333,25 @@ std::vector<std::byte> ConfigResources(const std::string& type_name, const std::
         Push32(type, 36);
         for (int byte = 0; byte < 32; ++byte)
             type.push_back(std::byte{0});
-        for (std::size_t byte = 0; byte < configs[index].locale.size(); ++byte)
-            type[28 + byte] = static_cast<std::byte>(configs[index].locale[byte]);
-        type[34] = static_cast<std::byte>(configs[index].density & 0xffU);
-        type[35] = static_cast<std::byte>(configs[index].density >> 8U);
+        for (std::size_t byte = 0; byte < config.locale.size(); ++byte)
+            type[28 + byte] = static_cast<std::byte>(config.locale[byte]);
+        type[34] = static_cast<std::byte>(config.density & 0xffU);
+        type[35] = static_cast<std::byte>(config.density >> 8U);
         Push32(type, 0);
         Patch32(type, 16, static_cast<std::uint32_t>(type.size()));
         Push16(type, 8);
         Push16(type, 0);
-        Push32(type, 0);
+        Push32(type, key_index);
         Push16(type, 8);
         type.push_back(std::byte{0});
-        type.push_back(std::byte{0x03});
-        Push32(type, index);
+        type.push_back(value_type);
+        Push32(type, data);
         Patch32(type, 4, static_cast<std::uint32_t>(type.size()));
         Append(types, type);
-    }
+    };
+    for (std::uint32_t index = 0; index < configs.size(); ++index)
+        append_type(configs[index], std::byte{1}, 0, std::byte{0x03}, index);
+    if (with_icon_alias) append_type({}, std::byte{2}, 1, std::byte{0x01}, 0x7f010000U);
     std::vector<std::byte> package;
     Push16(package, 0x0200);
     Push16(package, 288);
@@ -648,6 +651,19 @@ TEST_CASE("launcher icon takes the largest PNG density, never upscales and caps 
     const auto recovered = ogplay::app::ExtractApkApplicationVisuals(fallback);
     CHECK(recovered.fallbacks.empty());
     CHECK(PngSide(recovered.icon_png) == 72);
+}
+
+TEST_CASE("launcher icon follows a string resource reference and picks the largest drawable PNG") {
+    const auto apk = StoredZip(
+        {{"AndroidManifest.xml", Manifest(true, true, 0x7f020000U)},
+         {"resources.arsc",
+          ConfigResources("drawable", "icon",
+                          {{0, "", "res/drawable/icon.png"}, {320, "", "res/drawable-xhdpi/icon.png"}}, true)},
+         {"res/drawable/icon.png", SolidPng(48, {255, 0, 0, 255})},
+         {"res/drawable-xhdpi/icon.png", SolidPng(96, {0, 0, 255, 255})}});
+    const auto visuals = ogplay::app::ExtractApkApplicationVisuals(apk);
+    CHECK(visuals.fallbacks.empty());
+    CHECK(PngSide(visuals.icon_png) == 96);
 }
 
 TEST_CASE("library refresh re-extracts stored icons with the current rule") {

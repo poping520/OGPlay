@@ -183,6 +183,7 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
 - monitor owner 是 context token；wait 完全释放并恢复 recursion，notify/interrupt/shutdown/
   Clock 唤醒。Java 时间查询可读取纳秒值，等待仍使用从同一读数派生的毫秒。非 owner 操作抛 IllegalMonitorStateException。deadline 只用注入 Clock；无 Clock
   明确失败，禁止读取宿主墙钟。
+  存在 entry waiter 时，guest monitor 按 FIFO 交接，释放者不能插队。
   ADR-0171：生命周期停摆时 root/worker 的限时等待每轮仅补至起点 uptime 加注入的
   真实流逝时间，并受自身截止时间约束；并发收敛，恢复后不补时、不回拨。
   有界生命周期 scope 另使用统一 Clock 的 steady deadline；Java 指令、monitor/睡眠与

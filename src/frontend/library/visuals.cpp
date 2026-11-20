@@ -109,6 +109,7 @@ struct LibraryResource {
 
 struct LibraryResources {
     std::string package_name;
+    std::optional<std::uint32_t> icon_id;
     std::vector<LibraryResource> entries;
 
     const LibraryResource* FindById(std::uint32_t id) const {
@@ -117,6 +118,21 @@ struct LibraryResources {
         return nullptr;
     }
 };
+
+[[nodiscard]] std::optional<std::uint32_t> ResolveIconId(const loader::resources::ResTable& table, std::uint32_t id) {
+    // Bound reference traversal so cycles fall back to a missing icon.
+    for (unsigned hops = 0; hops <= 20; ++hops) {
+        if (id == 0 || (id >> 24U) == 0x01U) return std::nullopt;
+        const auto resource = table.getResource(id);
+        if (!resource.has_value()) {
+            // A direct icon can have variants outside the table's current configuration.
+            return hops == 0 ? std::optional(id) : std::nullopt;
+        }
+        if (resource->value.type != 0x01U) return id;
+        id = resource->value.data;
+    }
+    return std::nullopt;
+}
 
 [[nodiscard]] std::optional<LibraryResources> ReadResources(const std::span<const std::byte> apk_bytes,
                                                             const loader::ApkArchive& archive,
@@ -134,8 +150,9 @@ struct LibraryResources {
         // Preserve the established archive package gate, including secondary
         // packages with no entries.
         if (!packages.empty()) result.package_name = packages.back();
+        if (icon.has_value()) result.icon_id = ResolveIconId(table, *icon);
         table.forEachVariant([&](const loader::resources::ResourceVariant& variant) {
-            if (variant.id != label && variant.id != icon) return;
+            if (variant.id != label && variant.id != result.icon_id) return;
             auto locale = variant.config.localeName();
             std::replace(locale.begin(), locale.end(), '_', '-');
             std::optional<std::string> text;
@@ -265,8 +282,7 @@ ApkApplicationVisuals ExtractApkApplicationVisuals(const std::span<const std::by
     // the largest PNG wins, the next one is tried if it does not decode.
     std::vector<const LibraryResource*> configurations;
     for (const auto& entry : resources->entries)
-        if (entry.resource_id == *manifest.application_icon && entry.string_value.has_value())
-            configurations.push_back(&entry);
+        if (entry.resource_id == resources->icon_id && entry.string_value.has_value()) configurations.push_back(&entry);
     if (configurations.empty()) {
         result.fallbacks.push_back(ApplicationVisualFallback::icon_resource_missing);
         return result;

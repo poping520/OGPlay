@@ -35,6 +35,10 @@ struct Monitor final {
     // Contexts blocked in monitor-enter (or re-acquiring after wait). Unlike
     // wait_set, these have an actual wait-for edge to owner.
     std::deque<std::uint64_t> entry_waiters;
+
+    [[nodiscard]] bool CanAcquire(const std::uint64_t entrant) const {
+        return recursion == 0 ? entry_waiters.empty() || entry_waiters.front() == entrant : owner == entrant;
+    }
 };
 
 }  // namespace
@@ -93,50 +97,50 @@ public:
         }
     }
 
-    // Takes ownership of the monitor, parking while somebody else holds it.
+    void RemoveEntryWaiter(Monitor& monitor, const std::uint64_t owner) {
+        if (std::erase(monitor.entry_waiters, owner) != 0) changed.notify_all();
+    }
+
+    // Takes ownership of the monitor in entry order, parking behind earlier waiters.
     // The execution lock is released for the whole park.
     void AcquireLocked(std::unique_lock<std::mutex>& guard, const VmObjectRef object, const std::uint64_t owner,
                        const std::int32_t recursion) {
         auto* monitor = &MonitorFor(object);
-        bool registered{};
-        while (monitor->recursion != 0 && monitor->owner != owner) {
-            if (shutting_down) break;
-            if (!registered) {
-                monitor->entry_waiters.push_back(owner);
-                registered = true;
-            }
-            guard.unlock();
-            SetMonitorWaitState(owner, VmThreadWaitState::monitor);
-            auto& lock = vm->ExecutionLock();
-            const auto depth = lock.ReleaseForBlocking();
-            {
-                std::unique_lock parked(mutex);
-                const auto ready = [&] {
-                    auto& current = MonitorFor(object);
-                    return shutting_down || current.recursion == 0 || current.owner == owner ||
-                           vm->ExecutionDeadlineExpired(owner);
-                };
-                if (vm->HasExecutionDeadline(owner)) {
-                    while (!ready())
-                        changed.wait_for(parked, kDeadlinePoll);
-                } else
-                    changed.wait(parked, ready);
-            }
-            lock.ReacquireAfterBlocking(depth);
-            SetMonitorWaitState(owner, VmThreadWaitState::none);
-            guard.lock();
-            monitor = &MonitorFor(object);
-            if (vm->ExecutionDeadlineExpired(owner)) {
-                std::erase(monitor->entry_waiters, owner);
+        try {
+            while (!shutting_down && !monitor->CanAcquire(owner)) {
+                if (std::ranges::find(monitor->entry_waiters, owner) == monitor->entry_waiters.end())
+                    monitor->entry_waiters.push_back(owner);
+                guard.unlock();
+                SetMonitorWaitState(owner, VmThreadWaitState::monitor);
+                auto& lock = vm->ExecutionLock();
+                const auto depth = lock.ReleaseForBlocking();
+                {
+                    std::unique_lock parked(mutex);
+                    const auto ready = [&] {
+                        return shutting_down || MonitorFor(object).CanAcquire(owner) ||
+                               vm->ExecutionDeadlineExpired(owner);
+                    };
+                    if (vm->HasExecutionDeadline(owner)) {
+                        while (!ready())
+                            changed.wait_for(parked, kDeadlinePoll);
+                    } else
+                        changed.wait(parked, ready);
+                }
+                lock.ReacquireAfterBlocking(depth);
+                SetMonitorWaitState(owner, VmThreadWaitState::none);
+                guard.lock();
+                monitor = &MonitorFor(object);
                 vm->CheckExecutionDeadline(owner);
             }
-        }
-        if (registered) {
-            const auto waiter = std::find(monitor->entry_waiters.begin(), monitor->entry_waiters.end(), owner);
-            if (waiter != monitor->entry_waiters.end()) {
-                monitor->entry_waiters.erase(waiter);
+        } catch (...) {
+            if (!guard.owns_lock()) {
+                SetMonitorWaitState(owner, VmThreadWaitState::none);
+                guard.lock();
             }
+            RemoveEntryWaiter(MonitorFor(object), owner);
+            throw;
         }
+        RemoveEntryWaiter(*monitor, owner);
         monitor->owner = owner;
         monitor->recursion = recursion;
     }
@@ -239,7 +243,7 @@ void VmMonitorTable::Enter(const VmObjectRef object, const std::uint64_t owner) 
         ++monitor.recursion;
         return;
     }
-    if (monitor.recursion == 0) {
+    if (monitor.recursion == 0 && monitor.entry_waiters.empty()) {
         monitor.owner = owner;
         monitor.recursion = 1;
         return;
@@ -287,7 +291,8 @@ void VmMonitorTable::ReleaseObjectForGc(const VmObjectRef object) {
     const std::lock_guard guard(impl_->mutex);
     const auto found = impl_->monitors.find(object.Value());
     if (found == impl_->monitors.end()) return;
-    if (found->second->owner != 0 || found->second->recursion != 0 || !found->second->wait_set.empty()) {
+    const auto& monitor = *found->second;
+    if (monitor.owner != 0 || monitor.recursion != 0 || !monitor.wait_set.empty() || !monitor.entry_waiters.empty()) {
         throw DexVmError(DexVmErrorReason::internal_invariant, "GC reached an owned or waited-on object monitor");
     }
     impl_->monitors.erase(found);

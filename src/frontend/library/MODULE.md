@@ -83,7 +83,7 @@ Android/obb/<名>，否则 Android/data/<名>。两者只在取哪个标记、�
 深于 Android/<类>/<包> 时截到该层，选了 extras 即 /sdcard。CLI `library inspect|import <压缩包> [--apk <成员>]
 [--include <extra>]…` 同源。
 
-图标：入库与导入分析从 application icon 的全部密度配置中选面积最大且可解码的 PNG（跳过 XML、.9.png），
+图标：入库与导入分析先将 application icon 沿资源引用解析到最终 drawable，再从其全部密度配置中选面积最大且可解码的 PNG（跳过 XML、.9.png），
 存方形 RGBA PNG，不放大、超过 kLauncherIconMaxSize（256）才缩小。`RefreshIcons`/CLI `library refresh-icons`
 在库锁内按当前规则从各条目 APK 副本重提 icon.png，原子替换，读不出的条目保留原图标。
 运行中游戏图标：`ComposeRunningIcon` 把条目图标与随包 OGPlay 卡带合成为方形 RGBA，`badge`（默认，圆形角标）或

@@ -449,6 +449,47 @@ TEST_CASE("dexvm monitor diagnostics distinguish entry and notify waiters") {
     CHECK(acquired.load(std::memory_order_acquire));
 }
 
+TEST_CASE("dexvm monitor hands off to a queued entrant before the releaser can reenter") {
+    MonitorVm vm;
+    const auto object = vm.Lock();
+    auto& monitors = vm.interpreter.Monitors();
+    auto& execution_lock = vm.interpreter.ExecutionLock();
+    {
+        const VmExecutionLockScope execution(execution_lock);
+        monitors.Enter(object, 1U);
+    }
+
+    bool acquired = false;
+    std::thread entrant([&] {
+        const VmExecutionLockScope execution(execution_lock);
+        monitors.Enter(object, 2U);
+        acquired = true;
+        monitors.Exit(object, 2U);
+    });
+    const bool queued = WaitFor([&] {
+        const auto snapshot = monitors.TrySnapshotAll();
+        return snapshot && std::ranges::any_of(*snapshot, [&](const auto& item) {
+                   return item.object == object.Value() && item.entry_waiters == std::vector<std::uint64_t>{2U};
+               });
+    });
+
+    int reentries = 0;
+    {
+        // The entrant cannot resume until this thread releases the execution lock.
+        const VmExecutionLockScope execution(execution_lock);
+        monitors.Exit(object, 1U);
+        while (queued && !acquired && reentries < 3) {
+            monitors.Enter(object, 1U);
+            ++reentries;
+            monitors.Exit(object, 1U);
+        }
+    }
+    entrant.join();
+
+    REQUIRE(queued);
+    CHECK(reentries == 1);
+}
+
 // The root lifecycle context parks on the very host thread that pumps a
 // deterministic unified Clock (the frame loop), so a timed park on that
 // Clock would wait forever. A pump-driven test clock plus the published

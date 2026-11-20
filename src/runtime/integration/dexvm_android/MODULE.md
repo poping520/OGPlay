@@ -156,7 +156,7 @@ calling identity 固定为进程 UID/PID，StrictMode mask 按执行上下文隔
 | WifiLock/MulticastLock | ROM WifiManager 计数、held 和每 manager 50 锁上限；本地 IWifiManager 校验锁模式及 WAKE_LOCK/CHANGE_WIFI_MULTICAST_STATE 权限，不改变连接、网卡或组播。 |
 | Sensor/Telephony/Keyguard | ROM SystemSensorManager 与 NDK 共用会话注入的不可变设备目录和可替换数据源，独立订阅经同一 Looper fd 路径投递。桌面数据源发布静止朝北的运动传感器，手机端可替换数据源。LegacySensorManager 经 IWindowManager 查询固定 ROTATION_0；Keyguard 查询沿进程 provider，缺席表示桌面无锁屏。ITelephony 报告 PHONE_TYPE_GSM，SIM 为 ABSENT，运营商为空，无订阅时 subscriberId=null；身份经 IPhoneSubInfo 与 SystemProperties 读取。ITelephonyRegistry 按掩码推送当前状态，注销时释放回调。 |
 | AccountManager | 本地 IAccountManager 表示零账户、零 authenticator。查询保留 API19 权限检查并返回空数组，令牌失效为空操作。空 feature 查询通过 onResult 返回空数组，需 authenticator 的会话以 onError 报 bind failure。账户权限变更、跨用户与共享账户写入受限。 |
-| AudioSystem/AudioManager | AudioSystem 发布内置扬声器和未静音麦克风。主输出采样率和缓冲帧数取会话 PCM 输出配置。AudioSystem 的设备、路由、音量、静音和低内存策略 setter 返回错误并逐方法记账。setParameters 接受参数并按键限流告警，getParameters 返回空串。输出延迟根据 PCM 缓冲与目标排队帧数计算，输出参数缺席时返回 -1。IAudioService 会话内维护媒体键接收器栈，桌面无媒体键来源；系统 UI 音效播放走 UI 降级。 |
+| AudioSystem/AudioManager | AudioSystem 发布内置扬声器和未静音麦克风。主输出采样率和缓冲帧数取会话 PCM 输出配置。AudioSystem 的设备、路由、音量、静音和低内存策略 setter 返回错误并逐方法记账。setParameters 接受参数并按键限流告警，getParameters 返回空串。输出延迟根据 PCM 缓冲与目标排队帧数计算，输出参数缺席时返回 -1。IAudioService 用同一份别名流索引、按 token 计数的静音和铃声模式派生线性混音增益。音频模式和强制路由状态只在进程内维护。媒体键经本地 PendingIntent 投递给栈顶接收器，RCC 仅登记。oneway 方法不向调用方抛 Java 异常。显示端及不支持的系统专用操作记账，系统 UI 音效播放走 UI 降级。 |
 | Vibrator | ROM SystemVibrator 经本地 IVibratorService 查询硬件缺席；单次请求及取消更新进程事实，模式请求检查权限和 UID，不驱动宿主硬件。 |
 
 ### 模拟设备状态

@@ -64,6 +64,9 @@ std::vector<IntrinsicClassDecl> AudioTrackTestCatalog(PositionListenerRecorder* 
                                                       PreparedRecorder* prepared = nullptr) {
     std::vector<IntrinsicClassDecl> result;
     auto audio_context = IntrinsicClassBuilder::Class("Ltest/AudioContext;", "Landroid/content/Context;");
+    audio_context.VirtualMethod("getPackageName", "()Ljava/lang/String;", [](IntrinsicContext& call) {
+        return VmValue::Ref(call.vm.NewStringUtf8("test.audio"));
+    });
     audio_context.VirtualMethod("getOpPackageName", "()Ljava/lang/String;", [](IntrinsicContext& call) {
         return VmValue::Ref(call.vm.NewStringUtf8("test.audio"));
     });
@@ -160,6 +163,7 @@ struct AudioTrackVm final {
                       context->native_output_sample_rate = *native_output_sample_rate;
                   }
                   context->pcm_playback = &mixer;
+                  SyncAudioStreamGains(*context);
                   auto services = AndroidCoreIntrinsicServices(context);
                   ogplay::test::BindCoreBootFixtureFacts(services);
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog(std::move(services)));
@@ -956,7 +960,7 @@ TEST_CASE("MediaPlayer accepts its current stream after prepare and changes stre
 TEST_CASE("AudioManager applies stream volume to AudioTrack PCM without cross muting") {
     AudioTrackVm fixture;
     const auto a = fixture.NewTrack(8000, 4, 2, 16, 0, 3);
-    const auto b = fixture.NewTrack(8000, 4, 2, 16, 0, 4);
+    const auto b = fixture.NewTrack(8000, 4, 2, 16, 0, 1);
     const auto pa = fixture.context->audio_tracks.at(a.Value()).player;
     const auto pb = fixture.context->audio_tracks.at(b.Value()).player;
     const std::array<std::byte, 8> a_pcm{std::byte{0xe8}, std::byte{3}, std::byte{0xe8}, std::byte{3},
@@ -970,17 +974,122 @@ TEST_CASE("AudioManager applies stream volume to AudioTrack PCM without cross mu
     const auto manager = fixture.NewAudioManager();
     const auto roots = fixture.vm.ProtectReferences(std::array{manager});
     fixture.CallOn(manager, "setStreamVolume", "(III)V", {VmValue::Int(3), VmValue::Int(15), VmValue::Int(0)});
-    fixture.CallOn(manager, "setStreamMute", "(IZ)V", {VmValue::Int(4), VmValue::Int(1)});
+    fixture.CallOn(manager, "setStreamMute", "(IZ)V", {VmValue::Int(1), VmValue::Int(1)});
     std::array<std::int64_t, 2> pcm{};
     static_cast<void>(fixture.mixer.MixIntoAccumulator(pcm, 8000));
     CHECK(pcm[0] == 1000);
     CHECK(pcm[1] == 1000);
     CHECK(fixture.mixer.PositionFrames(pb) == 1);
-    fixture.CallOn(manager, "setStreamMute", "(IZ)V", {VmValue::Int(4), VmValue::Int(0)});
-    fixture.CallOn(manager, "setStreamVolume", "(III)V", {VmValue::Int(4), VmValue::Int(15), VmValue::Int(0)});
+    fixture.CallOn(manager, "setStreamMute", "(IZ)V", {VmValue::Int(1), VmValue::Int(0)});
+    fixture.CallOn(manager, "setStreamVolume", "(III)V", {VmValue::Int(1), VmValue::Int(7), VmValue::Int(0)});
     fixture.CallOn(manager, "setStreamMute", "(IZ)V", {VmValue::Int(3), VmValue::Int(1)});
     pcm.fill(0);
     static_cast<void>(fixture.mixer.MixIntoAccumulator(pcm, 8000));
     CHECK(pcm[0] == 2000);
     CHECK(pcm[1] == 2000);
+}
+
+TEST_CASE("AudioManager stream solo counts overlapping client mutes") {
+    AudioTrackVm fixture;
+    const auto manager = fixture.NewAudioManager();
+    const auto roots = fixture.vm.ProtectReferences(std::array{manager});
+    const auto solo = [&](bool enabled) {
+        fixture.CallOn(manager, "setStreamSolo", "(IZ)V", {VmValue::Int(3), VmValue::Int(enabled)});
+    };
+    const auto muted = [&](int stream) {
+        return fixture.CallOn(manager, "isStreamMute", "(I)Z", {VmValue::Int(stream)}).AsInt() != 0;
+    };
+    solo(true);
+    CHECK_FALSE(muted(3));
+    for (const int stream : {1, 2, 5})
+        CHECK(muted(stream));
+
+    solo(false);
+    for (const int stream : {1, 2, 5})
+        CHECK_FALSE(muted(stream));
+
+    solo(true);
+    fixture.CallOn(manager, "setStreamMute", "(IZ)V", {VmValue::Int(1), VmValue::Int(1)});
+    solo(false);
+    CHECK(muted(1));
+    CHECK_FALSE(muted(2));
+    CHECK_FALSE(muted(5));
+    fixture.CallOn(manager, "setStreamMute", "(IZ)V", {VmValue::Int(1), VmValue::Int(0)});
+    CHECK_FALSE(muted(1));
+}
+
+TEST_CASE("AudioManager volume indices and AudioTrack gain share alias state") {
+    AudioTrackVm fixture;
+    const auto manager = fixture.NewAudioManager();
+    const auto track = fixture.NewTrack(8000, 4, 2, 16, 0);
+    const auto roots = fixture.vm.ProtectReferences(std::array{manager, track});
+    const auto player = fixture.context->audio_tracks.at(track.Value()).player;
+    const std::array<std::byte, 12> tone{std::byte{0xdc}, std::byte{5}, std::byte{0xdc}, std::byte{5},
+                                         std::byte{0xdc}, std::byte{5}, std::byte{0xdc}, std::byte{5},
+                                         std::byte{0xdc}, std::byte{5}, std::byte{0xdc}, std::byte{5}};
+    REQUIRE(fixture.mixer.Enqueue(player, tone));
+    fixture.mixer.SetPlayState(player, ogplay::audio::OpenSlesPlayState::playing);
+    const auto sample = [&] {
+        std::array<std::int64_t, 2> pcm{};
+        static_cast<void>(fixture.mixer.MixIntoAccumulator(pcm, 8000));
+        return pcm[0];
+    };
+    const auto volume = [&](int stream) {
+        return fixture.CallOn(manager, "getStreamVolume", "(I)I", {VmValue::Int(stream)}).AsInt();
+    };
+    const auto set_volume = [&](int stream, int index) {
+        fixture.CallOn(manager, "setStreamVolume", "(III)V",
+                       {VmValue::Int(stream), VmValue::Int(index), VmValue::Int(0)});
+    };
+    CHECK(volume(3) == 15);
+    CHECK(sample() == 1500);
+    set_volume(3, volume(3));
+    CHECK(sample() == 1500);
+    fixture.CallOn(manager, "adjustStreamVolume", "(III)V", {VmValue::Int(3), VmValue::Int(-1), VmValue::Int(0)});
+    CHECK(volume(3) == 14);
+    CHECK(sample() == doctest::Approx(1400).epsilon(0.001));
+
+    CHECK(volume(1) == volume(2));
+    set_volume(2, 3);
+    CHECK(volume(1) == 3);
+    fixture.CallOn(manager, "setRingerMode", "(I)V", {VmValue::Int(0)});
+    CHECK(volume(1) == 0);
+    CHECK(volume(3) == 14);
+    fixture.CallOn(manager, "adjustStreamVolume", "(III)V", {VmValue::Int(2), VmValue::Int(1), VmValue::Int(0)});
+    CHECK(volume(1) == 3);
+}
+
+TEST_CASE("AudioManager handles mode permissions and local remote control clients") {
+    AudioTrackVm fixture;
+    const auto manager = fixture.NewAudioManager();
+    const auto manager_root = fixture.vm.ProtectReferences(std::array{manager});
+    CHECK(fixture.CallOn(manager, "isSpeakerphoneOn", "()Z").AsInt() == 0);
+    fixture.CallOn(manager, "setMode", "(I)V", {VmValue::Int(3)});
+    CHECK(fixture.CallOn(manager, "getMode", "()I").AsInt() == 0);
+    fixture.context->granted_permissions.insert("android.permission.MODIFY_AUDIO_SETTINGS");
+    fixture.CallOn(manager, "setMode", "(I)V", {VmValue::Int(3)});
+    CHECK(fixture.CallOn(manager, "getMode", "()I").AsInt() == 3);
+
+    const auto sender = fixture.vm.NewIntrinsicInstance("Lorg/ogplay/framework/LocalIntentSender;");
+    const auto intent = fixture.vm.NewIntrinsicInstance("Landroid/app/PendingIntent;");
+    const auto client = fixture.vm.NewIntrinsicInstance("Landroid/media/RemoteControlClient;");
+    const auto roots = fixture.vm.ProtectReferences(std::array{sender, intent, client});
+    fixture.CallDirect(sender, "<init>", "()V");
+    fixture.CallDirect(intent, "<init>", "(Landroid/content/IIntentSender;)V", {VmValue::Ref(sender)});
+    fixture.CallDirect(client, "<init>", "(Landroid/app/PendingIntent;)V", {VmValue::Ref(intent)});
+    const auto register_client = [&] {
+        fixture.CallOn(manager, "registerRemoteControlClient", "(Landroid/media/RemoteControlClient;)V",
+                       {VmValue::Ref(client)});
+        return fixture.CallOn(client, "getRcseId", "()I").AsInt();
+    };
+    CHECK(register_client() == -1);
+    fixture.CallOn(manager, "registerMediaButtonEventReceiver", "(Landroid/app/PendingIntent;)V",
+                   {VmValue::Ref(intent)});
+    CHECK(register_client() == 1);
+    fixture.CallOn(manager, "unregisterRemoteControlClient", "(Landroid/media/RemoteControlClient;)V",
+                   {VmValue::Ref(client)});
+    CHECK_FALSE(fixture.context->device_state.audio.media_button_receivers.back().remote_control_client.IsValid());
+    fixture.CallOn(manager, "unregisterMediaButtonEventReceiver", "(Landroid/app/PendingIntent;)V",
+                   {VmValue::Ref(intent)});
+    CHECK(register_client() == -1);
 }

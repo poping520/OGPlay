@@ -1153,7 +1153,7 @@ TEST_CASE("Local device services enforce permissions and retain session changes"
 
     const auto audio = service("audio");
     const auto stream = VmValue::Int(3);
-    CHECK(f.On(audio, "getStreamVolume", "(I)I", {stream}).AsInt() == 11);
+    CHECK(f.On(audio, "getStreamVolume", "(I)I", {stream}).AsInt() == 15);
     CHECK(f.On(audio, "getStreamMaxVolume", "(I)I", {stream}).AsInt() == 15);
     f.On(audio, "setStreamVolume", "(IIILjava/lang/String;)V", {stream, one, zero, null});
     CHECK(f.On(audio, "getStreamVolume", "(I)I", {stream}).AsInt() == 1);

@@ -184,9 +184,16 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRo
     }
     for (const auto& entry : state.audio.media_button_receivers) {
         root(entry.operation);
+        root(entry.target);
         root(entry.component);
         root(entry.token);
+        root(entry.remote_control_client);
     }
+    for (const auto& mutes : state.audio.client_mutes)
+        for (const auto& [token, _] : mutes)
+            root(token);
+    root(state.audio.mode_token);
+    root(state.audio.volume_control_token);
     for (const auto observer : state.audio.route_observers)
         root(observer);
     for (const auto client : state.audio.media_router_clients)

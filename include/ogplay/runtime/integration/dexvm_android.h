@@ -188,10 +188,18 @@ struct SimulatedDeviceState final {
 
     struct Audio final {
         static constexpr std::array<int, 10> max_volume{5, 7, 7, 15, 7, 7, 15, 7, 15, 15};
-        std::array<int, 10> volume{4, 7, 5, 11, 6, 5, 7, 7, 11, 11};
-        std::array<bool, 10> mute{};
+        static constexpr std::array<std::size_t, 10> volume_alias{0, 2, 2, 3, 4, 2, 6, 2, 2, 3};
+        // API 19 tracks tenths of a UI step. Only alias targets own indices.
+        std::array<int, 10> volume_index{40, 0, 50, 150, 60, 0, 70, 0, 0, 0};
+        std::array<std::map<dexvm::VmObjectRef, std::size_t>, 10> client_mutes;
         int ringer_mode{2};
-        bool speakerphone{true};
+        int previous_ringer_adjustment{};
+        int mode{};
+        dexvm::VmObjectRef mode_token{};
+        int volume_control_stream{-1};
+        dexvm::VmObjectRef volume_control_token{};
+        int force_use_for_comm{};
+        int force_use_for_media{};
 
         struct Focus {
             std::string client;
@@ -201,10 +209,13 @@ struct SimulatedDeviceState final {
 
         struct MediaButtonReceiver {
             dexvm::VmObjectRef operation, target, component, token;
+            dexvm::VmObjectRef remote_control_client{};
+            int rcc_id{};
         };
 
         std::vector<Focus> focus;
         std::vector<MediaButtonReceiver> media_button_receivers;
+        int next_rcc_id{1};
         std::set<dexvm::VmObjectRef> route_observers;
         std::set<dexvm::VmObjectRef> media_router_clients;
     } audio;
@@ -264,8 +275,7 @@ struct DexVmAndroidContext final {
     audio::JavaSoundPoolMixer* encoded_audio_playback{};
     audio::EncodedMusicMixer* encoded_music{};
     mutable std::mutex audio_policy_mutex;
-    std::array<std::int32_t, 10> stream_volume{7, 7, 7, 15, 7, 7, 7, 7, 7, 7};
-    std::array<bool, 10> stream_mute{};
+    std::array<float, 10> stream_gain{};
     // Process-wide APK native loader used by java.lang.System.load*.
     // The application ClassLoader has one stable non-zero identity for the
     // lifetime of this context; APS-5 intentionally does not invent a second
@@ -984,9 +994,9 @@ TrySnapshotAndroidAudioTracks(dexvm::Interpreter& vm, const DexVmAndroidContext&
 
 [[nodiscard]] std::vector<AndroidAudioTrackDiagnosticSnapshot>
 SnapshotAndroidAudioTracks(const DexVmAndroidContext& context);
-// Caller holds audio_policy_mutex; update native stream gains without touching
-// Java state from the output worker.
-void ApplyAudioStreamPolicy(DexVmAndroidContext& context, std::int32_t stream);
+// Call before starting the VM or with VM execution serialized. Mixers and
+// the video output worker consume the resulting gains without reading VM state.
+void SyncAudioStreamGains(DexVmAndroidContext& context);
 
 // True while at least one VideoView is actively playing decoded video. The
 // frontend uses this to pace the free-running frame loop to real time so

@@ -1916,8 +1916,8 @@ note = "本地 IAccountManager 发布零账户、零 authenticator，保留 API1
 
 [dexvm.audio_system]
 status = "partial"
-test = "tests/dexvm/android_context_services_tests.cpp#Local AudioSystem"
-note = "AudioSystem 发布内置扬声器、麦克风和会话 PCM 参数，按缓冲与目标排队帧数计算延迟。setParameters 忽略参数并按键告警；路由和策略 setter 返回错误并记账。IAudioService 维护进程内媒体键接收器栈，桌面无媒体键来源，系统 UI 音效降级。"
+test = "tests/dexvm/android_context_services_tests.cpp#Local AudioSystem; tests/dexvm/audio_track_tests.cpp#AudioManager"
+note = "AudioSystem 发布内置扬声器、麦克风及会话 PCM 参数，按缓冲和排队深度计算延迟。路由与策略 setter 返回错误并记账。IAudioService 统一别名音量、按客户端计数的静音和线性输出增益，维护本地模式和强制路由。媒体键可经已有 PendingIntent 路径投递，RCC 仅登记，系统 UI 音效降级。oneway 拒绝不向调用方抛异常。"
 
 [dexvm.backup_service]
 status = "partial"

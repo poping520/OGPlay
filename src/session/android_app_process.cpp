@@ -323,11 +323,7 @@ public:
                     context->pcm_playback = &session->PcmPlayback();
                     context->encoded_audio_playback = &session->SoundPoolMixer();
                     context->encoded_music = &session->EncodedMusic();
-                    {
-                        std::scoped_lock lock(context->audio_policy_mutex);
-                        for (std::int32_t stream = 0; stream < 10; ++stream)
-                            runtime::ApplyAudioStreamPolicy(*context, stream);
-                    }
+                    runtime::SyncAudioStreamGains(*context);
                     const auto android_context = context;
                     session->SetAuxiliaryAudioMix(
                         [android_context](const std::span<std::int64_t> accumulator, const std::uint32_t rate) {

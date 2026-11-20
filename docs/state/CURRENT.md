@@ -47,6 +47,7 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
 | Rayman Fiesta Run 1.4.2 | macOS | 越过 MSDK `http.agent` 的 strlen(NULL)（斜杠类名 findLoadedClass、启动未设 `http.agent` 已修），进入资源包加载；约 100 秒呈现 5659 帧，SIGTERM 退出 0 | 画面与交互未验；缺失报告列出 obb 与 73 个 `casa_gamedata` 路径，是否为正常探测未判定 | — |
 | POPClassic | macOS | 快速开始并跳过过场，进入第一关，关卡 AAC 环境音已提交非零 PCM 至 SDL。约 190 秒呈现 9,202 帧，SIGTERM 退出 0 | FFmpeg 离线解码 APK 中全部 91 个 MP3 成功，覆盖此前两处 SoundPool 加载失败。游戏内声音、后续关卡和跨平台待验 | — |
 | Assassin's Creed Pirates 2.9.1 | macOS | 原 APK 库诊断运行呈现 2,535 帧；MediaPlayer 构造错误和 Kontagent handler NPE 均为零 | Kontagent DNS resolver 初始化仍失败；上次关窗卡在 NativeActivity.onDestroy，CLI 退出 1；宿主关闭已改为 stop 后结束进程，原 APK 关窗及关卡待验 | — |
+| Anomaly HD 1.18 | macOS | 越过 GCM 的设备检查、清单检查和注册调用，读取主 OBB，进入 GameActivity 的原生初始化，呈现 8,883 帧 | 90 秒库诊断 SIGINT 退出 0，未见新的阻断错误；GCM 后首条错误日志为 Bionic 缺 tzdata，运行继续；菜单 AudioTrack 周期欠载爆音已修；画面与交互待验 | — |
 
 ## 未闭合问题
 
@@ -64,7 +65,7 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
 
 - Profile（[APS-15](KNOWN-ISSUES.md)）：仅接受 v4 identity；API 19、入口、ABI、VFS 与音频走通用路径。Angry Birds 无 Profile 可启动并退出 0。
 
-- VFS：语义根删除返回 EBUSY、缺失自动重建并记 warn；37 定向用例/436 断言通过，TML 现有 `-3` 持久沙盒自动恢复 obb，连续两次启动越过打开阶段、根保留且既有文件哈希不变，同达 Mono sigaction / Unity EGL 首错（证据 `.local/sandbox-roots-{tests.log,proof.json}`）。多实例需显式 installation-id；PackageManager 仅当前 APK；多 ROM 未验收。
+- VFS：语义根删除返回 EBUSY、缺失自动重建并记 warn；37 定向用例/436 断言通过，TML 现有 `-3` 持久沙盒自动恢复 obb，连续两次启动越过打开阶段、根保留且既有文件哈希不变，同达 Mono sigaction / Unity EGL 首错（证据 `.local/sandbox-roots-{tests.log,proof.json}`）。多实例需显式 installation-id；PackageManager 的安装清单枚举仅含当前 APK；多 ROM 未验收。
 - GUI/Dashboard（[GUI-10](KNOWN-ISSUES.md)）：core 改为 C++ 外观与共享游戏库，桌面/CLI
   各自拥有交互；库锁/运行锁、CLI library、参数往返及两条真实 APK 有界路径已在 macOS 验证。
   Windows Release/原生 GUI 链路待复验（GUI-9 证据属旧架构）。macOS 交付 ad-hoc 签名 OGPlay.app

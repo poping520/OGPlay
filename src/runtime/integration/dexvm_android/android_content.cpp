@@ -1070,6 +1070,30 @@ constexpr auto kPackageFlags = kProviderFlags | kGetActivities | kGetReceivers |
 constexpr std::int32_t kPermissionGranted = 0;
 constexpr std::int32_t kPermissionDenied = -1;
 
+constexpr auto kPackageManager = "Landroid/content/pm/PackageManager;";
+constexpr auto kApplicationInfo = "Landroid/content/pm/ApplicationInfo;";
+
+struct DisabledSystemPackage {
+    std::string_view name;
+    std::int32_t uid;
+    std::int32_t version_code;
+    std::string_view version_name;
+    std::string_view shared_user_id;
+    std::int32_t target_sdk_version;
+    std::string_view source_dir;
+};
+
+constexpr DisabledSystemPackage kDisabledSystemPackages[]{
+    // The session assigns 10000 to the current APK. Reserve 10001 for this system package.
+    {"com.google.android.gsf", 10001, 19, "4.4.4", "com.google.uid.shared", 19,
+     "/system/app/GoogleServicesFramework.apk"},
+};
+
+const DisabledSystemPackage* FindDisabledSystemPackage(std::string_view name) {
+    const auto found = std::ranges::find(kDisabledSystemPackages, name, &DisabledSystemPackage::name);
+    return found == std::end(kDisabledSystemPackages) ? nullptr : found;
+}
+
 [[nodiscard]] const dx::LinkedField& Field(dx::IntrinsicContext& call, const dx::VmObjectRef object,
                                            const std::string_view name, const std::string_view descriptor) {
     const auto field = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(object), std::string(name),
@@ -1118,6 +1142,42 @@ void RequireCurrentPackage(const Context& context, const std::string_view packag
 [[noreturn]] void UnsupportedPackageQuery(dx::IntrinsicContext& call, std::string_view capability, std::string reason) {
     if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented(capability, 0);
     throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", std::move(reason)};
+}
+
+std::int32_t PackageIntConstant(dx::IntrinsicContext& call, const char* owner, const char* name) {
+    auto& linker = call.vm.Linker();
+    const auto type = linker.ResolveDescriptor(owner);
+    const auto outcome = call.vm.EnsureClassInitialized(type);
+    if (outcome.exception.IsValid())
+        throw dx::VmJavaThrow{linker.Class(outcome.exception_class).descriptor, outcome.exception_message,
+                              outcome.exception};
+    const auto field = linker.FindFieldRecursive(type, name, "I");
+    if (!field)
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                             "PackageManager constant is not linked: " + std::string(name));
+    const auto& linked = linker.Field(*field);
+    return static_cast<std::int32_t>(linker.Class(linked.owner).static_storage[linked.slot]);
+}
+
+std::int32_t DisabledSystemPackageEnabledSetting(dx::IntrinsicContext& call) {
+    return PackageIntConstant(call, kPackageManager, "COMPONENT_ENABLED_STATE_DISABLED_USER");
+}
+
+void CheckDisabledSystemPackageFlags(dx::IntrinsicContext& call, std::int32_t mask, std::string_view method) {
+    const auto effective = call.arguments[1].AsInt() & mask;
+    const auto allowed = PackageIntConstant(call, kPackageManager, "GET_DISABLED_COMPONENTS") |
+                         PackageIntConstant(call, kPackageManager, "GET_UNINSTALLED_PACKAGES") |
+                         PackageIntConstant(call, kPackageManager, "GET_DISABLED_UNTIL_USED_COMPONENTS") |
+                         PackageIntConstant(call, kPackageManager, "GET_INTENT_FILTERS");
+    if (effective & ~allowed)
+        UnsupportedPackageQuery(call, "dexvm.disabled_system_packages",
+                                std::string(method) +
+                                    ": requested content is unavailable for a disabled system package");
+}
+
+void RequireDisabledSystemPackageUser(dx::IntrinsicContext& call) {
+    if (call.arguments[1].AsInt() != 0)
+        throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "package query outside the current user"};
 }
 
 std::string_view PackageSharedLibraryPath(std::string_view name) {
@@ -1560,6 +1620,39 @@ dx::VmObjectRef MakePackageSignatures(dx::IntrinsicContext& call, const Context&
         call.vm.Model().WriteByteRegion(bytes, 0, der);
         return NewPlatformObject(call.vm, "Landroid/content/pm/Signature;", "([B)V", {dx::VmValue::Ref(bytes)});
     });
+}
+
+dx::VmObjectRef MakeDisabledSystemApplicationInfo(dx::IntrinsicContext& call, const DisabledSystemPackage& package) {
+    const auto info = NewQueryObject(call, kApplicationInfo);
+    const auto root = call.vm.ProtectReferences(std::array{info});
+    const auto name = call.vm.NewStringUtf8(package.name);
+    SetRef(call, info, "packageName", "Ljava/lang/String;", name);
+    SetRef(call, info, "processName", "Ljava/lang/String;", name);
+    SetInt(call, info, "uid", package.uid);
+    SetInt(call, info, "flags",
+           PackageIntConstant(call, kApplicationInfo, "FLAG_SYSTEM") |
+               PackageIntConstant(call, kApplicationInfo, "FLAG_INSTALLED"));
+    SetBoolean(call, info, "enabled", false);
+    SetInt(call, info, "enabledSetting", DisabledSystemPackageEnabledSetting(call));
+    SetInt(call, info, "targetSdkVersion", package.target_sdk_version);
+    const auto source_dir = call.vm.NewStringUtf8(package.source_dir);
+    SetRef(call, info, "sourceDir", "Ljava/lang/String;", source_dir);
+    SetRef(call, info, "publicSourceDir", "Ljava/lang/String;", source_dir);
+    SetRef(call, info, "dataDir", "Ljava/lang/String;",
+           call.vm.NewStringUtf8("/data/data/" + std::string(package.name)));
+    return info;
+}
+
+dx::VmObjectRef MakeDisabledSystemPackageInfo(dx::IntrinsicContext& call, const DisabledSystemPackage& package) {
+    // The install and update times default to zero, as in the current APK projection.
+    const auto info = NewQueryObject(call, "Landroid/content/pm/PackageInfo;");
+    const auto root = call.vm.ProtectReferences(std::array{info});
+    SetRef(call, info, "packageName", "Ljava/lang/String;", call.vm.NewStringUtf8(package.name));
+    SetInt(call, info, "versionCode", package.version_code);
+    SetRef(call, info, "versionName", "Ljava/lang/String;", call.vm.NewStringUtf8(package.version_name));
+    SetRef(call, info, "sharedUserId", "Ljava/lang/String;", call.vm.NewStringUtf8(package.shared_user_id));
+    SetRef(call, info, "applicationInfo", kApplicationInfo, MakeDisabledSystemApplicationInfo(call, package));
+    return info;
 }
 
 [[nodiscard]] dx::VmObjectRef MakePackageInfo(dx::IntrinsicContext& call, const Context& context, std::int32_t flags,
@@ -2042,7 +2135,13 @@ Decl Declare_local_PackageService_Class(const Context& context) {
             if (call.arguments[2].AsInt() != 0)
                 throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "package query outside the current user"};
             const auto package = RequiredString(call, 0U, "packageName");
-            if (package != context->package_name) return dx::VmValue::Ref(dx::VmObjectRef{});
+            if (package != context->package_name) {
+                if (const auto* system_package = FindDisabledSystemPackage(package)) {
+                    CheckDisabledSystemPackageFlags(call, kPackageFlags, "getPackageInfo");
+                    return dx::VmValue::Ref(MakeDisabledSystemPackageInfo(call, *system_package));
+                }
+                return dx::VmValue::Ref(dx::VmObjectRef{});
+            }
             const auto flags = PackageQueryFlags(call, context, call.arguments[1].AsInt(), kPackageFlags,
                                                  "getPackageInfo", "dexvm.package_info_activities");
             return dx::VmValue::Ref(MakePackageInfo(call, context, flags, "getPackageInfo"));
@@ -2057,8 +2156,14 @@ Decl Declare_local_PackageService_Class(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             if (call.arguments[2].AsInt() != 0)
                 throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "package query outside the current user"};
-            if (RequiredString(call, 0U, "packageName") != context->package_name)
+            const auto package = RequiredString(call, 0U, "packageName");
+            if (package != context->package_name) {
+                if (const auto* system_package = FindDisabledSystemPackage(package)) {
+                    CheckDisabledSystemPackageFlags(call, kApplicationFlags, "getApplicationInfo");
+                    return dx::VmValue::Ref(MakeDisabledSystemApplicationInfo(call, *system_package));
+                }
                 return dx::VmValue::Ref(dx::VmObjectRef{});
+            }
             const auto flags = PackageQueryFlags(call, context, call.arguments[1].AsInt(), kApplicationFlags,
                                                  "getApplicationInfo", "dexvm.installed_applications");
             return dx::VmValue::Ref(MakePackageApplicationInfo(call, context, flags));
@@ -2367,6 +2472,12 @@ Decl Declare_local_PackageService_Class(const Context& context) {
         const auto name = call.arguments[index].ref;
         return name.IsValid() && call.vm.StringUtf8(name) == context->package_name;
     };
+    const auto disabled_system_package = [context](dx::IntrinsicContext& call) -> const DisabledSystemPackage* {
+        const auto name = call.arguments[0].ref;
+        if (!name.IsValid()) return nullptr;
+        const auto package = call.vm.StringUtf8(name);
+        return package == context->package_name ? nullptr : FindDisabledSystemPackage(package);
+    };
     for (const auto* name : {"canonicalToCurrentPackageNames", "currentToCanonicalPackageNames"}) {
         builder.VirtualMethod(name, "([Ljava/lang/String;)[Ljava/lang/String;", [](dx::IntrinsicContext& call) {
             const auto input = dx::IntrinsicCall(call).NonNullRef(0, "names");
@@ -2398,7 +2509,11 @@ Decl Declare_local_PackageService_Class(const Context& context) {
                                                      : dx::VmValue::Ref(dx::VmObjectRef{});
     });
     builder.VirtualMethod("getPackageUid", "(Ljava/lang/String;I)I",
-                          [context, is_own_package](dx::IntrinsicContext& call) {
+                          [context, is_own_package, disabled_system_package](dx::IntrinsicContext& call) {
+                              if (const auto* package = disabled_system_package(call)) {
+                                  RequireDisabledSystemPackageUser(call);
+                                  return dx::VmValue::Int(package->uid);
+                              }
                               return dx::VmValue::Int(call.arguments[1].AsInt() == 0 && is_own_package(call, 0)
                                                           ? static_cast<int>(context->application_uid)
                                                           : -1);
@@ -2415,9 +2530,14 @@ Decl Declare_local_PackageService_Class(const Context& context) {
                               if (!is_own_package(call, 0)) return dx::VmValue::Ref(dx::VmObjectRef{});
                               return dx::VmValue::Ref(MakePackageGids(call, context));
                           });
-    builder.VirtualMethod("isPackageAvailable", "(Ljava/lang/String;I)Z", [is_own_package](dx::IntrinsicContext& call) {
-        return dx::VmValue::Int(call.arguments[1].AsInt() == 0 && is_own_package(call, 0));
-    });
+    builder.VirtualMethod("isPackageAvailable", "(Ljava/lang/String;I)Z",
+                          [is_own_package, disabled_system_package](dx::IntrinsicContext& call) {
+                              if (disabled_system_package(call)) {
+                                  RequireDisabledSystemPackageUser(call);
+                                  return dx::VmValue::Int(1);
+                              }
+                              return dx::VmValue::Int(call.arguments[1].AsInt() == 0 && is_own_package(call, 0));
+                          });
     builder.VirtualMethod("isProtectedBroadcast", "(Ljava/lang/String;)Z", [](dx::IntrinsicContext& call) {
         if (!call.arguments[0].ref.IsValid()) return dx::VmValue::Int(0);
         const auto action = call.vm.StringUtf8(call.arguments[0].ref);
@@ -2531,7 +2651,11 @@ Decl Declare_local_PackageService_Class(const Context& context) {
                                                       "(Ljava/util/List;)V", {MakeComponentQueryList(call, info)}));
         });
     builder.VirtualMethod("getApplicationEnabledSetting", "(Ljava/lang/String;I)I",
-                          [context, is_own_package](dx::IntrinsicContext& call) {
+                          [context, is_own_package, disabled_system_package](dx::IntrinsicContext& call) {
+                              if (disabled_system_package(call)) {
+                                  RequireDisabledSystemPackageUser(call);
+                                  return dx::VmValue::Int(DisabledSystemPackageEnabledSetting(call));
+                              }
                               if (call.arguments[1].AsInt() != 0) return dx::VmValue::Int(2);
                               if (!is_own_package(call, 0))
                                   throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Unknown package"};

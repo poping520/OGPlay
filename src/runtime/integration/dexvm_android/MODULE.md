@@ -81,7 +81,7 @@ Libcore.os 的 Posix native 读取本进程事实，优先级不映射宿主调�
 
 ## PackageManager、权限与路径
 
-仅发布 session 封存的当前 APK Manifest/path/label/permission/feature，不从默认字段猜安装状态。
+本地 PMS 发布 session 封存的当前 APK Manifest/path/label/permission/feature，并从固定的停用系统包清单回答受支持的单包查询。
 值对象来自 BootDex，Context 保持稳定 ApplicationInfo，查询返回独立值；FLAG_INSTALLED 是已知事实。
 ApplicationInfo.theme 和 ActivityInfo.theme 发布各自的 Manifest 值，未声明为 0。alias 沿用目标快照，ActivityInfo.getThemeResource() 由 ROM 回落到应用主题。
 meta-data 的 value 解码 ARSC 类型（含 float→Bundle.putFloat），非 RIGID 不支持类型告警忽略，
@@ -95,8 +95,8 @@ key 仍必须存在，NUL/孤立 surrogate 保留 Java code units；resource 保
 | getInstallerPackageName(String) | 当前直接加载 APK 无安装器记录则 null；未知包（含空串/system/null）IAE，不推测商店 |
 | getResourcesForApplication(String) | 当前包共用应用 Resources/AssetManager；未知包（含空串/system）NameNotFoundException，null NPE；无跨包/其他重载 |
 | getPackageArchiveInfo | ROM PackageManager/PackageParser 从 guest VFS 中的 APK 解析 Manifest。缺路径或损坏归档沿 ROM 返回 null |
-| getApplicationInfo | 当前包的独立 ApplicationInfo，含按请求返回的元数据及当前应用启用设置 |
-| getPackageInfo/getPackagesHoldingPermissions | 按请求投影 activities、receivers、services、providers、instrumentation、权限、配置及签名。组件数组保留声明顺序和 alias；仅按组件声明过滤禁用项。没有声明时数组为 null；已有声明但全部被过滤时为零长度。Instrumentation 仅发布元数据 |
+| getApplicationInfo | 当前包的独立 ApplicationInfo，含按请求返回的元数据及当前应用启用设置；清单内停用系统包返回最小 ApplicationInfo |
+| getPackageInfo/getPackagesHoldingPermissions | 当前包按请求投影 activities、receivers、services、providers、instrumentation、权限、配置及签名。组件数组保留声明顺序和 alias；仅按组件声明过滤禁用项。没有声明时数组为 null；已有声明但全部被过滤时为零长度。Instrumentation 仅发布元数据。getPackageInfo 对清单内停用系统包返回最小 PackageInfo |
 | getActivityInfo/getReceiverInfo/getServiceInfo/getProviderInfo/resolveContentProvider/queryContentProviders | 当前包组件或 authority。组件查询看应用与组件启用状态；同名 Activity/receiver/service 取最后声明。Provider 可按请求发布 URI 授权模式 |
 | getPermissionInfo/queryPermissionsByGroup | 当前 Manifest 注册的权限定义，GET_META_DATA 发布定义元数据。仅请求或授予的权限仍无定义 |
 | queryIntentActivities/resolveIntent/queryIntentContentProviders | 当前 APK 显式组件及隐式过滤器。ROM IntentFilter 匹配 action/category、MIME、scheme、authority 与路径模式，按优先级、DEFAULT 与匹配分排序；resolveIntent 取首项 |
@@ -104,13 +104,21 @@ key 仍必须存在，NUL/孤立 surrogate 保留 Java code units；resource 保
 | queryIntentServices/resolveService | 支持显式组件。隐式支持 action-only 下可确定无候选的查询；应用/组件启用状态及 MATCH_DEFAULT_ONLY 参与筛选。潜在匹配或未知条件记账失败 |
 | bindService/unbindService | 缺席查询沿原规则；主线程、component-only、当前 APK 启用的同进程服务。仅 BIND_AUTO_CREATE 触发创建，其他连接可挂起，服务创建后先调度 onBind、再调度 onStartCommand。started 或存在 AUTO_CREATE 连接时保持存活；停止时先通知剩余连接断开并移除，再调度 onUnbind 和 onDestroy；会话关闭只调度 onUnbind/onDestroy，不发断开回调。BIND_DEBUG_UNBIND 和旧版 ContextImpl 使用的 BIND_WAIVE_PRIORITY 不影响存活；其他 flag 记账拒绝。独立进程/isolated 返回 false，仍登记连接且可解绑，无回调（[ADR-0170](../../../../docs/adr/runtime.md#adr-0170)） |
 
-本地 PMS 按 API19 各入口实际消费的 flag 掩码处理，忽略其余位。GET_UNINSTALLED_PACKAGES 在当前已安装的单 APK 清单下结果相同。
+本地 PMS 按 API19 各入口实际消费的 flag 掩码处理，忽略其余位。GET_UNINSTALLED_PACKAGES 对已安装的包不影响查询结果。
 GET_DISABLED_UNTIL_USED_COMPONENTS 按应用启用设置生效。GET_GIDS 按固定 API19 AOSP platform.xml、AID 定义和会话已授予权限生成。
 GET_SHARED_LIBRARY_FILES 按 API19 aosp_arm 的 XML 库注册表发布 guest 路径，必需项在可选项之前。
 没有可发布路径时为 null；未知可选项跳过，未知必需项记账拒绝。路径是包元数据，库加载由独立机制负责。
 GET_SIGNATURES 从 package_resource_path 对应的封存 APK 字节惰性提取证书；每会话用 once_flag 缓存
 成功的 DER 或解析错误。每次请求创建新的 ROM Signature(byte[]) 和数组，解析失败逐次记账并抛出 UOE。
 证书提取边界见 [loader 契约](../../../loader/MODULE.md#公共-api)。
+
+停用系统包的单包元数据查询接受空有效位和 GET_DISABLED_COMPONENTS、GET_UNINSTALLED_PACKAGES、
+GET_DISABLED_UNTIL_USED_COMPONENTS、GET_INTENT_FILTERS 范围内的有效位；应用仍为停用。
+其他有效位按 `dexvm.disabled_system_packages` 记账并抛出 UnsupportedOperationException。
+getApplicationEnabledSetting 返回 DISABLED_USER，getPackageUid 返回预留的应用 UID，isPackageAvailable 返回 true。
+这些查询限 user 0，跨用户查询及 setApplicationEnabledSetting 抛出 SecurityException。
+getInstalledPackages、getInstalledApplications、getPackagesForUid、getNameForUid 和 checkSignatures 的事实范围仍为当前 APK。
+停用系统包的 APK 与数据路径仅作元数据发布。
 
 显式查询优先使用 Intent 的 component，其次取 selector 的 component；按对应组件 getter 投影，
 MATCH_DEFAULT_ONLY 和 GET_RESOLVED_FILTER 在显式路径无效果。命中时 ResolveInfo 仅填对应组件；
@@ -178,6 +186,7 @@ provider 保留最新请求；已登记的回调和请求由会话强持有。�
 外部存储沿 VFS 事实，无 OBB，备份与 USB 无可用后端。同步初始关闭，无账户或适配器。
 可变的剪贴板、通知库存、回调注册和设备开关均归会话；回调及有效 Binder token 由
 会话根保活。进程与任务查询沿 ROM Activity 栈及注入的内存事实。
+设备预装 Google Services Framework（`com.google.android.gsf`），用户已停用该包；其 UID 固定为 10001。
 
 本包启用的同进程 provider 由 ROM ActivityThread 按 initOrder 安装，AMS 按 authority 登记。
 本地 IContentService 按 authority 与路径匹配观察者，使用 ROM ContentObserver transport 分发。

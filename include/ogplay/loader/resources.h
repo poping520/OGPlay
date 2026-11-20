@@ -122,6 +122,8 @@ struct ResTable_config {
     [[nodiscard]] static ResTable_config decode(Bytes bytes);
 };
 
+[[nodiscard]] ResTable_config HostQueryConfiguration();
+
 class ResTableData {
 public:
     explicit ResTableData(Source arsc);

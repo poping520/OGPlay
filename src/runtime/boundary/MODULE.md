@@ -35,7 +35,7 @@ TryTrace 只短锁复制有界记录，busy 不等待 graphics 线程。跨线�
   导出实现在 concrete module，不转发到 façade 的 Invoke*；libc override 同样遵守此约束。
 - A32CallFrame 按精确参数数借用 r0-r3，剩余参数一次 bulk read；不得在 handler 逐字读栈。
   GuestPtr/GuestCString 保留 guest identity，禁止转 host 指针；复杂 callback/variadic ABI
-  可显式编组。启用 guest-call slice observer 时不得安装 fast hook。
+  可显式编组。guest 帧携带 SP，供 variadic export 显式编组。启用 guest-call slice observer 时不得安装 fast hook。
 - fast callback 不向 JIT 抛 C++ 异常：按 thread/PC 保存 pending fault，slow consumer 重抛
   原异常。搬运失败保留类别并附 module!symbol、r0-r3、SP、LR、thread；attribute staging
   还报告 descriptor、definition/enable LR。未知地址/SVC 或未绑定函数必须明确失败。

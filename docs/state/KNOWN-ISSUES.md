@@ -41,7 +41,7 @@
 - **SurfaceTexture**：Metal 缺 external，MediaPlayer/NDK/EGL window producer 与后端切换尚未完整接入，context-loss 恢复未完成。
   复核入口：SurfaceTexture 公共队列与 Java/SwiftShader 外部纹理采样路径，范围见图形和 Android 契约。
 - **音频交叉验收**：raw-resource 完整加载链、手动 step 背压写入的端到端证据、媒体主时钟/影音同步及长时听测尚不完整。
-  手动消费与提前帧扣回已实现；复核入口：AudioTrack/AudioOutputPump、MediaPlayer raw resource 和游戏长播；PCM owner GC 既有失败仍需定向复核。
+  手动消费与提前帧扣回已实现；复核入口：AudioTrack/AudioOutputPump、MediaPlayer raw resource 和游戏长播。
 - **WebView 与语音**：仅有有界离线配置/回调和 ROM View 布局，页面、JavaScript、TextToSpeech 未实现。
   复现入口：游戏内网页或语音功能；不能由 WebView 构造成功推断网页可用。
 

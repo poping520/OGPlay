@@ -96,6 +96,47 @@ TEST_CASE("Android liblog text and A32 variadic calls enter structured guest log
     CHECK(records.back().message == "[guest] PVZ: score=7 name=pea");
 }
 
+TEST_CASE("Android liblog reads extended A32 varargs and aligns wide values") {
+    BoundaryFixture fixture;
+    const auto tag = fixture.output;
+    const auto format = fixture.output.Add(64U);
+    WriteGuestString(fixture, tag, "threaded_app");
+    const auto write_stack = [&](std::span<const std::uint32_t> words) {
+        for (std::size_t index = 0; index < words.size(); ++index) {
+            fixture.bus.Write32(fixture.stack.Add(index * sizeof(std::uint32_t)), words[index], 1U);
+        }
+    };
+
+    WriteGuestString(fixture, format,
+                     "Config: mcc=%d mnc=%d lang=%c%c cnt=%c%c orien=%d touch=%d dens=%d keys=%d "
+                     "nav=%d keysHid=%d navHid=%d sdk=%d size=%d long=%d modetype=%d modenight=%d");
+    write_stack(
+        std::array<std::uint32_t, 17>{0U, 'z', 'h', 'C', 'N', 2U, 3U, 320U, 1U, 1U, 3U, 1U, 19U, 3U, 2U, 1U, 1U});
+    CHECK(FastBoundaryCall(fixture, "liblog.so", "__android_log_print", {2U, tag.Value(), format.Value(), 0U}) > 0U);
+
+    // A first %lld skips r3. The double later skips an odd stack word.
+    WriteGuestString(fixture, format, "wide=%lld tail=%*.*d real=%g last=%d");
+    const auto wide = std::bit_cast<std::uint64_t>(std::int64_t{-4294967297LL});
+    const auto real = std::bit_cast<std::uint64_t>(1.5);
+    write_stack(std::array{static_cast<std::uint32_t>(wide), static_cast<std::uint32_t>(wide >> 32U), 12U, 4U, 73U,
+                           0xdeadbeefU, static_cast<std::uint32_t>(real), static_cast<std::uint32_t>(real >> 32U),
+                           99U});
+    CHECK(FastBoundaryCall(fixture, "liblog.so", "__android_log_print",
+                           {4U, tag.Value(), format.Value(), 0xfeedfaceU}) > 0U);
+
+    WriteGuestString(fixture, format, "buffer=%d %d %d %d %d %d");
+    write_stack(std::array{1U, 2U, 3U, 4U, 5U, 6U});
+    CHECK(FastBoundaryCall(fixture, "liblog.so", "__android_log_buf_print", {1U, 4U, tag.Value(), format.Value()}) >
+          0U);
+
+    const auto records = fixture.logger.Snapshot(std::nullopt, "guest.liblog");
+    REQUIRE(records.size() == 3U);
+    CHECK(records[0].message == "[guest] threaded_app: Config: mcc=0 mnc=0 lang=zh cnt=CN orien=2 touch=3 dens=320 "
+                                "keys=1 nav=1 keysHid=3 navHid=1 sdk=19 size=3 long=2 modetype=1 modenight=1");
+    CHECK(records[1].message == "[guest] threaded_app: wide=-4294967297 tail=73 real=1.5 last=99");
+    CHECK(records[2].message == "[guest] threaded_app: buffer=1 2 3 4 5 6");
+}
+
 TEST_CASE("Android liblog preserves byte counts and renders non UTF-8 tag and message bytes safely") {
     struct Sample {
         std::string tag;

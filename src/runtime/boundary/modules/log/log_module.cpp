@@ -31,6 +31,7 @@ namespace ogplay::runtime {
 namespace {
 
 constexpr std::size_t kMaximumLogBytes = 4096U;
+constexpr std::size_t kMaximumLogArgumentWords = 1024U;
 constexpr std::size_t kMaximumBinaryLogBytes = 64U * 1024U;
 constexpr std::uint32_t kFirstFormatHandle = 0x6e004000U;
 constexpr std::uint32_t kHandleStride = 4U;
@@ -190,14 +191,18 @@ std::string ParseBinaryEvent(const std::span<const std::byte> bytes,
     }
 }
 
+std::size_t AlignWideArgument(std::size_t word) {
+    return (word + 1U) & ~std::size_t{1};
+}
+
 class WordReader final {
 public:
-    WordReader(memory::AddressSpace& memory, const A32CallFrame& call,
+    WordReader(memory::AddressSpace& memory, const A32CallFrame& call, std::span<const std::uint32_t> arguments,
                const std::size_t first)
-        : memory_(memory), call_(call), cursor_(first), thread_id_(call.ThreadId()) {}
-    WordReader(memory::AddressSpace& memory, const A32CallFrame& call,
-               const memory::GuestAddress list)
-        : memory_(memory), call_(call), list_(list), thread_id_(call.ThreadId()) {}
+        : memory_(memory), arguments_(arguments), cursor_(first), thread_id_(call.ThreadId()) {}
+
+    WordReader(memory::AddressSpace& memory, const A32CallFrame& call, const memory::GuestAddress list)
+        : memory_(memory), list_(list), thread_id_(call.ThreadId()) {}
 
     std::uint32_t Next() {
         if (list_.has_value()) {
@@ -205,10 +210,10 @@ public:
             ++list_cursor_;
             return result;
         }
-        if (cursor_ >= call_.Arguments().size()) {
+        if (cursor_ >= arguments_.size()) {
             throw std::length_error("guest liblog format consumes too many A32 arguments");
         }
-        return call_.Argument(cursor_++);
+        return arguments_[cursor_++];
     }
 
     std::uint64_t Next64() {
@@ -216,8 +221,8 @@ public:
             if ((((list_->Value() / 4U) + list_cursor_) & 1U) != 0U) {
                 ++list_cursor_;
             }
-        } else if ((cursor_ & 1U) != 0U) {
-            ++cursor_;
+        } else {
+            cursor_ = AlignWideArgument(cursor_);
         }
         const auto low = Next();
         const auto high = Next();
@@ -227,105 +232,183 @@ public:
 
 private:
     memory::AddressSpace& memory_;
-    const A32CallFrame& call_;
+    std::span<const std::uint32_t> arguments_;
     std::optional<memory::GuestAddress> list_;
     std::size_t cursor_{};
     std::size_t list_cursor_{};
     std::uint64_t thread_id_{};
 };
 
-std::string FormatGuest(memory::AddressSpace& memory, const A32CallFrame& call,
-                        const std::string_view format, WordReader& words) {
+struct FormatConversion {
+    char type{};
+    std::size_t stars{};
+    std::size_t value_words{};
+    bool escaped_percent{};
+};
+
+FormatConversion ParseConversion(std::string_view format, std::size_t& cursor) {
+    FormatConversion conversion;
+    if (++cursor >= format.size()) return conversion;
+    if (format[cursor] == '%') {
+        conversion.escaped_percent = true;
+        return conversion;
+    }
+    while (cursor < format.size() && std::string_view{"-+ #0"}.find(format[cursor]) != std::string_view::npos) {
+        ++cursor;
+    }
+    const auto parse_size = [&] {
+        if (cursor < format.size() && format[cursor] == '*') {
+            ++conversion.stars;
+            ++cursor;
+        } else {
+            while (cursor < format.size() && std::isdigit(static_cast<unsigned char>(format[cursor])))
+                ++cursor;
+        }
+    };
+    parse_size();
+    if (cursor < format.size() && format[cursor] == '.') {
+        ++cursor;
+        parse_size();
+    }
+    bool wide = false;
+    if (cursor < format.size() && (format[cursor] == 'l' || format[cursor] == 'j')) {
+        wide = format[cursor] == 'j' || (cursor + 1U < format.size() && format[cursor + 1U] == 'l');
+        cursor += wide && format[cursor] == 'l' ? 2U : 1U;
+    } else if (cursor < format.size() && std::string_view{"hztL"}.find(format[cursor]) != std::string_view::npos) {
+        wide = format[cursor] == 'L';
+        ++cursor;
+        if (cursor < format.size() && format[cursor - 1U] == 'h' && format[cursor] == 'h') ++cursor;
+    }
+    if (cursor >= format.size()) return conversion;
+    conversion.type = format[cursor];
+    switch (conversion.type) {
+    case 's':
+    case 'c':
+    case 'p':
+    case 'n': conversion.value_words = 1U; break;
+    case 'd':
+    case 'i':
+    case 'u':
+    case 'x':
+    case 'X':
+    case 'o': conversion.value_words = wide ? 2U : 1U; break;
+    case 'f':
+    case 'F':
+    case 'e':
+    case 'E':
+    case 'g':
+    case 'G': conversion.value_words = 2U; break;
+    default: break;
+    }
+    return conversion;
+}
+
+std::size_t CountArgumentWords(std::string_view format, std::size_t words) {
+    for (auto cursor = format.find('%'); cursor != std::string_view::npos; cursor = format.find('%', cursor + 1U)) {
+        const auto conversion = ParseConversion(format, cursor);
+        words += conversion.stars;
+        if (conversion.value_words == 2U) words = AlignWideArgument(words);
+        words += conversion.value_words;
+        if (words > kMaximumLogArgumentWords)
+            throw std::length_error("guest liblog format exceeds the 1024-word A32 argument limit");
+    }
+    return words;
+}
+
+std::string FormatGuest(memory::AddressSpace& memory, const A32CallFrame& call, const std::string_view format,
+                        WordReader& words) {
     std::string output;
     output.reserve(std::min<std::size_t>(format.size() + 64U, kMaximumLogBytes));
-    for (std::size_t cursor = 0; cursor < format.size() && output.size() < kMaximumLogBytes;
-         ++cursor) {
+    for (std::size_t cursor = 0; cursor < format.size() && output.size() < kMaximumLogBytes; ++cursor) {
         if (format[cursor] != '%') {
             output.push_back(format[cursor]);
             continue;
         }
-        if (++cursor >= format.size()) break;
-        if (format[cursor] == '%') {
+        const auto conversion = ParseConversion(format, cursor);
+        for (std::size_t star = 0; star < conversion.stars; ++star)
+            static_cast<void>(words.Next());
+        if (conversion.escaped_percent) {
             output.push_back('%');
             continue;
         }
-        while (cursor < format.size() && std::string_view{"-+ #0"}.find(format[cursor]) !=
-                                             std::string_view::npos) {
-            ++cursor;
-        }
-        if (cursor < format.size() && format[cursor] == '*') {
-            static_cast<void>(words.Next());
-            ++cursor;
-        } else {
-            while (cursor < format.size() && std::isdigit(
-                       static_cast<unsigned char>(format[cursor]))) ++cursor;
-        }
-        if (cursor < format.size() && format[cursor] == '.') {
-            ++cursor;
-            if (cursor < format.size() && format[cursor] == '*') {
-                static_cast<void>(words.Next());
-                ++cursor;
-            } else {
-                while (cursor < format.size() && std::isdigit(
-                           static_cast<unsigned char>(format[cursor]))) ++cursor;
-            }
-        }
-        bool wide = false;
-        if (cursor < format.size() && (format[cursor] == 'l' || format[cursor] == 'j')) {
-            wide = format[cursor] == 'j' ||
-                   (cursor + 1U < format.size() && format[cursor + 1U] == 'l');
-            cursor += wide && format[cursor] == 'l' ? 2U : 1U;
-        } else if (cursor < format.size() &&
-                   std::string_view{"hztL"}.find(format[cursor]) != std::string_view::npos) {
-            wide = format[cursor] == 'L';
-            ++cursor;
-            if (cursor < format.size() && format[cursor - 1U] == 'h' &&
-                format[cursor] == 'h') ++cursor;
-        }
-        if (cursor >= format.size()) break;
-        const auto conversion = format[cursor];
+        if (conversion.type == '\0') break;
+        std::uint64_t argument = 0;
+        if (conversion.value_words == 2U) argument = words.Next64();
+        if (conversion.value_words == 1U) argument = words.Next();
         std::ostringstream value;
-        switch (conversion) {
-            case 's':
-                output += ReadCString(memory,
-                    GuestCString{memory::GuestAddress{words.Next()}}, call.ThreadId());
-                continue;
-            case 'c': value << static_cast<char>(words.Next()); break;
-            case 'd': case 'i':
-                if (wide) value << static_cast<std::int64_t>(words.Next64());
-                else value << std::bit_cast<std::int32_t>(words.Next());
-                break;
-            case 'u':
-                if (wide) value << words.Next64(); else value << words.Next();
-                break;
-            case 'x': case 'X': case 'o': {
-                if (conversion == 'o') value << std::oct;
-                else value << std::hex << (conversion == 'X' ? std::uppercase : std::nouppercase);
-                if (wide) value << words.Next64(); else value << words.Next();
-                break;
-            }
-            case 'p': value << "0x" << std::hex << words.Next(); break;
-            case 'f': case 'F': case 'e': case 'E': case 'g': case 'G': {
-                const auto number = std::bit_cast<double>(words.Next64());
-                if (conversion == 'e' || conversion == 'E') value << std::scientific;
-                value << number;
-                break;
-            }
-            case 'n': {
-                const auto address = memory::GuestAddress{words.Next()};
-                if (!address.IsNull()) memory.Write32(address,
-                    static_cast<std::uint32_t>(output.size()), call.ThreadId());
-                continue;
-            }
-            default:
-                output.push_back('%');
-                output.push_back(conversion);
-                continue;
+        switch (conversion.type) {
+        case 's':
+            output += ReadCString(memory, GuestCString{memory::GuestAddress{static_cast<std::uint32_t>(argument)}},
+                                  call.ThreadId());
+            continue;
+        case 'c': value << static_cast<char>(argument); break;
+        case 'd':
+        case 'i':
+            if (conversion.value_words == 2U)
+                value << static_cast<std::int64_t>(argument);
+            else
+                value << std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(argument));
+            break;
+        case 'u': value << argument; break;
+        case 'x':
+        case 'X':
+        case 'o':
+            if (conversion.type == 'o')
+                value << std::oct;
+            else
+                value << std::hex << (conversion.type == 'X' ? std::uppercase : std::nouppercase);
+            value << argument;
+            break;
+        case 'p': value << "0x" << std::hex << argument; break;
+        case 'f':
+        case 'F':
+        case 'e':
+        case 'E':
+        case 'g':
+        case 'G':
+            if (conversion.type == 'e' || conversion.type == 'E') value << std::scientific;
+            value << std::bit_cast<double>(argument);
+            break;
+        case 'n': {
+            const auto address = memory::GuestAddress{static_cast<std::uint32_t>(argument)};
+            if (!address.IsNull()) memory.Write32(address, static_cast<std::uint32_t>(output.size()), call.ThreadId());
+            continue;
+        }
+        default:
+            output.push_back('%');
+            output.push_back(conversion.type);
+            continue;
         }
         output += value.str();
     }
     if (output.size() > kMaximumLogBytes) output.resize(kMaximumLogBytes);
     return output;
+}
+
+std::string FormatGuestVariadic(memory::AddressSpace& memory, const A32CallFrame& call, std::string_view format,
+                                std::size_t first) {
+    const auto stack_pointer = call.StackPointer();
+    const auto frame_words = call.Arguments();
+    const auto required = stack_pointer ? CountArgumentWords(format, first) : frame_words.size();
+    if (required <= frame_words.size()) {
+        WordReader words(memory, call, frame_words, first);
+        return FormatGuest(memory, call, format, words);
+    }
+
+    // The registered frame already holds the register prefix. Read the needed stack span at once.
+    const auto registers = call.RegisterArguments();
+    const auto stack_words = required - registers.size();
+    constexpr auto word_bytes = sizeof(std::uint32_t);
+    std::vector<std::byte> stack_bytes(stack_words * word_bytes);
+    const auto stack = std::span(stack_bytes);
+    memory.Read(*stack_pointer, stack, call.ThreadId());
+    std::vector<std::uint32_t> arguments(required);
+    std::ranges::copy(registers, arguments.begin());
+    for (std::size_t word = 0; word < stack_words; ++word) {
+        arguments[registers.size() + word] = core::ReadLittleEndian<std::uint32_t>(stack, word * word_bytes);
+    }
+    WordReader words(memory, call, arguments, first);
+    return FormatGuest(memory, call, format, words);
 }
 
 struct GuestLogEntry final {
@@ -588,19 +671,16 @@ std::uint32_t LogModule::VPrint(const A32CallFrame& call) {
 std::uint32_t LogModule::Print(const A32CallFrame& call) {
     auto& memory = impl_->context_.address_space;
     const auto format = ReadCString(memory, call.CString(2), call.ThreadId());
-    WordReader words(memory, call, 3U);
-    return impl_->Emit(0, call.Scalar<std::int32_t>(0),
-        ReadCString(memory, call.CString(1), call.ThreadId()),
-        FormatGuest(memory, call, format, words), call.ThreadId());
+    return impl_->Emit(0, call.Scalar<std::int32_t>(0), ReadCString(memory, call.CString(1), call.ThreadId()),
+                       FormatGuestVariadic(memory, call, format, 3U), call.ThreadId());
 }
 
 std::uint32_t LogModule::BufPrint(const A32CallFrame& call) {
     auto& memory = impl_->context_.address_space;
     const auto format = ReadCString(memory, call.CString(3), call.ThreadId());
-    WordReader words(memory, call, 4U);
     return impl_->Emit(call.Scalar<std::int32_t>(0), call.Scalar<std::int32_t>(1),
-        ReadCString(memory, call.CString(2), call.ThreadId()),
-        FormatGuest(memory, call, format, words), call.ThreadId());
+                       ReadCString(memory, call.CString(2), call.ThreadId()),
+                       FormatGuestVariadic(memory, call, format, 4U), call.ThreadId());
 }
 
 std::uint32_t LogModule::Assert(const A32CallFrame& call) {
@@ -610,8 +690,7 @@ std::uint32_t LogModule::Assert(const A32CallFrame& call) {
     std::string message;
     if (!call.CString(2).IsNull()) {
         const auto format = ReadCString(memory, call.CString(2), call.ThreadId());
-        WordReader words(memory, call, 3U);
-        message = FormatGuest(memory, call, format, words);
+        message = FormatGuestVariadic(memory, call, format, 3U);
     } else {
         message = condition.empty() ? "Unspecified assertion failed"
                                     : "Assertion failed: " + condition;

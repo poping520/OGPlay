@@ -4,6 +4,7 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <type_traits>
 
@@ -81,6 +82,8 @@ public:
 
     [[nodiscard]] std::span<const std::uint32_t> Arguments() const noexcept;
     [[nodiscard]] std::array<std::uint32_t, 4> RegisterArguments() const noexcept;
+
+    [[nodiscard]] std::optional<memory::GuestAddress> StackPointer() const noexcept { return stack_pointer_; }
     [[nodiscard]] std::uint64_t ThreadId() const noexcept;
     [[nodiscard]] std::uint32_t LinkRegister() const noexcept;
 
@@ -100,6 +103,7 @@ private:
     std::size_t parameter_count_{};
     std::uint64_t thread_id_{};
     std::uint32_t link_register_{};
+    std::optional<memory::GuestAddress> stack_pointer_;
     bool host_invoked_{};
     mutable std::uint32_t gl_error_{};
 };

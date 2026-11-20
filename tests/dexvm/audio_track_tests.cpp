@@ -392,10 +392,14 @@ TEST_CASE("DVM-84 static short writes initialize and GC releases PCM players") {
     REQUIRE(fixture.context->audio_tracks.size() == 1U);
     const auto player = fixture.context->audio_tracks.at(track.Value()).player;
     REQUIRE(fixture.mixer.HasPlayer(player));
-    const auto swept = fixture.vm.CollectGarbage("dvm84-audio-track");
-    CHECK(swept.freed_objects >= 1U);
+    // AudioTrack overrides finalize(): the first collection only enqueues it, native_finalize
+    // releases the player, and the next collection sweeps the finalized object.
+    static_cast<void>(fixture.vm.CollectGarbage("dvm84-audio-track"));
+    fixture.vm.RunFinalization();
     CHECK_FALSE(fixture.mixer.HasPlayer(player));
     CHECK(fixture.context->audio_tracks.empty());
+    const auto swept = fixture.vm.CollectGarbage("dvm84-audio-track-finalized");
+    CHECK(swept.freed_objects >= 1U);
 }
 
 TEST_CASE("AudioTrack periodic notifications follow mixer head boundaries") {

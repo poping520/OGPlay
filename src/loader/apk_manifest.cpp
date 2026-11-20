@@ -1316,7 +1316,7 @@ AndroidManifestFacts ReadAndroidManifest(const std::span<const std::byte> apk_by
             table.emplace();
             table->add(
                 std::make_shared<resources::ResTableData>(resources::Source{bytes, *bytes, "resources.arsc", {}}), 1);
-            table->setParameters({.density = 160, .sdkVersion = 19});
+            table->setParameters(resources::HostQueryConfiguration());
         }
         const auto value = table->getResource(id);
         if (!value) return std::nullopt;

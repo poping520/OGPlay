@@ -5,6 +5,10 @@
 #include "binary.h"
 
 namespace ogplay::loader::resources {
+ResTable_config HostQueryConfiguration() {
+    return {.density = ResTable_config::DENSITY_MEDIUM, .sdkVersion = 19};
+}
+
 bool ResTable_config::isMoreSpecificThan(const ResTable_config& o) const {
     // The order of the following tests defines the importance of one
     // configuration parameter over another.  Those tests first are more

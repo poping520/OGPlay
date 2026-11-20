@@ -105,6 +105,7 @@ struct LibraryResource {
     std::optional<std::string> string_value;
     std::string locale;
     std::uint16_t density{};
+    std::uint16_t sdk_version{};
 };
 
 struct LibraryResources {
@@ -125,8 +126,8 @@ struct LibraryResources {
         if (id == 0 || (id >> 24U) == 0x01U) return std::nullopt;
         const auto resource = table.getResource(id);
         if (!resource.has_value()) {
-            // A direct icon can have variants outside the table's current configuration.
-            return hops == 0 ? std::optional(id) : std::nullopt;
+            // The drawable may only exist outside the table's current configuration.
+            return table.getResourceName(id) ? std::optional(id) : std::nullopt;
         }
         if (resource->value.type != 0x01U) return id;
         id = resource->value.data;
@@ -145,6 +146,7 @@ struct LibraryResources {
         table.add(std::make_shared<loader::resources::ResTableData>(
                       loader::resources::Source{bytes, *bytes, "resources.arsc", {}}),
                   1);
+        table.setParameters(loader::resources::HostQueryConfiguration());
         LibraryResources result;
         const auto packages = table.packageNames();
         // Preserve the established archive package gate, including secondary
@@ -157,7 +159,8 @@ struct LibraryResources {
             std::replace(locale.begin(), locale.end(), '_', '-');
             std::optional<std::string> text;
             if (!variant.complex && variant.value.type == 3) text = table.strings(1).stringAt(variant.value.data);
-            result.entries.push_back({variant.id, std::move(text), std::move(locale), variant.config.density});
+            result.entries.push_back(
+                {variant.id, std::move(text), std::move(locale), variant.config.density, variant.config.sdkVersion});
         });
         return result;
     } catch (const std::exception&) {
@@ -278,11 +281,14 @@ ApkApplicationVisuals ExtractApkApplicationVisuals(const std::span<const std::by
         result.fallbacks.push_back(ApplicationVisualFallback::icon_resources_unavailable);
         return result;
     }
-    // The icon id has one entry per density/configuration (ldpi … xxxhdpi, anydpi XML);
-    // the largest PNG wins, the next one is tried if it does not decode.
+    // Across API-compatible configurations, the next largest PNG is tried if decoding fails.
+    const auto max_sdk_version = loader::resources::HostQueryConfiguration().sdkVersion;
     std::vector<const LibraryResource*> configurations;
-    for (const auto& entry : resources->entries)
-        if (entry.resource_id == resources->icon_id && entry.string_value.has_value()) configurations.push_back(&entry);
+    for (const auto& entry : resources->entries) {
+        if (entry.resource_id == resources->icon_id && entry.sdk_version <= max_sdk_version && entry.string_value) {
+            configurations.push_back(&entry);
+        }
+    }
     if (configurations.empty()) {
         result.fallbacks.push_back(ApplicationVisualFallback::icon_resource_missing);
         return result;

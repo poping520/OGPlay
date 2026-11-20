@@ -1053,6 +1053,41 @@ VmObjectRef PackageRef(AndroidValueVm& f, VmObjectRef object, const char* name, 
 
 }  // namespace
 
+TEST_CASE("PackageManager exposes user-disabled system package metadata through ROM") {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
+        AndroidValueVm f(backend);
+        f.context->package_name = "org.example.game";
+        const auto base = f.New("Landroid/content/Context;");
+        const auto base_root = f.vm.ProtectReferences(std::array{base});
+        const auto manager = f.On(base, "getPackageManager", "()Landroid/content/pm/PackageManager;").ref;
+        const auto manager_root = f.vm.ProtectReferences(std::array{manager});
+        constexpr auto gsf = "com.google.android.gsf";
+        const auto package = f.vm.NewStringUtf8(gsf);
+        const auto package_root = f.vm.ProtectReferences(std::array{package});
+        constexpr auto package_info = "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;";
+        const auto info = f.On(manager, "getPackageInfo", package_info, {VmValue::Ref(package), VmValue::Int(0)}).ref;
+        REQUIRE(info.IsValid());
+        const auto info_root = f.vm.ProtectReferences(std::array{info});
+        CHECK(f.vm.StringUtf8(PackageRef(f, info, "packageName", "Ljava/lang/String;")) == gsf);
+        const auto application = PackageRef(f, info, "applicationInfo", "Landroid/content/pm/ApplicationInfo;");
+        REQUIRE(application.IsValid());
+        CHECK(PackageField(f, application, "enabled", "Z") == 0);
+        constexpr auto flag_system = 1U << 0;
+        CHECK((PackageField(f, application, "flags", "I") & flag_system) != 0);
+        CHECK(f.On(manager, "getApplicationEnabledSetting", "(Ljava/lang/String;)I", {VmValue::Ref(package)}).AsInt() ==
+              3);
+
+        constexpr auto get_signatures = 0x40;
+        const auto signatures =
+            f.OnOutcome(manager, "getPackageInfo", package_info, {VmValue::Ref(package), VmValue::Int(get_signatures)});
+        CHECK(signatures.exception_class == f.linker.ResolveDescriptor("Ljava/lang/UnsupportedOperationException;"));
+        const auto unknown = f.OnOutcome(manager, "getPackageInfo", package_info,
+                                         {VmValue::Ref(f.vm.NewStringUtf8("other.package")), VmValue::Int(0)});
+        CHECK(unknown.exception_class ==
+              f.linker.ResolveDescriptor("Landroid/content/pm/PackageManager$NameNotFoundException;"));
+    }
+}
+
 TEST_CASE("PackageManager projects Manifest components, configurations and URI grants") {
     using namespace ogplay::loader;
     for (const auto backend : ogplay::test::InterpreterBackends()) {

@@ -307,6 +307,8 @@ struct ResourceConfig final {
     std::uint16_t density{};
     std::string locale;  // ResTable_config language + country bytes, "" or "en" or "zhTW"
     std::string value;
+    std::uint16_t sdk_version{};
+    std::uint8_t orientation{};
 };
 
 // Resource table with one entry per configuration for 0x7f010000 and an optional icon alias at 0x7f020000.
@@ -335,8 +337,11 @@ std::vector<std::byte> ConfigResources(const std::string& type_name, const std::
             type.push_back(std::byte{0});
         for (std::size_t byte = 0; byte < config.locale.size(); ++byte)
             type[28 + byte] = static_cast<std::byte>(config.locale[byte]);
+        type[32] = static_cast<std::byte>(config.orientation);
         type[34] = static_cast<std::byte>(config.density & 0xffU);
         type[35] = static_cast<std::byte>(config.density >> 8U);
+        type[44] = static_cast<std::byte>(config.sdk_version & 0xffU);
+        type[45] = static_cast<std::byte>(config.sdk_version >> 8U);
         Push32(type, 0);
         Patch32(type, 16, static_cast<std::uint32_t>(type.size()));
         Push16(type, 8);
@@ -663,6 +668,29 @@ TEST_CASE("launcher icon follows a string resource reference and picks the large
          {"res/drawable-xhdpi/icon.png", SolidPng(96, {0, 0, 255, 255})}});
     const auto visuals = ogplay::app::ExtractApkApplicationVisuals(apk);
     CHECK(visuals.fallbacks.empty());
+    CHECK(PngSide(visuals.icon_png) == 96);
+}
+
+TEST_CASE("launcher icon follows a string alias to qualified drawable variants") {
+    std::vector<ResourceConfig> configs{{160, "", "res/drawable-mdpi-v4/icon.png", 4},
+                                        {320, "", "res/drawable-xhdpi-v4/icon.png", 4}};
+    SUBCASE("all drawable variants require API 4") {}
+    SUBCASE("a larger drawable requiring API 20 is skipped") {
+        configs.push_back({480, "", "res/drawable-xxhdpi-v20/icon.png", 20});
+    }
+    SUBCASE("the drawable has only a landscape variant") {
+        configs = {{320, "", "res/drawable-land-xhdpi-v4/icon.png", 4, 2}};
+    }
+
+    const auto apk = StoredZip({{"AndroidManifest.xml", Manifest(true, true, 0x7f020000U)},
+                                {"resources.arsc", ConfigResources("drawable", "icon", configs, true)},
+                                {"res/drawable-mdpi-v4/icon.png", SolidPng(48, {255, 0, 0, 255})},
+                                {"res/drawable-xhdpi-v4/icon.png", SolidPng(96, {0, 0, 255, 255})},
+                                {"res/drawable-xxhdpi-v20/icon.png", SolidPng(144, {0, 255, 0, 255})},
+                                {"res/drawable-land-xhdpi-v4/icon.png", SolidPng(96, {0, 0, 255, 255})}});
+    const auto visuals = ogplay::app::ExtractApkApplicationVisuals(apk);
+    CHECK(visuals.fallbacks.empty());
+    REQUIRE_FALSE(visuals.icon_png.empty());
     CHECK(PngSide(visuals.icon_png) == 96);
 }
 

@@ -14,7 +14,8 @@ namespace ogplay::runtime {
 A32CallFrame::A32CallFrame(memory::AddressSpace& address_space, const cpu::A32State& state,
                            const std::size_t parameter_count)
     : parameter_count_(parameter_count), thread_id_(state.ThreadId()),
-      link_register_(state.Register(cpu::CoreRegister::lr)) {
+      link_register_(state.Register(cpu::CoreRegister::lr)),
+      stack_pointer_(memory::GuestAddress{state.Register(cpu::CoreRegister::sp)}) {
     if (parameter_count > arguments_.size()) {
         throw std::length_error("A32 HLE call exceeds the supported argument count");
     }
@@ -28,7 +29,7 @@ A32CallFrame::A32CallFrame(memory::AddressSpace& address_space, const cpu::A32St
     const auto stack_words = parameter_count - registers.size();
     std::array<std::byte, (kMaximumA32CallArguments - registers.size()) * sizeof(std::uint32_t)> bytes{};
     const auto stack_bytes = std::span(bytes).first(stack_words * sizeof(std::uint32_t));
-    address_space.Read(memory::GuestAddress{state.Register(cpu::CoreRegister::sp)}, stack_bytes, thread_id_);
+    address_space.Read(*stack_pointer_, stack_bytes, thread_id_);
     for (std::size_t word = 0; word < stack_words; ++word) {
         std::uint32_t value{};
         for (std::size_t byte = 0; byte < sizeof(value); ++byte) {
@@ -50,7 +51,8 @@ A32CallFrame::A32CallFrame(const std::span<const std::uint32_t> arguments, const
 
 A32CallFrame::A32CallFrame(memory::AddressSpace& address_space, const cpu::A32HostCallContext& context,
                            const std::size_t parameter_count)
-    : parameter_count_(parameter_count), thread_id_(context.thread_id), link_register_(context.registers[14]) {
+    : parameter_count_(parameter_count), thread_id_(context.thread_id), link_register_(context.registers[14]),
+      stack_pointer_(memory::GuestAddress{context.registers[13]}) {
     if (parameter_count > arguments_.size()) {
         throw std::length_error("A32 HLE call exceeds the supported argument count");
     }
@@ -61,7 +63,7 @@ A32CallFrame::A32CallFrame(memory::AddressSpace& address_space, const cpu::A32Ho
     const auto stack_words = parameter_count - 4U;
     std::array<std::byte, (kMaximumA32CallArguments - 4U) * sizeof(std::uint32_t)> bytes{};
     const auto stack_bytes = std::span(bytes).first(stack_words * sizeof(std::uint32_t));
-    address_space.Read(memory::GuestAddress{context.registers[13]}, stack_bytes, thread_id_);
+    address_space.Read(*stack_pointer_, stack_bytes, thread_id_);
     for (std::size_t word = 0; word < stack_words; ++word) {
         std::uint32_t value{};
         for (std::size_t byte = 0; byte < sizeof(value); ++byte) {

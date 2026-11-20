@@ -77,6 +77,11 @@ UTF-8 有效性和 GBK 码表解码，`\` 视为分隔符。加密、分卷、�
 `Android`、`sdcard`、`emulated/0` 之后的部分映射到 /sdcard 对应位置；以包名命名的目录直接含 .obb 文件时挂到
 Android/obb/<名>，否则 Android/data/<名>。两者只在取哪个标记、哪些名字算包名上不同：选定目录的宿主路径取最内层标记、
 只认所选 APK 的包名；压缩包成员取最外层标记（遇到包名目录即停）、包名形的名字都算。
+`PlanDataDirectory` 规划所选数据目录（GUI 导入）：文件按目录在 /sdcard 下的位置（GuessDataMount）放置，Android/<类>
+规范拼写；只有 APK 包名（或唯一的其他包名）在 Android/(data|obb|media) 下的目录是数据，挂载点按 `ArchiveMount`
+（data 与 obb 并存即 /sdcard/Android）；其余内容（APK 与顶层说明除外）按不含数据的最浅路径分组为 extras。没有包名目录或
+有多个其他包名时整目录为数据（与普通复制相同）。`OpenDataDirectory` 把宿主目录作为 ImportSource，按文件克隆或复制，
+拒绝与库根互相包含、符号链接与特殊文件。
 `PlanArchive` 只看路径：APK 候选按层级浅、文件名不含独立的 mod 优先；根部扩展文件归 Android/obb/<包>；
 `Android/` 下其他文件忽略；单层包装目录被看穿；说明/图片/清单等根部杂项忽略，
 其余顶层内容为 extras（默认不导入，选中后放在 /sdcard/<路径>）。`ArchiveMount` 取所选内容最近的公共目录，

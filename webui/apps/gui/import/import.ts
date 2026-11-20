@@ -9,11 +9,17 @@ export interface ImportSummary {
 }
 /** What the host found in a game archive: its APKs (the analyzed one is `apk`), the data pack it recognized with
  *  the mount it planned (and the /sdcard top level, used once extras are chosen), and the parts of no known use. */
-export interface ArchiveSummary {
+export interface ArchiveSummary extends ArchiveData {
   apks: { path: string; size: number }[]; apk: string;
+}
+/** An archive's data pack as the host planned it, also the answer for a data archive picked on its own. */
+export interface ArchiveData {
   data: (DataDirectory & { guest_dir: string; sdcard: Omit<DataDirectory, 'path'> }) | null;
   extras: { name: string; files: number; bytes: number }[];
 }
+/** A data pack picked apart from the APK: a directory (planned by its package directories; `package` is the one
+ *  used, null when the whole directory is taken) or an archive. */
+export interface DataPack extends ArchiveData { kind: 'directory' | 'archive'; package?: string | null }
 export interface ImportJob {
   job: string; state: 'uploading' | 'analyzing' | 'ready' | 'importing' | 'imported' | 'cancelled' | 'failed';
   summary?: ImportSummary; installation_id?: string; message?: string;
@@ -36,7 +42,7 @@ export function importingStage(job: ImportJob, unpacking = false): string {
   return unpacking ? t('正在解压数据包… {percent}%（{copied} / {total}）', params) : t('正在复制数据包… {percent}%（{copied} / {total}）', params);
 }
 /** With extras chosen, an archive's data mounts at /sdcard: the preview then lists that level plus the extras. */
-export function archivePreview(archive: ArchiveSummary, extras: string[]): DataDirectory | null {
+export function archivePreview(archive: ArchiveData, extras: string[]): DataDirectory | null {
   const chosen = archive.extras.filter(extra => extras.includes(extra.name));
   if (!chosen.length) return archive.data;
   const base = archive.data?.sdcard ?? { entries: [], entry_count: 0, files: 0, bytes: 0, truncated: false };

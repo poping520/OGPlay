@@ -225,7 +225,8 @@ export function App() {
   // The selected game's status (with its fix and the running instance), and a failed last run beside it; the hero
   // and the desktop's bar share it. The bar has no cartridge flag, so it says 运行中 itself.
   const stateRow = (game: LibraryItem) => {
-    const status = statusOf(game), detail = statusDetail(game), lastRun = game.running ? null : lastRunText(game);
+    // A running game's state needs no reason; that text only explains why 开始游戏 is unavailable.
+    const status = statusOf(game), detail = game.status === 'running' ? '' : statusDetail(game), lastRun = game.running ? null : lastRunText(game);
     const fix = game.status === 'missing_external' ? <button class="link" onClick={() => openGameSettings(game)}>{t('选择数据包 →')}</button> :
       game.status === 'damaged' && !game.running ? <button class="link" onClick={() => requestRemoval(game)}>{t('删除后重新导入 →')}</button> : null;
     const runtime = instance ? ` · PID ${instance.process_id}${instance.port ? t(' · MCP 端口 {port}', { port: instance.port }) : ''}` : '';

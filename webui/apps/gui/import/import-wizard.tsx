@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { rpc } from '../shared/rpc';
-import { archivePreview, formatBytes, guestPathError, importingStage, normalizeGuestPath, pause, pickSource, upload, type ExternalMode, type ImportJob } from './import';
-import { MountPreview, useDataDirectory } from './mount-preview';
+import { archivePreview, formatBytes, guestPathError, importingStage, normalizeGuestPath, pause, pickSource, upload, type ArchiveData, type DataPack, type ExternalMode, type ImportJob } from './import';
+import { MountPreview } from './mount-preview';
 import { gameName, t } from '../shared/i18n';
 import { has } from '../shared/features';
 
@@ -21,8 +21,6 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
   const [stage, setStage] = useState(() => t('选择安装包'));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [external, setExternal] = useState('');
-  const [externalLabel, setExternalLabel] = useState('');
   const [externalGuest, setExternalGuest] = useState('/sdcard');
   // Typed mount positions win over the one inferred from the picked directory.
   const [guestEdited, setGuestEdited] = useState(false);
@@ -34,12 +32,17 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
   const [label, setLabel] = useState(file?.name ?? '');
   // Archive parts of no known use the user chose to bring along (mounted under /sdcard).
   const [extras, setExtras] = useState<string[]>([]);
+  // A data pack picked apart from the APK (directory or archive), as the host planned it; its data and extras stand
+  // in for the APK archive's.
+  const [dataPack, setDataPack] = useState<(DataPack & { label: string }) | null>(null);
   const summary = job?.summary;
   const archive = summary?.archive ?? null;
-  // The data pack comes out of the archive (recognized, or extras chosen); otherwise a directory may be picked.
-  const archiveData = !!archive && (!!archive.data || extras.length > 0);
+  // The data pack comes out of the APK's archive (recognized, or extras chosen); otherwise one may be picked.
+  const archiveData = !!archive && !dataPack && (!!archive.data || extras.length > 0);
+  const linking = dataPack?.kind === 'directory' && externalMode === 'link';
+  const withData = archiveData || !!dataPack;
   const guest = normalizeGuestPath(externalGuest);
-  const guestError = external || archiveData ? guestPathError(guest) : null;
+  const guestError = withData ? guestPathError(guest) : null;
   const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason);
   async function poll(result: ImportJob, onPoll?: (job: ImportJob) => void): Promise<ImportJob> {
     while (result.state === 'analyzing' || result.state === 'importing') {
@@ -64,8 +67,8 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
   async function analyze(dropped: File | null) {
     await run(async () => {
       if (activeJob.current) await rpc('library.job.cancel', { job: activeJob.current });
-      activeJob.current = ''; setJob(null); setConfirmed(false); setExternal(defaultExternal); setExternalLabel(''); setExternalGuest('/sdcard'); setGuestEdited(false); setExternalMode('copy');
-      setExtras([]);
+      activeJob.current = ''; setJob(null); setConfirmed(false); setExternalGuest('/sdcard'); setGuestEdited(false); setExternalMode('copy');
+      setExtras([]); setDataPack(null);
       let initial: ImportJob;
       if (dropped) {
         setStage(t('正在读取拖入的 APK…'));
@@ -79,14 +82,20 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
         activeJob.current = initial.job;
       }
       setStage(t('正在分析 APK…'));
-      setJob(await poll(initial)); setStage('');
+      const ready = await poll(initial);
+      setJob(ready); setStage('');
+      // The default data directory is offered once the package is known; failing to read it does not stop the import.
+      if (defaultExternal && !ready.summary?.archive?.data) {
+        try { await attach(defaultExternal, defaultExternal); }
+        catch (reason) { if (!disposed.current) setError(message(reason)); }
+      }
     });
   }
   // Another APK from the same archive: analyzed afresh, the archive's data plan follows its package.
   async function chooseApk(apk: string) {
     await run(async () => {
       if (activeJob.current) await rpc('library.job.cancel', { job: activeJob.current });
-      activeJob.current = ''; setJob(null); setConfirmed(false); setExtras([]); setGuestEdited(false);
+      activeJob.current = ''; setJob(null); setConfirmed(false); setExtras([]); setDataPack(null); setGuestEdited(false);
       setStage(t('正在分析安装包…'));
       const initial = await rpc<ImportJob>('library.analyze', { path: source, apk });
       activeJob.current = initial.job;
@@ -112,15 +121,59 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
     void analyze(file);
     return () => { disposed.current = true; dialog.current?.close(); };
   }, []);
-  // The host lists the chosen directory so the preview shows real guest paths.
-  const { data, error: dataError } = useDataDirectory(external, summary?.package);
-  const suggested = data?.suggested_guest_dir ?? null;
-  useEffect(() => { if (data && !guestEdited) setExternalGuest(suggested ?? '/sdcard'); }, [data, guestEdited]);
-  // An archive's mount is the host's plan, or /sdcard once extras come along, until the user types another.
+  // The mount is the host's plan, or /sdcard once extras come along, until the user types another.
+  const planned = dataPack ?? archive;
   useEffect(() => {
-    if (archive && !guestEdited) setExternalGuest(extras.length ? '/sdcard' : archive.data?.guest_dir ?? '/sdcard');
-  }, [archive, extras, guestEdited]);
-  const canImport = summary && job?.state === 'ready' && !guestError && (!summary.existing_instances || confirmed);
+    if (planned && !guestEdited) setExternalGuest(extras.length ? '/sdcard' : planned.data?.guest_dir ?? '/sdcard');
+  }, [planned, extras, guestEdited]);
+  // The host plans the pick for the analyzed package; with nothing recognized in an archive, all of it comes along.
+  async function attach(path: string, shown: string) {
+    const found = await rpc<DataPack>('library.data_pack', { job: activeJob.current, path });
+    setGuestEdited(false); setExternalMode('copy');
+    setExtras(found.data ? [] : found.extras.map(extra => extra.name));
+    setDataPack({ ...found, label: shown });
+  }
+  async function pickData(kind: 'directory' | 'file') {
+    await run(async () => {
+      setStage(kind === 'directory' ? t('正在读取数据包目录…') : t('正在读取数据包压缩包…'));
+      try {
+        const picked = await pickSource(kind);
+        if (picked) await attach(picked.path, picked.label);
+      } finally { if (!disposed.current) setStage(''); }
+    });
+  }
+  async function clearData() {
+    await run(async () => {
+      await rpc('library.data_pack', { job: activeJob.current });
+      setDataPack(null); setExtras([]); setGuestEdited(false); setExternalMode('copy');
+    });
+  }
+  const canImport = summary && job?.state === 'ready' && !guestError && (!summary.existing_instances || confirmed) &&
+    (!dataPack || !!dataPack.data || extras.length > 0);
+  // What the host made of the picked data pack, shown above its mount.
+  const packNote = (pack: DataPack): [string, string] => {
+    if (pack.kind === 'archive')
+      return pack.data ? ['', t('已从压缩包中识别数据包')] : ['', t('压缩包里没有可识别的数据包，默认全部放到 /sdcard 下')];
+    if (!pack.package) return ['warn', t('未找到 {package} 的包名目录，将导入整个目录', { package: summary?.package ?? '' })];
+    if (pack.package.toLowerCase() !== summary?.package.toLowerCase())
+      return ['warn', t('包名目录 {found} 与 APK 包名不同，按它导入', { found: pack.package })];
+    return ['', t('已识别包名目录，只导入 {package} 的数据', { package: pack.package })];
+  };
+  const extrasList = (from: ArchiveData, caption: string) => from.extras.length > 0 && <div class="iw-extras">
+    <div class="iw-title"><b>{t('其他内容')}</b><small>{t(caption)}</small></div>
+    {from.extras.map(extra => <label key={extra.name} class="iw-check">
+      <input type="checkbox" checked={extras.includes(extra.name)} disabled={busy}
+        onChange={event => { const on = event.currentTarget.checked; setExtras(list => on ? [...list, extra.name] : list.filter(name => name !== extra.name)); }} />
+      <span><code>{extra.name}</code>{t(' · {n} 个文件 · {size}', { n: extra.files, size: formatBytes(extra.bytes) })}</span></label>)}
+  </div>;
+  const mountRow = <>
+    <div class="iw-row"><span>{t('挂载位置')}</span>
+      <label class={guestError ? 'iw-txt bad' : 'iw-txt'}><input aria-label={t('数据包挂载位置')} value={externalGuest} disabled={busy} spellcheck={false}
+        onInput={event => { setExternalGuest(event.currentTarget.value); setGuestEdited(true); }} /></label>
+    </div>
+    {guestError && <p class="iw-note bad">{guestError}</p>}
+  </>;
+  const chosenLabel = dataPack?.label ?? '';
   const led = error || job?.state === 'failed' ? 'danger' : committing || busy ? 'running' : summary ? 'ready' : '';
   const sourceName = label.split(/[\\/]/).pop();
   return <dialog ref={dialog} class="import-wizard" aria-label={t('导入游戏')} onCancel={event => { event.preventDefault(); void close(); }}>
@@ -151,50 +204,39 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
               onClick={() => { if (item.path !== archive.apk) void chooseApk(item.path); }}>
               <code>{item.path}</code><small>{formatBytes(item.size)}</small></button>)}</div>
         </>}
-        <div class="iw-title"><b>{t('数据包')}</b><small>{archive.data ? t('已从压缩包中识别') : t('压缩包里没有可识别的数据包')}</small></div>
-        {archiveData && <>
-          <div class="iw-row"><span>{t('挂载位置')}</span>
-            <label class={guestError ? 'iw-txt bad' : 'iw-txt'}><input aria-label={t('数据包挂载位置')} value={externalGuest} disabled={busy} spellcheck={false}
-              onInput={event => { setExternalGuest(event.currentTarget.value); setGuestEdited(true); }} /></label>
-          </div>
-          {guestError && <p class="iw-note bad">{guestError}</p>}
-          <MountPreview caption={t('挂载效果预览')} guest={guest} invalid={!!guestError} data={archivePreview(archive, extras)} error="" />
+        {!dataPack && <>
+          <div class="iw-title"><b>{t('数据包')}</b><small>{archive.data ? t('已从压缩包中识别') : t('压缩包里没有可识别的数据包')}</small></div>
+          {archiveData && <>
+            {mountRow}
+            <MountPreview caption={t('挂载效果预览')} guest={guest} invalid={!!guestError} data={archivePreview(archive, extras)} error="" />
+          </>}
+          {extrasList(archive, '默认不导入；勾选后放到 /sdcard 下')}
         </>}
-        {archive.extras.length > 0 && <div class="iw-extras">
-          <div class="iw-title"><b>{t('其他内容')}</b><small>{t('默认不导入；勾选后放到 /sdcard 下')}</small></div>
-          {archive.extras.map(extra => <label key={extra.name} class="iw-check">
-            <input type="checkbox" checked={extras.includes(extra.name)} disabled={busy}
-              onChange={event => { const on = event.currentTarget.checked; setExtras(list => on ? [...list, extra.name] : list.filter(name => name !== extra.name)); }} />
-            <span><code>{extra.name}</code>{t(' · {n} 个文件 · {size}', { n: extra.files, size: formatBytes(extra.bytes) })}</span></label>)}
-        </div>}
       </section>}
       {!archiveData && <section class="iw-data">
         <div class="iw-title"><b>{t('数据包')}</b><small>{t('可选')}</small></div>
         <div class="iw-pick">
-          <span class={external ? 'iw-host' : 'iw-host empty'} title={externalLabel || external}><span><bdi>{externalLabel || external || t('未选择，不需要可跳过')}</bdi></span></span>
-          <button disabled={busy} onClick={() => void run(async () => {
-            // Android copies the picked directory before answering, which can take a while for a large pack.
-            setStage(t('正在读取数据包目录…'));
-            try {
-              const picked = await pickSource('directory');
-              if (picked) { setExternal(picked.path); setExternalLabel(picked.label); }
-            } finally { if (!disposed.current) setStage(''); }
-          })}>{external ? t('更换') : t('选择目录')}</button>
-          {external && <button disabled={busy} onClick={() => { setExternal(''); setExternalLabel(''); }}>{t('清除')}</button>}
+          <span class={chosenLabel ? 'iw-host' : 'iw-host empty'} title={chosenLabel}><span><bdi>{chosenLabel || t('未选择，不需要可跳过')}</bdi></span></span>
+          {chosenLabel
+            ? <button disabled={busy} onClick={() => void clearData()}>{t('清除')}</button>
+            : <>
+              <button disabled={busy} onClick={() => void pickData('directory')}>{t('选择目录')}</button>
+              <button disabled={busy} onClick={() => void pickData('file')}>{t('选择压缩包')}</button>
+            </>}
         </div>
-        {external && <>
-          <div class="iw-row"><span>{t('导入方式')}</span>
+        {dataPack && <>
+          {(([tone, text]) => <p class={tone ? `iw-note ${tone}` : 'iw-note'}>{text}</p>)(packNote(dataPack))}
+          {dataPack.kind === 'directory' && <div class="iw-row"><span>{t('导入方式')}</span>
             <div class="seg" role="radiogroup" aria-label={t('数据包导入方式')}>{MODES.filter(item => item.value === 'copy' || has('path_settings')).map(item =>
               <button role="radio" aria-checked={item.value === externalMode} class={item.value === externalMode ? 'on' : ''} disabled={busy}
-                onClick={() => setExternalMode(item.value)}>{t(item.label)}</button>)}</div>
-          </div>
-          {externalMode === 'link' && <p class="iw-note warn">{t('原目录移动、删除或磁盘断开后，游戏将无法启动。')}</p>}
-          <div class="iw-row"><span>{t('挂载位置')}</span>
-            <label class={guestError ? 'iw-txt bad' : 'iw-txt'}><input aria-label={t('数据包挂载位置')} value={externalGuest} disabled={busy} spellcheck={false}
-              onInput={event => { setExternalGuest(event.currentTarget.value); setGuestEdited(true); }} /></label>
-          </div>
-          {guestError && <p class="iw-note bad">{guestError}</p>}
-          <MountPreview caption={t('挂载效果预览')} guest={guest} invalid={!!guestError} data={data} error={dataError} />
+                onClick={() => { setExternalMode(item.value); if (item.value === 'link') setExtras([]); }}>{t(item.label)}</button>)}</div>
+          </div>}
+          {linking && <p class="iw-note warn">{t('原目录移动、删除或磁盘断开后，游戏将无法启动。')}</p>}
+          {(dataPack.data || extras.length > 0) && <>
+            {mountRow}
+            <MountPreview caption={t('挂载效果预览')} guest={guest} invalid={!!guestError} data={archivePreview(dataPack, extras)} error="" />
+          </>}
+          {!linking && extrasList(dataPack, dataPack.data ? '默认不导入；勾选后放到 /sdcard 下' : '勾选后放到 /sdcard 下')}
         </>}
       </section>}
       {summary.existing_instances > 0 && <label class="iw-check"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.currentTarget.checked)} />{t('游戏库中已有 {n} 份该游戏；另外添加一份，现有游戏及存档保留。', { n: summary.existing_instances })}</label>}
@@ -207,11 +249,12 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
       <button class="primary" disabled={busy || !canImport} onClick={() => void run(async () => {
         setStage(importingStage({ job: activeJob.current, state: 'importing' })); setCommitting(true); setCancelling(false);
         try {
-          // Archive data: the host's mount unless the user typed one; a picked directory: the mount shown.
-          const params = archiveData ? { extras, ...(guestEdited ? { external_guest_dir: guest } : {}) }
-            : { external_guest_dir: external ? guest : '/sdcard', ...(external ? { external_dir: external, external_mode: externalMode } : {}) };
+          // Planned data: the host's mount unless the user typed one; a linked directory takes no extras.
+          const params = withData ? { extras: linking ? [] : extras, ...(guestEdited ? { external_guest_dir: guest } : {}), ...(linking ? { external_mode: 'link' } : {}) }
+            : { external_guest_dir: '/sdcard' };
+          const unpacking = archiveData || dataPack?.kind === 'archive';
           const initial = await rpc<ImportJob>('library.import', { job: activeJob.current, new_instance: true, ...params });
-          const result = await poll(initial, value => setStage(importingStage(value, archiveData))); setJob(result);
+          const result = await poll(initial, value => setStage(importingStage(value, unpacking))); setJob(result);
           if (result.state === 'cancelled') { activeJob.current = ''; setStage(t('已取消导入，可重新选择 APK')); return; }
           if (result.state !== 'imported' || !result.installation_id) throw new Error(t('宿主未返回导入结果。'));
           setStage(t('已加入游戏库')); activeJob.current = '';

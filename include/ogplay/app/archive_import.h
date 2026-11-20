@@ -75,6 +75,25 @@ OGPLAYCORE_API std::string ExtractArchiveData(ImportSource& source, const Archiv
                                               std::span<const std::string> extras,
                                               const std::filesystem::path& destination, ImportProgress* progress);
 
+// A picked data directory planned the way an archive's data is. files are its regular files relative to it; base
+// is the directory's own place under /sdcard (GuessDataMount, "/sdcard" for an sdcard copy). Only the package's own
+// directories below /sdcard/Android/(data|obb|media) are data: the APK package's, or else the one package name
+// present there (package then names it). Everything else but APKs and top-level readmes is an extra, named by its
+// shallowest part holding no data. With no such directory (or several foreign ones) package is empty and every
+// file is data where it lies, as a plain directory copy. Guest spellings of Android/<kind> are canonical.
+struct DataDirectoryPlan final {
+    ArchivePlan plan;
+    std::string package;
+};
+
+[[nodiscard]] OGPLAYCORE_API DataDirectoryPlan PlanDataDirectory(const std::vector<ImportFile>& files,
+                                                                 std::string_view base, std::string_view package);
+
+// A host data directory as an import source: its regular files, extracted by clone or copy. A directory that
+// overlaps the library, or holds symbolic links or special files, is refused.
+[[nodiscard]] OGPLAYCORE_API std::unique_ptr<ImportSource> OpenDataDirectory(const std::filesystem::path& directory,
+                                                                             const std::filesystem::path& library_root);
+
 // A private directory under the library root (same volume, so its contents can be moved into an entry) for
 // one import's snapshot and extracted data: <root>/import-staging/work-N, alive while its OS lock is held.
 // Removed with everything left in it when this object goes; ones left by a killed process (and the

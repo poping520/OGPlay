@@ -148,7 +148,67 @@ void SweepStaleStaging(const std::filesystem::path& parent) {
     }
 }
 
+// A picked data directory read in place: its regular files, cloned or copied into an import's work directory.
+class DataDirectorySource final : public ImportSource {
+public:
+    explicit DataDirectorySource(std::filesystem::path root) : root_(std::move(root)) {
+        std::uint64_t total = 0;
+        for (auto& item : ScanDataPack(root_, total)) {
+            if (item.directory) continue;
+            const auto text = item.relative.generic_u8string();
+            files_.push_back({std::string(reinterpret_cast<const char*>(text.data()), text.size()), item.size});
+            paths_.push_back(std::move(item.relative));
+        }
+    }
+
+    [[nodiscard]] const std::vector<ImportFile>& Files() const override { return files_; }
+
+    void Extract(std::span<const ImportExtraction> work, ImportProgress* progress) override {
+        std::uint64_t remaining = 0;
+        for (const auto& item : work)
+            remaining += files_.at(item.index).size;
+        bool space_checked = false;
+        for (const auto& item : work) {
+            ThrowIfImportCancelled(progress);
+            const auto size = files_[item.index].size;
+            const auto source = root_ / paths_[item.index];
+            std::filesystem::create_directories(item.destination.parent_path());
+            if (hal::TryCloneFile(source, item.destination)) {
+                AddCopied(progress, size);
+            } else {
+                // Clones share extents, so space only matters once a real copy is needed.
+                if (!space_checked) {
+                    const auto available = std::filesystem::space(item.destination.parent_path()).available;
+                    if (available < remaining)
+                        throw LibraryError(LibraryErrorCode::io_error, "写入游戏库失败，请检查剩余空间。",
+                                           item.destination);
+                    space_checked = true;
+                }
+                StreamCopy(source, item.destination, size, progress);
+            }
+            remaining -= size;
+        }
+    }
+
+private:
+    std::filesystem::path root_;
+    std::vector<ImportFile> files_;
+    std::vector<std::filesystem::path> paths_;
+};
+
 }  // namespace
+
+std::unique_ptr<ImportSource> OpenDataDirectory(const std::filesystem::path& directory,
+                                                const std::filesystem::path& library_root) {
+    std::error_code error;
+    const auto source = std::filesystem::weakly_canonical(directory, error);
+    const auto root = error ? std::filesystem::path{} : std::filesystem::weakly_canonical(library_root, error);
+    if (error || !std::filesystem::is_directory(source, error) || error)
+        throw LibraryError(LibraryErrorCode::not_found, "数据包目录不可用。", directory);
+    if (source == root || Contains(source, root) || Contains(root, source))
+        throw LibraryError(LibraryErrorCode::invalid_argument, "数据包目录不能与游戏库互相包含。", directory);
+    return std::make_unique<DataDirectorySource>(source);
+}
 
 void ThrowImportCancelled() {
     throw LibraryError(LibraryErrorCode::io_error,

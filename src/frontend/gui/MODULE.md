@@ -32,6 +32,13 @@ ogplay_desktop_app，Android 外壳见 `frontend/android`。
   游戏压缩包（ZIP/RAR/7z，`ogplay/app/archive_import.h`）：压缩包取首选或 `apk` 指定的 APK 解出分析，摘要多一个
   `archive {apks, apk, data{guest_dir, path, entries…, sdcard{…}} | null, extras[{name, files, bytes}]}`，APK 为 `archive: null`。
   任务快照与解出的数据放在库根 `import-staging/work-N`（持锁，下次导入清理无持有者的残留及旧版 `.gui-import-*`）。
+- `library.data_pack {job, path?}`：为 ready 任务另选数据包，按分析出的包名规划，返回 `{kind: directory|archive,
+  package, data, extras}`（data/extras 与 `archive` 同形）；不带 path 解除，重新分析即丢弃。目录（宿主目录或 `open_tree`
+  句柄）以 GuessDataMount 定位后按 `PlanDataDirectory` 只取包名目录（`package` 为所用包名，整目录回退时为 null）；
+  文件按内容识别为 ZIP/RAR/7z 后按 `PlanArchive` 规划，APK 拒绝。无数据也无杂项时拒绝。选定后它代替 APK 压缩包的数据，
+  `extras` 指它的杂项，不能另给 external_dir，未选中任何内容时 import 拒绝；复制方式解出到任务目录后整体移入。
+  `external_mode: link` 只对宿主目录有效且不接受 extras：引用规划挂载点对应的宿主目录（挂载点在所选目录之上时取其祖先），
+  未给 external_guest_dir 时挂到规划位置。摘要的挂载预览条目在挂载点高于 Android/<类>/<包> 时展开到该包名目录。
 - `library.job.poll/cancel {job}`：每服务仅一个活动导入任务；后台只读分析，失败可查询。
   `library.import {job, new_instance:true, external_dir?, external_guest_dir?, external_mode?:copy|link, extras?}`
   只消费 ready 快照，异步原子发布，默认复制数据包入库；重复提交拒绝，结果返回真实 installation id。压缩包带数据时

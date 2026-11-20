@@ -257,8 +257,8 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             method == "settings.icon_preview")
             return SettingsRequest(method, params);
         if (method == "dialog.pick" || method == "dialog.poll" || method == "library.analyze" ||
-            method == "library.external.inspect" || method == "library.import" || method.starts_with("library.job.") ||
-            method.starts_with("library.upload."))
+            method == "library.external.inspect" || method == "library.data_pack" || method == "library.import" ||
+            method.starts_with("library.job.") || method.starts_with("library.upload."))
             return ImportRequest(method, params);
         if (method != "library.list" && method != "library.launch" && method != "library.open_dir" &&
             method != "library.remove" && method != "library.clear_data" && method != "library.storage" &&

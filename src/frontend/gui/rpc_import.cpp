@@ -89,17 +89,36 @@ void DescribeDataDirectory(app::JsonWriter& writer, app::JsonWriter::Value resul
     writer.AddBool(result, "truncated", truncated);
 }
 
+// A planned file's entry in the mount preview: its top-level name below mount, or, when mount lies above an app's
+// own directory (/sdcard/Android/<kind>/<package>), the path down to that directory so the package shows.
+std::pair<std::string, bool> PreviewEntry(std::string_view mount, const std::string& path) {
+    const auto slash = path.find('/');
+    std::pair<std::string, bool> entry{path.substr(0, slash), slash != std::string::npos};
+    if (mount.empty()) return entry;
+    const auto guest = std::string(mount) + "/" + path;
+    constexpr std::string_view android = "/sdcard/Android/";
+    if (!guest.starts_with(android)) return entry;
+    const auto kind_end = guest.find('/', android.size());
+    const auto kind = kind_end == std::string::npos
+                          ? std::string_view{}
+                          : std::string_view(guest).substr(android.size(), kind_end - android.size());
+    if (kind != "data" && kind != "obb" && kind != "media") return entry;
+    const auto package_end = guest.find('/', kind_end + 1);
+    if (package_end == std::string::npos || package_end <= mount.size()) return entry;
+    return {guest.substr(mount.size() + 1, package_end - mount.size() - 1), true};
+}
+
 // The same summary as DescribeDataDirectory for files that are not on disk yet (an archive's data, a SAF
-// directory): top-level names under prefix ("" for all) and totals.
+// directory): top-level names below mount (see PreviewEntry; "" for a plain listing) and totals.
 void DescribeFiles(app::JsonWriter& writer, app::JsonWriter::Value result,
-                   const std::vector<std::pair<std::string, std::uint64_t>>& files) {
+                   const std::vector<std::pair<std::string, std::uint64_t>>& files, std::string_view mount = {}) {
     constexpr std::size_t shown_entries = 8;
     std::map<std::string, bool> top;  // name -> directory
     std::uint64_t bytes{};
     for (const auto& [path, size] : files) {
-        const auto slash = path.find('/');
-        auto& directory = top[path.substr(0, slash)];
-        directory = directory || slash != std::string::npos;
+        const auto [name, is_directory] = PreviewEntry(mount, path);
+        auto& directory = top[name];
+        directory = directory || is_directory;
         bytes += size;
     }
     std::vector<std::pair<bool, std::string>> sorted;
@@ -131,6 +150,58 @@ std::vector<std::pair<std::string, std::uint64_t>> Under(const ImportSource& sou
     return files;
 }
 
+// An archive's recognized data (with its planned mount) and its parts of no known use, as the wizard shows them.
+void DescribeArchiveData(app::JsonWriter& writer, app::JsonWriter::Value archive, const ImportSource& source,
+                         const ArchivePlan& plan) {
+    const auto mount = ArchiveMount(plan, {});
+    if (mount.empty()) {
+        writer.AddNull(archive, "data");
+    } else {
+        const auto data = writer.Object();
+        writer.AddString(data, "guest_dir", mount);
+        writer.AddString(data, "path", mount);
+        DescribeFiles(writer, data, Under(source, plan, mount), mount);
+        // With extras chosen everything mounts at /sdcard: what then shows at its top level.
+        const auto root = writer.Object();
+        DescribeFiles(writer, root, Under(source, plan, "/sdcard"), "/sdcard");
+        writer.Add(data, "sdcard", root);
+        writer.Add(archive, "data", data);
+    }
+    const auto extras = writer.Array();
+    for (const auto& extra : plan.extras) {
+        const auto item = writer.Object();
+        writer.AddString(item, "name", extra.name);
+        writer.AddUnsignedInteger(item, "files", extra.members.size());
+        writer.AddUnsignedInteger(item, "bytes", extra.bytes);
+        writer.Append(extras, item);
+    }
+    writer.Add(archive, "extras", extras);
+}
+
+// The host directory a linked data pack refers to and its mount: the picked directory's part at the planned mount,
+// or the ancestor standing for it when the mount (an app's own directory) lies above the picked directory.
+std::pair<std::filesystem::path, std::string> LinkedDataDirectory(const std::filesystem::path& picked,
+                                                                  std::string_view base,
+                                                                  const std::vector<ImportFile>& files,
+                                                                  const ArchivePlan& plan) {
+    const auto mount = ArchiveMount(plan, {});
+    const auto depth = static_cast<std::size_t>(std::count(mount.begin(), mount.end(), '/'));
+    const auto base_depth = static_cast<std::size_t>(std::count(base.begin(), base.end(), '/'));
+    auto linked = std::filesystem::absolute(picked).lexically_normal();
+    if (linked.filename().empty()) linked = linked.parent_path();
+    if (depth <= base_depth) {
+        for (auto step = depth; step < base_depth; ++step)
+            linked = linked.parent_path();
+        return {linked, mount};
+    }
+    // The parts between the picked directory and the mount, as any planned file spells them on the host.
+    const auto& path = files[plan.data.front().index].path;
+    std::size_t end = 0;
+    for (auto step = base_depth; step < depth; ++step)
+        end = path.find('/', end == 0 ? 0 : end + 1);
+    return {linked / ImportFilePath(path.substr(0, end)), mount};
+}
+
 template <class T>
 bool Ready(std::future<T>& value) {
     return value.valid() && value.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
@@ -156,6 +227,12 @@ struct GuiRpcService::ImportState {
     std::shared_ptr<ImportSource> archive;
     ArchivePlan plan;
     std::size_t apk{};
+    // A data pack picked apart from the APK (directory, host directory handle or archive) and its plan; it stands
+    // in for the APK archive's data when set. A host directory keeps its path and guest place for linking.
+    std::shared_ptr<ImportSource> data_source;
+    ArchivePlan data_plan;
+    std::optional<std::filesystem::path> data_directory;
+    std::string data_base;
     std::future<Analyzed> analyzing;
     std::future<std::string> committing;
     std::shared_ptr<ImportProgress> progress;
@@ -179,6 +256,10 @@ struct GuiRpcService::ImportState {
         analysis.reset();
         archive.reset();
         plan = {};
+        data_source.reset();
+        data_plan = {};
+        data_directory.reset();
+        data_base.clear();
     }
 
     void Update() {
@@ -260,6 +341,8 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
         Fields(params, {"path", "apk"});
     else if (method == "library.external.inspect")
         Fields(params, {"path", "package"});
+    else if (method == "library.data_pack")
+        Fields(params, {"job", "path"});
     else if (method == "library.upload.begin")
         Fields(params, {"name", "size"});
     else if (method == "library.upload.chunk")
@@ -315,6 +398,56 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
             writer.AddString(result, "suggested_guest_dir", *guest);
         else
             writer.AddNull(result, "suggested_guest_dir");
+    } else if (method == "library.data_pack") {
+        // A data pack picked apart from the APK, planned for the analyzed package; no path detaches it.
+        if (String(params, "job") != job.job || job.job.empty()) throw std::invalid_argument("unknown or expired job");
+        job.Update();
+        if (job.state != "ready" || !job.analysis || job.cancelled)
+            throw std::runtime_error("分析尚未完成或任务已提交。");
+        job.data_source.reset();
+        job.data_plan = {};
+        job.data_directory.reset();
+        job.data_base.clear();
+        if (params.Member("path")) {
+            const auto path = Path(String(params, "path"));
+            const auto& package = job.analysis->manifest.package;
+            std::shared_ptr<ImportSource> source = host_.open_tree ? host_.open_tree(path) : nullptr;
+            const bool handle = source != nullptr;
+            std::error_code error;
+            const bool directory = source || std::filesystem::is_directory(path, error);
+            ArchivePlan plan;
+            std::optional<std::string> owner;
+            std::string base;
+            if (directory) {
+                // Directories go by the package's own directories inside them, placed by where the directory sits.
+                const auto shown = host_.label ? host_.label(path) : std::string{};
+                base = app::GuessDataMount(shown.empty() ? path : Path(shown), package).value_or("/sdcard");
+                if (!source) source = OpenDataDirectory(path, store_.Root());
+                auto planned = PlanDataDirectory(source->Files(), base, package);
+                if (planned.plan.data.empty() && planned.plan.extras.empty())
+                    throw std::invalid_argument("数据包目录里没有文件。");
+                plan = std::move(planned.plan);
+                if (!planned.package.empty()) owner = std::move(planned.package);
+            } else {
+                const auto kind = DetectImportSource(path);
+                if (kind == ImportSourceKind::apk) throw std::invalid_argument("这是 APK，请选择数据包压缩包。");
+                if (kind == ImportSourceKind::unknown)
+                    throw std::invalid_argument("请选择 ZIP/RAR/7z 格式的数据包压缩包。");
+                source = OpenArchive(path);
+                plan = PlanArchive(source->Files(), package);
+                if (plan.data.empty() && plan.extras.empty()) throw std::invalid_argument("压缩包里没有可导入的数据。");
+            }
+            writer.AddString(result, "kind", directory ? "directory" : "archive");
+            if (owner)
+                writer.AddString(result, "package", *owner);
+            else
+                writer.AddNull(result, "package");
+            DescribeArchiveData(writer, result, *source, plan);
+            job.data_source = std::move(source);
+            job.data_plan = std::move(plan);
+            if (directory && !handle) job.data_directory = path;
+            job.data_base = std::move(base);
+        }
     } else {
         if (!host_.analyze || !host_.timestamp) throw std::runtime_error("导入服务不可用。");
         if (method == "library.analyze") {
@@ -420,11 +553,15 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                         if (!name || name->empty()) throw std::invalid_argument("extras requires an array of names");
                         extras.emplace_back(*name);
                     }
-                    if (!job.archive && !extras.empty()) throw std::invalid_argument("extras apply to an archive");
                 }
+                // Data comes out of the separately picked data pack, else out of the APK's own archive.
+                const auto& data_source = job.data_source ? job.data_source : job.archive;
+                const auto& data_plan = job.data_source ? job.data_plan : job.plan;
+                if (!data_source && !extras.empty()) throw std::invalid_argument("extras apply to an archive");
                 std::optional<std::filesystem::path> external;
                 if (params.Member("external_dir")) external = Path(String(params, "external_dir"));
-                const bool archive_data = job.archive && !ArchiveMount(job.plan, extras).empty();
+                bool archive_data = data_source && !ArchiveMount(data_plan, extras).empty();
+                if (job.data_source && !archive_data) throw std::invalid_argument("没有选中数据包里的任何内容。");
                 if (archive_data && external) throw std::invalid_argument("压缩包里已有数据包，不能另选数据包目录。");
                 auto mode = ExternalDataMode::copy;
                 if (params.Member("external_mode")) {
@@ -437,6 +574,17 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                 }
                 std::optional<std::string> guest;
                 if (params.Member("external_guest_dir")) guest = String(params, "external_guest_dir");
+                if (mode == ExternalDataMode::link && job.data_source) {
+                    // Linking a picked directory refers to the host directory at the planned mount, extras aside.
+                    if (!job.data_directory)
+                        throw std::invalid_argument("external_mode must be copy for this data pack");
+                    if (!extras.empty()) throw std::invalid_argument("引用原目录时不能另选其他内容。");
+                    const auto [linked, mount] = LinkedDataDirectory(*job.data_directory, job.data_base,
+                                                                     job.data_source->Files(), job.data_plan);
+                    external = linked;
+                    if (!guest) guest = mount;
+                    archive_data = false;
+                }
                 // Archive data and a host directory handle are written into the job directory first, then moved in.
                 std::shared_ptr<ImportSource> tree;
                 if (external && host_.open_tree) tree = host_.open_tree(*external);
@@ -453,7 +601,7 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                 job.progress = std::make_shared<ImportProgress>();
                 job.committing =
                     std::async(std::launch::async, [store, ready, analysis = *job.analysis, external, mode, guest,
-                                                    archive = archive_data ? job.archive : nullptr, plan = job.plan,
+                                                    archive = archive_data ? data_source : nullptr, plan = data_plan,
                                                     extras, tree, data = job.directory / "data",
                                                     timestamp = host_.timestamp(), progress = job.progress]() mutable {
                         if (ready) return store.Import(*ready, true, progress.get());
@@ -548,29 +696,7 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                 }
                 writer.Add(archive, "apks", apks);
                 writer.AddString(archive, "apk", files[job.apk].path);
-                const auto mount = ArchiveMount(job.plan, {});
-                if (mount.empty()) {
-                    writer.AddNull(archive, "data");
-                } else {
-                    const auto data = writer.Object();
-                    writer.AddString(data, "guest_dir", mount);
-                    writer.AddString(data, "path", mount);
-                    DescribeFiles(writer, data, Under(*job.archive, job.plan, mount));
-                    // With extras chosen everything mounts at /sdcard: what then shows at its top level.
-                    const auto root = writer.Object();
-                    DescribeFiles(writer, root, Under(*job.archive, job.plan, "/sdcard"));
-                    writer.Add(data, "sdcard", root);
-                    writer.Add(archive, "data", data);
-                }
-                const auto extras = writer.Array();
-                for (const auto& extra : job.plan.extras) {
-                    const auto item = writer.Object();
-                    writer.AddString(item, "name", extra.name);
-                    writer.AddUnsignedInteger(item, "files", extra.members.size());
-                    writer.AddUnsignedInteger(item, "bytes", extra.bytes);
-                    writer.Append(extras, item);
-                }
-                writer.Add(archive, "extras", extras);
+                DescribeArchiveData(writer, archive, *job.archive, job.plan);
                 writer.Add(summary, "archive", archive);
             } else {
                 writer.AddNull(summary, "archive");

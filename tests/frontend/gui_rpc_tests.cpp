@@ -807,6 +807,141 @@ TEST_CASE("GUI import takes the APK and data pack out of a game archive") {
     CHECK(fixture.store.LoadEntries().size() == imported_count);
 }
 
+TEST_CASE("GUI import takes the data pack out of a separately picked archive") {
+    Fixture fixture;
+    UploadFixture(fixture);
+    REQUIRE(Decode(PollImport(fixture)).Root().Member("result")->Member("state")->String() == "ready");
+    const auto pack = fixture.root / "data.zip", apk = fixture.root / "other.zip";
+    ogplay::test::WriteZip(pack, {{"org.example.game/main.3.org.example.game.obb", "expansion"},
+                                  {"game.apk", "ignored"},
+                                  {"picture/cover.png", "png"}});
+    ogplay::test::WriteZip(apk, {{"AndroidManifest.xml", "manifest"}});
+    const auto attach = [&](const std::filesystem::path& path) {
+        return Decode(
+            ImportCall(fixture, "library.data_pack", R"({"job":"1","path":")" + path.generic_string() + "\"}"));
+    };
+    CHECK(attach(apk).Root().Member("error"));
+    auto attached = attach(pack);
+    auto result = attached.Root().Member("result");
+    REQUIRE(result);
+    CHECK(result->Member("data")->Member("guest_dir")->String() == "/sdcard/Android/obb/org.example.game");
+    CHECK(result->Member("data")->Member("files")->UnsignedInteger() == 1);
+    REQUIRE(result->Member("extras")->Size() == 1);
+    CHECK(result->Member("extras")->Element(0)->Member("name")->String() == "picture");
+    CHECK(Decode(ImportCall(fixture, "library.import", R"({"job":"1","new_instance":true,"external_dir":"/tmp"})"))
+              .Root()
+              .Member("error"));
+    // Detached, the job takes no data; attached again, the archive's data and the chosen extra come in.
+    REQUIRE(Decode(ImportCall(fixture, "library.data_pack", R"({"job":"1"})")).Root().Member("result"));
+    CHECK(Decode(ImportCall(fixture, "library.import", R"({"job":"1","new_instance":true,"extras":["picture"]})"))
+              .Root()
+              .Member("error"));
+    REQUIRE(attach(pack).Root().Member("result"));
+    REQUIRE(Decode(ImportCall(fixture, "library.import", R"({"job":"1","new_instance":true,"extras":["picture"]})"))
+                .Root()
+                .Member("result"));
+    const auto done = Decode(PollImport(fixture));
+    REQUIRE(done.Root().Member("result")->Member("state")->String() == "imported");
+    const auto entry =
+        fixture.root / "library" / std::string(*done.Root().Member("result")->Member("installation_id")->String());
+    CHECK(std::filesystem::exists(entry / "data/Android/obb/org.example.game/main.3.org.example.game.obb"));
+    CHECK(std::filesystem::exists(entry / "data/picture/cover.png"));
+    CHECK_FALSE(std::filesystem::exists(entry / "data/game.apk"));
+}
+
+TEST_CASE("GUI import takes only the package's own directories out of a picked data directory") {
+    Fixture fixture;
+    UploadFixture(fixture);
+    REQUIRE(Decode(PollImport(fixture)).Root().Member("result")->Member("state")->String() == "ready");
+    // Outside the library root: a data pack may not overlap the library.
+    const std::filesystem::path picked = fixture.root.string() + "-pick";
+
+    struct Cleanup {
+        std::filesystem::path path;
+
+        ~Cleanup() {
+            std::error_code error;
+            std::filesystem::remove_all(path, error);
+        }
+    } cleanup{picked};
+
+    const auto write = [&](const std::filesystem::path& relative, std::string_view text) {
+        std::filesystem::create_directories((picked / relative).parent_path());
+        std::ofstream(picked / relative, std::ios::binary) << text;
+    };
+    write("Android/data/org.example.game/files/a.pak", "pak");
+    write("Android/obb/org.example.game/main.1.org.example.game.obb", "obb");
+    write("Android/data/com.other/x", "other");
+    const auto attach = [&](const std::filesystem::path& path) {
+        return Decode(
+            ImportCall(fixture, "library.data_pack", R"({"job":"1","path":")" + path.generic_string() + "\"}"));
+    };
+    auto attached = attach(picked / "Android");
+    auto result = attached.Root().Member("result");
+    REQUIRE(result);
+    CHECK(result->Member("kind")->String() == "directory");
+    CHECK(result->Member("package")->String() == "org.example.game");
+    const auto data = result->Member("data");
+    CHECK(data->Member("guest_dir")->String() == "/sdcard/Android");
+    REQUIRE(data->Member("entries")->Size() == 2);
+    CHECK(data->Member("entries")->Element(0)->Member("name")->String() == "data/org.example.game");
+    CHECK(data->Member("entries")->Element(1)->Member("name")->String() == "obb/org.example.game");
+    CHECK(result->Member("extras")->Element(0)->Member("name")->String() == "data/com.other");
+    // Linking refers to the host directory at the planned mount; extras only come with a copy.
+    CHECK(Decode(ImportCall(fixture, "library.import",
+                            R"({"job":"1","new_instance":true,"external_mode":"link","extras":["data/com.other"]})"))
+              .Root()
+              .Member("error"));
+    REQUIRE(
+        Decode(ImportCall(fixture, "library.import", R"({"job":"1","new_instance":true})")).Root().Member("result"));
+    auto done = Decode(PollImport(fixture));
+    REQUIRE(done.Root().Member("result")->Member("state")->String() == "imported");
+    auto entry =
+        fixture.root / "library" / std::string(*done.Root().Member("result")->Member("installation_id")->String());
+    CHECK(std::filesystem::exists(entry / "data/data/org.example.game/files/a.pak"));
+    CHECK(std::filesystem::exists(entry / "data/obb/org.example.game/main.1.org.example.game.obb"));
+    CHECK_FALSE(std::filesystem::exists(entry / "data/data/com.other"));
+    CHECK(std::filesystem::exists(picked / "Android/data/com.other/x"));  // copied, never moved
+
+    // With only the data directory present, picking Android links the package directory itself.
+    std::filesystem::remove_all(picked / "Android/obb");
+    auto started = Decode(ImportCall(fixture, "library.upload.begin", R"({"name":"game.apk","size":7})"));
+    REQUIRE(started.Root().Member("result"));
+    REQUIRE(Decode(ImportCall(fixture, "library.upload.chunk", R"({"job":"2","offset":0,"data":"Zml4dHVyZQ=="})"))
+                .Root()
+                .Member("result"));
+    REQUIRE(Decode(ImportCall(fixture, "library.upload.finish", R"({"job":"2"})")).Root().Member("result"));
+    for (unsigned attempt = 0; attempt < 100000; ++attempt) {
+        if (Decode(ImportCall(fixture, "library.job.poll", R"({"job":"2"})"))
+                .Root()
+                .Member("result")
+                ->Member("state")
+                ->String() == "ready")
+            break;
+        std::this_thread::yield();
+    }
+    attached = Decode(ImportCall(fixture, "library.data_pack",
+                                 R"({"job":"2","path":")" + (picked / "Android").generic_string() + "\"}"));
+    result = attached.Root().Member("result");
+    REQUIRE(result);
+    CHECK(result->Member("data")->Member("guest_dir")->String() == "/sdcard/Android/data/org.example.game");
+    REQUIRE(Decode(ImportCall(fixture, "library.import", R"({"job":"2","new_instance":true,"external_mode":"link"})"))
+                .Root()
+                .Member("result"));
+    for (unsigned attempt = 0; attempt < 100000; ++attempt) {
+        done = Decode(ImportCall(fixture, "library.job.poll", R"({"job":"2"})"));
+        if (done.Root().Member("result")->Member("state")->String() != "importing") break;
+        std::this_thread::yield();
+    }
+    REQUIRE(done.Root().Member("result")->Member("state")->String() == "imported");
+    entry = fixture.root / "library" / std::string(*done.Root().Member("result")->Member("installation_id")->String());
+    std::ifstream settings(entry / "settings.toml");
+    const std::string text{std::istreambuf_iterator<char>(settings), {}};
+    CHECK(text.find("/sdcard/Android/data/org.example.game") != std::string::npos);
+    CHECK(text.find("Android/data/org.example.game\"") != std::string::npos);
+    CHECK_FALSE(std::filesystem::exists(entry / "data"));
+}
+
 TEST_CASE("GUI import invalid external directory preserves ready analysis for retry") {
     Fixture fixture;
     UploadFixture(fixture);

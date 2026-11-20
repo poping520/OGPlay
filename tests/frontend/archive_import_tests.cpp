@@ -103,6 +103,56 @@ TEST_CASE("archive plan maps pack layouts to sdcard paths") {
     }
 }
 
+TEST_CASE("data directory plan keeps the package's own directories wherever the pick sits") {
+    const auto guests = [](const ArchivePlan& plan) {
+        std::vector<std::string> result;
+        for (const auto& item : plan.data)
+            result.push_back(item.guest_path);
+        return result;
+    };
+    SUBCASE("an Android folder and the package folder inside it mount the same") {
+        const std::vector<ImportFile> android{{"data/com.a.b/files/a.pak", 3}, {"readme.txt", 1}};
+        const auto from_android = PlanDataDirectory(android, "/sdcard/Android", "com.a.b");
+        CHECK(from_android.package == "com.a.b");
+        CHECK(guests(from_android.plan) == std::vector<std::string>{"/sdcard/Android/data/com.a.b/files/a.pak"});
+        CHECK(from_android.plan.extras.empty());
+        CHECK(ArchiveMount(from_android.plan, {}) == "/sdcard/Android/data/com.a.b");
+        const auto from_package = PlanDataDirectory({{"files/a.pak", 3}}, "/sdcard/Android/data/com.a.b", "com.a.b");
+        CHECK(guests(from_package.plan) == guests(from_android.plan));
+        CHECK(ArchiveMount(from_package.plan, {}) == "/sdcard/Android/data/com.a.b");
+    }
+    SUBCASE("data and obb share a mount; other packages and folders are extras") {
+        const std::vector<ImportFile> files{{"android/Data/com.a.b/files/a", 1},
+                                            {"Android/obb/com.a.b/main.1.com.a.b.obb", 2},
+                                            {"Android/data/com.other/x", 4},
+                                            {"gameloft/save", 8},
+                                            {"game.apk", 16},
+                                            {"notes.txt", 32}};
+        const auto planned = PlanDataDirectory(files, "/sdcard", "com.a.b");
+        CHECK(planned.package == "com.a.b");
+        CHECK(guests(planned.plan) == std::vector<std::string>{"/sdcard/Android/data/com.a.b/files/a",
+                                                               "/sdcard/Android/obb/com.a.b/main.1.com.a.b.obb"});
+        CHECK(ArchiveMount(planned.plan, {}) == "/sdcard/Android");
+        REQUIRE(planned.plan.extras.size() == 2);
+        CHECK(planned.plan.extras[0].name == "Android/data/com.other");
+        CHECK(planned.plan.extras[0].members[0].guest_path == "/sdcard/Android/data/com.other/x");
+        CHECK(planned.plan.extras[1].name == "gameloft");
+    }
+    SUBCASE("a lone foreign package folder is taken; none falls back to the whole directory") {
+        const auto renamed = PlanDataDirectory({{"data/com.original/f", 1}}, "/sdcard/Android", "com.mod");
+        CHECK(renamed.package == "com.original");
+        CHECK(ArchiveMount(renamed.plan, {}) == "/sdcard/Android/data/com.original");
+        const auto plain = PlanDataDirectory({{"games/x/f", 1}, {"readme.txt", 1}}, "/sdcard/gameloft", "com.a.b");
+        CHECK(plain.package.empty());
+        CHECK(plain.plan.data.size() == 2);
+        CHECK(ArchiveMount(plain.plan, {}) == "/sdcard/gameloft");
+        const auto several =
+            PlanDataDirectory({{"data/com.x/f", 1}, {"data/com.y/f", 1}}, "/sdcard/Android", "com.a.b");
+        CHECK(several.package.empty());
+        CHECK(several.plan.data.size() == 2);
+    }
+}
+
 TEST_CASE("archive names: legacy GBK decodes, unsafe paths are refused") {
     CHECK(DecodeArchiveName("\xC4\xE3\xBA\xC3.apk") == "\xE4\xBD\xA0\xE5\xA5\xBD.apk");
     CHECK(DecodeArchiveName("\xE4\xBD\xA0.apk") == "\xE4\xBD\xA0.apk");

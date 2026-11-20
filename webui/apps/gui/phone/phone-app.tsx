@@ -238,7 +238,7 @@ function GamePage({ launcher, game, icons, back, more, start, settings, view }: 
 }) {
   const { busy, importing, cart3d, items } = launcher;
   const status = statusOf(game), tone = game.running ? 'running' : status.tone;
-  const detail = statusDetail(game), profile = profileText(game), external = externalText(game), lastRun = game.running ? null : lastRunText(game);
+  const detail = game.status === 'running' ? '' : statusDetail(game), profile = profileText(game), external = externalText(game), lastRun = game.running ? null : lastRunText(game);
   const position = items.findIndex(entry => entry.installation_id === game.installation_id) + 1;
   return <div class="ph-page ph-game">
     <header class="ph-bar">

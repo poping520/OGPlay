@@ -49,7 +49,7 @@ export function statusDetail(item: LibraryItem): string {
   case 'missing_external': return item.external.owned
     ? t('游戏库中的数据包缺失：{path}。请重新选择目录。', { path: item.external.value })
     : t('记录的数据包目录不可用：{path}。请重新选择目录。', { path: item.external.value });
-  case 'running': return t('游戏正在运行；请先退出游戏。');
+  case 'running': return t('游戏正在运行，退出后才能再次启动。');
   default: return '';
   }
 }

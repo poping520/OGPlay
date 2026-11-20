@@ -321,6 +321,81 @@ ArchivePlan PlanArchive(const std::vector<ImportFile>& files, std::string_view p
     return plan;
 }
 
+DataDirectoryPlan PlanDataDirectory(const std::vector<ImportFile>& files, std::string_view base,
+                                    std::string_view package) {
+    const auto base_parts = Split(base.substr(base.starts_with('/') ? 1 : 0));
+
+    // Each file's guest parts, Android/<kind> spelled canonically, and its package directory depth if any.
+    struct Placed final {
+        std::vector<std::string> guest;
+        std::size_t package_at{};  // index of the package name in guest; 0 when outside one
+    };
+
+    std::vector<Placed> placed;
+    placed.reserve(files.size());
+    std::set<std::string> folded_names;
+    for (const auto& file : files) {
+        Placed item{base_parts, 0};
+        for (auto& part : Split(file.path))
+            item.guest.push_back(std::move(part));
+        auto& guest = item.guest;
+        if (guest.size() > 4 && guest[0] == "sdcard" && Lower(guest[1]) == "android") {
+            const auto kind = Lower(guest[2]);
+            if (kind == "data" || kind == "obb" || kind == "media") {
+                guest[1] = "Android";
+                guest[2] = kind;
+                item.package_at = 3;
+                folded_names.insert(Lower(guest[3]));
+            }
+        }
+        placed.push_back(std::move(item));
+    }
+    const auto path = [](const std::vector<std::string>& parts, std::size_t count) {
+        return "/" + Join(parts, 0, count);
+    };
+    DataDirectoryPlan result;
+    const auto wanted = Lower(package);
+    if (folded_names.contains(wanted))
+        result.package = std::string(package);
+    else if (folded_names.size() == 1 && PackageLike(*folded_names.begin()))
+        result.package = *folded_names.begin();
+    if (result.package.empty()) {
+        for (std::size_t index = 0; index < files.size(); ++index)
+            result.plan.data.push_back({index, path(placed[index].guest, placed[index].guest.size())});
+        return result;
+    }
+    const auto chosen = Lower(result.package);
+    // The real spelling of the package directory, for the result.
+    std::set<std::string> ancestors;  // relative parts leading to (and naming) a chosen package directory
+    for (const auto& item : placed)
+        if (item.package_at && Lower(item.guest[item.package_at]) == chosen) {
+            result.package = item.guest[item.package_at];
+            for (auto count = base_parts.size() + 1; count <= item.package_at + 1; ++count)
+                ancestors.insert(Join(item.guest, base_parts.size(), count));
+        }
+    std::map<std::string, std::size_t> extras;
+    for (std::size_t index = 0; index < files.size(); ++index) {
+        const auto& item = placed[index];
+        if (item.package_at && Lower(item.guest[item.package_at]) == chosen &&
+            item.package_at + 1 < item.guest.size()) {
+            result.plan.data.push_back({index, path(item.guest, item.guest.size())});
+            continue;
+        }
+        const auto depth = item.guest.size() - base_parts.size();
+        if (IsApk(files[index].path) || (depth == 1 && PackJunk(item.guest.back()))) continue;
+        auto count = base_parts.size() + 1;
+        while (count < item.guest.size() && ancestors.contains(Join(item.guest, base_parts.size(), count)))
+            ++count;
+        const auto name = Join(item.guest, base_parts.size(), count);
+        auto [found, inserted] = extras.try_emplace(name, result.plan.extras.size());
+        if (inserted) result.plan.extras.push_back({name, {}, 0});
+        auto& extra = result.plan.extras[found->second];
+        extra.members.push_back({index, path(item.guest, item.guest.size())});
+        extra.bytes += files[index].size;
+    }
+    return result;
+}
+
 std::string ArchiveMount(const ArchivePlan& plan, std::span<const std::string> extras) {
     std::vector<const ArchiveData*> chosen;
     for (const auto& item : plan.data)

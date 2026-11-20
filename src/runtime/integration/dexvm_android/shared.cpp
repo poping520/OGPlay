@@ -371,13 +371,17 @@ dx::IntrinsicHandler PlatformSystemLoadHandlerImpl(const Context& context, const
             const auto loader_id = call.vm.ClassLoaders().RoleOf(call.arguments[1].ref);
             if (!loader_id) throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "unknown class loader"};
             const dx::Interpreter::JniClassLoaderScope jni_loader(call.vm, *loader_id);
+            const auto thread_id = context->native_thread_for_context
+                                       ? context->native_thread_for_context(call.vm.CurrentContextToken())
+                                       : AndroidGuestProcess::kRootThreadId;
             const auto depth = execution_lock.ReleaseForBlocking();
             try {
                 if (application_path)
                     static_cast<void>(context->native_libraries->LoadPath(*application_path,
-                                                                          context->application_class_loader_token));
+                                                                          context->application_class_loader_token,
+                                                                          NativeLibraryEntry::java, thread_id));
                 else
-                    load(*context->native_libraries, argument, context->application_class_loader_token);
+                    load(*context->native_libraries, argument, context->application_class_loader_token, thread_id);
             } catch (const NativeLibraryLoadError& error) {
                 execution_lock.ReacquireAfterBlocking(depth);
                 throw dx::VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;", error.what()};
@@ -395,17 +399,19 @@ dx::IntrinsicHandler PlatformSystemLoadHandlerImpl(const Context& context, const
 dx::IntrinsicHandler PlatformSystemLoadHandler(const Context& context) {
     return PlatformSystemLoadHandlerImpl(
         context, "pathName",
-        [](NativeLibraryLoader& libraries, const std::string_view path, const JavaClassLoaderToken class_loader) {
-            static_cast<void>(libraries.LoadPath(path, class_loader));
+        [](NativeLibraryLoader& libraries, const std::string_view path, const JavaClassLoaderToken class_loader,
+           const std::uint64_t thread_id) {
+            static_cast<void>(libraries.LoadPath(path, class_loader, NativeLibraryEntry::java, thread_id));
         });
 }
 
 dx::IntrinsicHandler PlatformSystemLoadLibraryHandler(const Context& context) {
     return PlatformSystemLoadHandlerImpl(
         context, "libraryName",
-        [](NativeLibraryLoader& libraries, const std::string_view name, const JavaClassLoaderToken class_loader) {
+        [](NativeLibraryLoader& libraries, const std::string_view name, const JavaClassLoaderToken class_loader,
+           const std::uint64_t thread_id) {
             const auto resolved = name == "javacrypto" ? std::string_view{"ogplay_jni"} : name;
-            static_cast<void>(libraries.LoadLibrary(resolved, class_loader));
+            static_cast<void>(libraries.LoadLibrary(resolved, class_loader, thread_id));
         },
         true);
 }

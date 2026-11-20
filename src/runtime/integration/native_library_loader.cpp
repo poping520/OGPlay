@@ -382,7 +382,7 @@ public:
         return {canonical_path, module_name, *image, canonical_path, false, std::move(image)};
     }
 
-    AndroidGuestApplicationLoad LoadResolved(const ExplicitLibrary& library, const std::uint64_t thread_id = 1U) const {
+    AndroidGuestApplicationLoad LoadResolved(const ExplicitLibrary& library, const std::uint64_t thread_id) const {
         const auto closure = Closure(library);
         std::vector<AndroidGuestApplicationModuleSource> sources;
         sources.reserve(closure.size());
@@ -484,13 +484,14 @@ public:
         }
     }
 
-    NativeLibraryLoadResult LoadLibrary(const std::string_view name, const JavaClassLoaderToken loader) {
-        return LoadResolved(sources_->ResolveLibrary(name), loader);
+    NativeLibraryLoadResult LoadLibrary(const std::string_view name, const JavaClassLoaderToken loader,
+                                        const std::uint64_t thread_id) {
+        return LoadResolved(sources_->ResolveLibrary(name), loader, thread_id, NativeLibraryEntry::java);
     }
 
     NativeLibraryLoadResult LoadPath(const std::string_view path, const JavaClassLoaderToken loader,
-                                     const NativeLibraryEntry mode) {
-        return LoadResolved(sources_->ResolvePath(path), loader, mode);
+                                     const NativeLibraryEntry mode, const std::uint64_t thread_id) {
+        return LoadResolved(sources_->ResolvePath(path), loader, thread_id, mode);
     }
 
     std::optional<NativeLibrarySnapshot> TrySnapshot() const {
@@ -549,7 +550,7 @@ private:
 
     [[nodiscard]] NativeLibraryLoadResult LoadResolved(const ExplicitLibrary& library,
                                                        const JavaClassLoaderToken class_loader,
-                                                       const NativeLibraryEntry mode = NativeLibraryEntry::java) {
+                                                       const std::uint64_t thread_id, const NativeLibraryEntry mode) {
         const auto canonical_path = library.canonical_path;
         NativeLibraryHandle handle{};
         {
@@ -599,11 +600,11 @@ private:
         }
 
         try {
-            auto application = sources_->LoadResolved(library);
+            auto application = sources_->LoadResolved(library, thread_id);
             std::optional<std::uint32_t> jni_version;
             try {
                 if (mode == NativeLibraryEntry::java)
-                    jni_version = process_->InitializeExplicitJniLibrary(library.module_name);
+                    jni_version = process_->InitializeExplicitJniLibrary(library.module_name, thread_id);
             } catch (const std::exception& error) {
                 const auto message = std::string_view(error.what());
                 const auto reason = message.find("unsupported JNI version") != std::string_view::npos
@@ -700,14 +701,15 @@ std::optional<std::string> NativeLibraryLoader::FindLibraryPath(const std::strin
 }
 
 NativeLibraryLoadResult NativeLibraryLoader::LoadLibrary(const std::string_view logical_name,
-                                                         const JavaClassLoaderToken class_loader) {
-    return impl_->LoadLibrary(logical_name, class_loader);
+                                                         const JavaClassLoaderToken class_loader,
+                                                         const std::uint64_t thread_id) {
+    return impl_->LoadLibrary(logical_name, class_loader, thread_id);
 }
 
 NativeLibraryLoadResult NativeLibraryLoader::LoadPath(const std::string_view guest_path,
                                                       const JavaClassLoaderToken class_loader,
-                                                      const NativeLibraryEntry entry) {
-    return impl_->LoadPath(guest_path, class_loader, entry);
+                                                      const NativeLibraryEntry entry, const std::uint64_t thread_id) {
+    return impl_->LoadPath(guest_path, class_loader, entry, thread_id);
 }
 
 std::vector<NativeLibraryRecord> NativeLibraryLoader::Records() const {

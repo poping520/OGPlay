@@ -15,6 +15,13 @@
 #include "catalog.h"
 #include "rom_input.h"
 
+namespace ogplay::runtime {
+
+SimulatedDeviceState::BuildIdentity::BuildIdentity()
+    : manufacturer(OGPLAY_DEFAULT_ANDROID_MANUFACTURER), model(OGPLAY_DEFAULT_ANDROID_MODEL) {}
+
+}  // namespace ogplay::runtime
+
 namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_os_Debug_MemoryInfo_Fields(const Context&, DebugMemoryInfoFields& fields) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Debug$MemoryInfo;");
@@ -84,6 +91,8 @@ namespace {
 [[nodiscard]] std::string ReadAndroidProperty(dx::Interpreter& vm, const Context& context, const std::string& key) {
     constexpr std::uint64_t kBytesPerMiB = 1024U * 1024U;
     if (key == "config.disable_renderscript") return "true";
+    if (key == "ro.product.manufacturer") return context->device_state.build_identity.manufacturer;
+    if (key == "ro.product.model") return context->device_state.build_identity.model;
     if (key == "persist.sys.language" || key == "ro.product.locale.language") return context->locale_language;
     if (key == "persist.sys.country" || key == "ro.product.locale.region") return context->locale_region;
     if (key == "sys.settings_system_version") return std::to_string(context->settings_system_version);

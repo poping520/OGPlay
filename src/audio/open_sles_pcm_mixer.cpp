@@ -162,9 +162,11 @@ OpenSlesEnqueueResult OpenSlesPcmMixer::EnqueueBlocking(const PlayerId player, c
         stop_generation = progress->stop_generation.value_or(stop_generation);
         progress->stop_generation = stop_generation;
     }
-    const auto ready = [this, player, bytes_per_frame, byte_budget, stop_generation] {
+    const auto interrupt_generation = found->second.writer_interrupt_generation;
+    const auto ready = [this, player, bytes_per_frame, byte_budget, stop_generation, interrupt_generation] {
         const auto current = players_.find(player);
         return interrupted_ || current == players_.end() || current->second.stop_generation != stop_generation ||
+               current->second.writer_interrupt_generation != interrupt_generation ||
                (current->second.queue.size() < current->second.capacity &&
                 QueuedBytes(current->second) <= byte_budget - bytes_per_frame);
     };
@@ -178,7 +180,8 @@ OpenSlesEnqueueResult OpenSlesPcmMixer::EnqueueBlocking(const PlayerId player, c
     if (found == players_.end()) {
         return OpenSlesEnqueueResult::player_destroyed;
     }
-    if (found->second.stop_generation != stop_generation) {
+    if (found->second.stop_generation != stop_generation ||
+        found->second.writer_interrupt_generation != interrupt_generation) {
         return OpenSlesEnqueueResult::interrupted;
     }
     const auto available = byte_budget - QueuedBytes(found->second);
@@ -225,6 +228,14 @@ OpenSlesPlayerSnapshot OpenSlesPcmMixer::Snapshot(
 std::size_t OpenSlesPcmMixer::BlockingWriterCount() const noexcept {
     std::scoped_lock lock(mutex_);
     return blocking_writers_;
+}
+
+void OpenSlesPcmMixer::InterruptWriters(const PlayerId player) {
+    {
+        std::scoped_lock lock(mutex_);
+        ++Require(player).writer_interrupt_generation;
+    }
+    queue_changed_.notify_all();
 }
 
 std::size_t OpenSlesPcmMixer::InterruptBlockingWaits() noexcept {

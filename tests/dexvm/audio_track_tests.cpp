@@ -6,10 +6,12 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -378,6 +380,60 @@ TEST_CASE("DexVM streaming write releases VM lock while byte-budget blocked") {
     CHECK(result.load() == buffer_size);
     CHECK(fixture.mixer.QueuedBytes(fixture.context->audio_tracks.at(track.Value()).player) <=
           static_cast<std::size_t>(buffer_size));
+}
+
+TEST_CASE("AudioTrack pause interrupts only the current blocking stream write") {
+    using namespace std::chrono_literals;
+    AudioTrackVm fixture;
+    constexpr std::int32_t buffer_size = 800;
+    constexpr auto partial = buffer_size / 2;
+    const auto track = fixture.NewTrack(4000, 4, 2, buffer_size, 1);
+    const auto array = fixture.ByteArray(std::vector<std::byte>(buffer_size, std::byte{1}));
+    const auto roots = fixture.vm.ProtectReferences(std::array{track, array});
+    static_cast<void>(fixture.CallOn(track, "play", "()V"));
+    REQUIRE(fixture.CallOn(track, "write", "([BII)I", {VmValue::Ref(array), VmValue::Int(0), VmValue::Int(partial)})
+                .AsInt() == partial);
+
+    const auto interrupt_write = [&](const char* method, const std::int32_t expected) {
+        const auto context = fixture.vm.CreateExecutionContext();
+        std::packaged_task<VmCallOutcome()> write([&] {
+            VmCallOutcome outcome;
+            fixture.vm.RunInExecutionContext(context, [&] {
+                outcome = fixture.CallOnOutcome(track, "write", "([BII)I",
+                                                {VmValue::Ref(array), VmValue::Int(0), VmValue::Int(buffer_size)});
+            });
+            return outcome;
+        });
+        auto result = write.get_future();
+        std::jthread writer([&](std::stop_token stop) {
+            const std::stop_callback wake(stop, [&] { static_cast<void>(fixture.mixer.InterruptBlockingWaits()); });
+            write();
+        });
+
+        const auto deadline = std::chrono::steady_clock::now() + 2s;
+        while (fixture.mixer.BlockingWriterCount() == 0U && result.wait_for(0s) != std::future_status::ready &&
+               std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(1ms);
+        }
+        const auto parked = fixture.mixer.BlockingWriterCount() == 1U;
+        if (parked) static_cast<void>(fixture.CallOn(track, method, "()V"));
+        const auto returned = parked && result.wait_for(2s) == std::future_status::ready;
+        if (!returned) writer.request_stop();
+        writer.join();
+        fixture.vm.DiscardExecutionContext(context);
+
+        REQUIRE(parked);
+        REQUIRE(returned);
+        const auto outcome = result.get();
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+        CHECK(outcome.value.AsInt() == expected);
+    };
+
+    interrupt_write("pause", partial);
+    CHECK(fixture.CallOn(track, "getPlayState", "()I").AsInt() == 2);
+    const auto player = fixture.context->audio_tracks.at(track.Value()).player;
+    CHECK(fixture.mixer.QueuedBytes(player) == buffer_size);
+    interrupt_write("release", -3);
 }
 
 TEST_CASE("DVM-84 static short writes initialize and GC releases PCM players") {

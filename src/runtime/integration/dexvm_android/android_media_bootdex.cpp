@@ -280,7 +280,11 @@ Decl Declare_android_media_AudioTrack_Natives(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             auto* state = FindTrack(context, call.receiver);
             if (state != nullptr && context->pcm_playback != nullptr) {
+                const auto interrupt_writers =
+                    state->mode == kModeStream &&
+                    context->pcm_playback->PlayState(state->player) == audio::OpenSlesPlayState::playing;
                 context->pcm_playback->SetPlayState(state->player, audio::OpenSlesPlayState::paused);
+                if (interrupt_writers) context->pcm_playback->InterruptWriters(state->player);
                 state->RetirePendingPeriodicCallbacks();
                 state->last_notified_head = context->pcm_playback->PositionFrames(state->player);
                 state->last_observed_head = state->last_notified_head;

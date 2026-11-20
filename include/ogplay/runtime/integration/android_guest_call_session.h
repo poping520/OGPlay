@@ -246,6 +246,8 @@ struct AndroidGuestApplicationLoad final {
 
 class AndroidGuestProcess final : public core::GpuStateProvider {
 public:
+    static constexpr std::uint64_t kRootThreadId = 1U;
+
     [[nodiscard]] static std::unique_ptr<AndroidGuestProcess> Start(const AndroidGuestProcessRequest& request);
     ~AndroidGuestProcess();
     AndroidGuestProcess(const AndroidGuestProcess&) = delete;
@@ -373,7 +375,8 @@ public:
     [[nodiscard]] AndroidGuestApplicationLoad
     LoadApplicationModules(std::string_view root_module, std::span<const AndroidGuestApplicationModuleSource> modules,
                            std::uint64_t thread_id = 1U);
-    [[nodiscard]] std::optional<std::uint32_t> InitializeExplicitJniLibrary(std::string_view root_module);
+    [[nodiscard]] std::optional<std::uint32_t> InitializeExplicitJniLibrary(std::string_view root_module,
+                                                                            std::uint64_t thread_id);
     [[nodiscard]] std::optional<AndroidGuestMovieRequest> LatestMovieRequest() const;
     [[nodiscard]] std::shared_ptr<debug::DiagnosticState> Diagnostics() const;
 

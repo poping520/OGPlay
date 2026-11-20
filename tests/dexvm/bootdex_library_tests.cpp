@@ -118,6 +118,8 @@ TEST_CASE("API19 Build family executes from BootDex without class intrinsics") {
             return static_cast<std::int32_t>(f.linker.Class(type).static_storage[f.linker.Field(*field).slot]);
         };
         CHECK(string_field("Landroid/os/Build;", "BRAND") == "unknown");
+        CHECK(string_field("Landroid/os/Build;", "MANUFACTURER") == "samsung");
+        CHECK(string_field("Landroid/os/Build;", "MODEL") == "GT-I9300");
         CHECK(string_field("Landroid/os/Build;", "CPU_ABI") == "armeabi");
         CHECK(string_field("Landroid/os/Build;", "TAGS") == "release-keys");
         CHECK(string_field("Landroid/os/Build$VERSION;", "RELEASE") == "4.4.4");

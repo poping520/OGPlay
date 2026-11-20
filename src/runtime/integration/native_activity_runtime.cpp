@@ -248,13 +248,14 @@ public:
         dx::IntrinsicCall typed(call);
         const auto path = call.vm.StringUtf8(typed.NonNullRef(0, "path"));
         const auto function = call.vm.StringUtf8(typed.NonNullRef(1, "function"));
+        const auto thread_id = thread(call.vm.CurrentContextToken());
         NativeLibraryLoadResult loaded;
         memory::GuestAddress entry;
         auto& execution_lock = call.vm.ExecutionLock();
         const auto depth = execution_lock.ReleaseForBlocking();
         try {
             loaded = ctx->native_libraries->LoadPath(path, ctx->application_class_loader_token,
-                                                     NativeLibraryEntry::native_activity);
+                                                     NativeLibraryEntry::native_activity, thread_id);
             entry = session.Process().FindModuleExport(loaded.module_index, function);
             if (entry.IsNull()) throw std::runtime_error("NativeActivity entry is missing: " + function);
         } catch (const std::exception& error) {
@@ -268,7 +269,7 @@ public:
         execution_lock.ReacquireAfterBlocking(depth);
         Instance item;
         item.module_index = loaded.module_index;
-        item.thread = thread(call.vm.CurrentContextToken());
+        item.thread = thread_id;
         item.owner = call.receiver;
         item.commands = std::make_shared<CommandQueue>();
         item.commands->context_token = call.vm.CurrentContextToken();

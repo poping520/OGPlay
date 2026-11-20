@@ -35,6 +35,7 @@ struct AppElfOptions final {
     std::optional<std::uint32_t> jni_version;
     bool constructor{true};
     bool call_aps5_callback{};
+    ogplay::memory::GuestAddress jni_initializer_thread_ids{};
 };
 
 void Put16(std::vector<std::byte>& bytes, const std::size_t offset, const std::uint16_t value);

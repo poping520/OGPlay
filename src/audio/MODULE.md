@@ -85,10 +85,10 @@
   相乘，静音仍消费 PCM。默认 OpenSL/legacy 音源归 STREAM_MUSIC；不映射系统设备路由。
 - AudioTrack stereo gain 与 OpenSL millibel/mute/pan 在同一 player 上相乘；播放头按已消费
   source frame 计数并无符号 32 位回绕。STREAM stop 复位 head 但保留队列；STATIC stop
-  回到缓冲起点且保留样本；pause 仅冻结。flush 仅在非 playing 时丢弃 STREAM 队列且不改 head。
+  回到缓冲起点且保留样本；pause 冻结播放并打断当前阻塞的 STREAM write。flush 仅在非 playing 时丢弃 STREAM 队列且不改 head。
 - AudioTrack MODE_STREAM 使用 mixer 的可中断 blocking enqueue：空位不足时按帧对齐部分入队，
   阻塞到全部写完；未消费字节（首 buffer 已播放 frame 除外）不超过构造 buffer budget；
-  stop/teardown 打断时返回已写入字节。播放、clear、destroy 唤醒
+  pause/stop/teardown 打断时返回已写入字节。播放、clear、destroy 唤醒
   writer，process teardown 粘性中断。position callback 若同步回填 PCM，同一次 lifecycle pump
   不继续补发过期 periodic callback，但剩余跨越周期必须保留到后续安全点，避免丢回填事件；
   queue item capacity 只作内存护栏，不定义正常延迟。

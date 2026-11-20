@@ -35,6 +35,8 @@ Time 的 native 入口仅转发到 guest Calendar/TimeZone 实现；format 转�
 
 ## Context、组件与进程
 
+ROM Build 的 MANUFACTURER 和 MODEL 通过 SystemProperties 读取会话的模拟设备身份，默认值由 CMake 注入。
+
 设备语言地区仅存 locale_language/locale_region，默认 en/US，严格校验小写两字母语言与大写
 两字母地区。System 初始化从该事实写 user.language/user.region；bridge 通过 boundary
 provider 发布同源的 DeviceLocale 投影，不向 core 注入 ISO3。Resources.getConfiguration 的

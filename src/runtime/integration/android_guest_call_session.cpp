@@ -60,7 +60,6 @@
 namespace ogplay::runtime {
 namespace {
 
-constexpr std::uint64_t kRootThreadId = 1;
 constexpr std::uint32_t kDexVmThreadMaximum = 32;
 constexpr std::uint64_t kOpenSlesCallbackThreadId = UINT64_C(0x4f50);
 constexpr std::uint32_t kOpenSlesCallbackAllocationSlot = kDexVmThreadMaximum - 1U;
@@ -2456,13 +2455,15 @@ public:
         return {root_module_index, std::move(initialization_names), module.load_bias, range};
     }
 
-    std::optional<std::uint32_t> InitializeExplicitJniLibrary(const std::string_view root_module) {
+    std::optional<std::uint32_t> InitializeExplicitJniLibrary(const std::string_view root_module,
+                                                              const std::uint64_t thread_id) {
         std::optional<JniGuestLibraryOnLoad> on_load;
         {
             std::scoped_lock lock(dynamic_link_mutex_);
             on_load = BuildJniGuestLibraryOnLoad(loaded_.link_namespace, root_module, guest_jni_.JavaVm());
         }
         if (!on_load.has_value()) return std::nullopt;
+        on_load->call.thread_id = thread_id;
         const auto result = Invoke(on_load->call).return_value;
         ValidateJniGuestLibraryOnLoadResult(result);
         return result;
@@ -3106,9 +3107,10 @@ AndroidGuestProcess::LoadApplicationModules(const std::string_view root_module,
     }
 }
 
-std::optional<std::uint32_t> AndroidGuestProcess::InitializeExplicitJniLibrary(const std::string_view root_module) {
+std::optional<std::uint32_t> AndroidGuestProcess::InitializeExplicitJniLibrary(const std::string_view root_module,
+                                                                               const std::uint64_t thread_id) {
     try {
-        return impl_->InitializeExplicitJniLibrary(root_module);
+        return impl_->InitializeExplicitJniLibrary(root_module, thread_id);
     } catch (const A32GuestCallCancelled&) {
         throw;
     } catch (const A32GuestCallExit&) {

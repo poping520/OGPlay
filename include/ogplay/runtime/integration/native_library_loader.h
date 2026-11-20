@@ -105,11 +105,11 @@ public:
     // Invalid or unavailable names have no path.
     [[nodiscard]] std::optional<std::string> FindLibraryPath(
         std::string_view logical_name) const;
-    [[nodiscard]] NativeLibraryLoadResult LoadLibrary(
-        std::string_view logical_name, JavaClassLoaderToken class_loader);
-    [[nodiscard]] NativeLibraryLoadResult LoadPath(
-        std::string_view guest_path, JavaClassLoaderToken class_loader,
-        NativeLibraryEntry entry = NativeLibraryEntry::java);
+    [[nodiscard]] NativeLibraryLoadResult LoadLibrary(std::string_view logical_name, JavaClassLoaderToken class_loader,
+                                                      std::uint64_t thread_id = AndroidGuestProcess::kRootThreadId);
+    [[nodiscard]] NativeLibraryLoadResult LoadPath(std::string_view guest_path, JavaClassLoaderToken class_loader,
+                                                   NativeLibraryEntry entry = NativeLibraryEntry::java,
+                                                   std::uint64_t thread_id = AndroidGuestProcess::kRootThreadId);
     [[nodiscard]] std::optional<NativeLibrarySnapshot> TrySnapshot() const;
     [[nodiscard]] std::vector<NativeLibraryRecord> Records() const;
 

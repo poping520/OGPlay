@@ -149,6 +149,13 @@ AssembleAndroidContext(std::vector<BootClasspathJar> boot_classpath);
 
 // First boot jar, in classpath order, that contains the entry.
 struct SimulatedDeviceState final {
+    struct BuildIdentity final {
+        BuildIdentity();
+
+        std::string manufacturer;
+        std::string model;
+    } build_identity;
+
     struct Location final {
         struct Provider final {
             std::string_view name;

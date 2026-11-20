@@ -12,6 +12,12 @@
     return-void
 .end method
 
+.method public run()V
+.registers 1
+    invoke-static {}, Lfixture/Aps5;->start()V
+    return-void
+.end method
+
 .method static public callback()V
 .registers 1
     sget v0, Lfixture/Aps5;->exitCode:I

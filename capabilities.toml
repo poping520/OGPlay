@@ -901,8 +901,8 @@ note = "API 19 非 CheckJNI Dalvik：实例、static 和 nonvirtual Object 调�
 
 [runtime.android_legacy_platform_identity]
 status = "complete"
-test = "tests/runtime/android_guest_framework_platform_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp#JNI framework services use VM methods objects and state"
-note = "平台身份不再由 guest 会话 HLE 提供；Build/SystemProperties/Bundle 归 BootDex，Context/Activity、ContentResolver、Settings.Secure 经 JNI 进入 VM；ROM TelephonyManager 通过本地电话服务读取同源身份；ANDROID_ID 与 installation_id 分离，取自沙盒平台配置。不读宿主隐私，UUID 来自 OS CSPRNG。纯 native/HLE 会话需另行装配 DexVM。"
+test = "tests/runtime/android_guest_framework_platform_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp#JNI framework services use VM methods objects and state; tests/dexvm/bootdex_library_tests.cpp#API19 Build family executes from BootDex without class intrinsics"
+note = "平台身份不再由 guest 会话 HLE 提供；Build/SystemProperties/Bundle 归 BootDex，Build 厂商和型号取会话模拟设备身份。Context/Activity、ContentResolver、Settings.Secure 经 JNI 进入 VM；ROM TelephonyManager 通过本地电话服务读取同源身份；ANDROID_ID 与 installation_id 分离，取自沙盒平台配置。不读宿主隐私，UUID 来自 OS CSPRNG。纯 native/HLE 会话需另行装配 DexVM。"
 
 [runtime.android_secure_settings]
 status = "complete"

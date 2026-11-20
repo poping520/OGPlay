@@ -204,6 +204,44 @@ void WriteAps5OnLoad(std::vector<std::byte>& bytes, const std::uint32_t version)
     put_string(kCode + 0xb4U, "()V");
 }
 
+static void WriteJniInitializer(std::vector<std::byte>& bytes, std::size_t offset, std::uint32_t version,
+                                ogplay::memory::GuestAddress thread_id, bool constructor) {
+    const std::array code{
+        0xe92d4080U,
+        0xe24dd008U,                              // push {r7, lr}; sub sp, sp, #8
+        constructor ? 0xe59f0048U : 0xe1a00000U,  // Constructor supplies JavaVM; OnLoad receives it in r0.
+        0xe1a0100dU,
+        0xe59f2044U,
+        0xe59fc044U,
+        0xe12fff3cU,  // GetEnv(vm, sp, version)
+        0xe3500000U,
+        0x1a00000aU,  // Return if GetEnv failed.
+        0xe59d0000U,
+        0xe28f103cU,
+        0xe59fc030U,
+        0xe12fff3cU,  // FindClass(env, "fixture/Aps5")
+        0xe3500000U,
+        0x0a000004U,  // Return if FindClass returned null.
+        0xe3a070e0U,
+        0xef000000U,
+        0xe59f101cU,
+        0xe5810000U,  // Store gettid() at the observation address.
+        0xe59f0008U,
+        0xe28dd008U,
+        0xe8bd8080U,  // Return the JNI version.
+        ogplay::runtime::kJniGuestJavaVm.Value(),
+        version,
+        JavaVmThunk("GetEnv"),
+        EnvironmentThunk("FindClass"),
+        thread_id.Value(),
+    };
+    for (std::size_t i = 0; i < code.size(); ++i)
+        Put32(bytes, offset + i * 4U, code[i]);
+    constexpr char name[] = "fixture/Aps5";
+    for (std::size_t i = 0; i < sizeof(name); ++i)
+        bytes[offset + code.size() * 4U + i] = static_cast<std::byte>(name[i]);
+}
+
 [[nodiscard]] std::vector<std::byte> AppElf(const AppElfOptions& options) {
     std::vector<std::byte> bytes(0x1100, std::byte{});
     bytes[0] = std::byte{0x7f};
@@ -275,7 +313,12 @@ void WriteAps5OnLoad(std::vector<std::byte>& bytes, const std::uint32_t version)
     PutDynamic(bytes, dynamic, ogplay::loader::kElfDynamicHash, 0x10190U);
     PutDynamic(bytes, dynamic, ogplay::loader::kElfDynamicSymbolTable, 0x101b0U);
     PutDynamic(bytes, dynamic, ogplay::loader::kElfDynamicSymbolEntrySize, 16);
-    if (options.constructor) {
+    if (!options.jni_initializer_thread_ids.IsNull()) {
+        PutDynamic(bytes, dynamic, ogplay::loader::kElfDynamicInitArray, 0x10200U);
+        PutDynamic(bytes, dynamic, ogplay::loader::kElfDynamicInitArraySize, 4);
+        Put32(bytes, 0x200U, 0x20080U);
+        WriteJniInitializer(bytes, 0x1080U, options.jni_version.value(), options.jni_initializer_thread_ids, true);
+    } else if (options.constructor) {
         PutDynamic(bytes, dynamic, ogplay::loader::kElfDynamicInit, options.call_aps5_callback ? 0x200f0U : 0x20010U);
     }
     Put32(bytes, 0x190, 1);
@@ -288,7 +331,10 @@ void WriteAps5OnLoad(std::vector<std::byte>& bytes, const std::uint32_t version)
         Put32(bytes, 0x1c8, 8);
         bytes[0x1cc] = std::byte{0x12};
         Put16(bytes, 0x1ce, 1);
-        if (options.call_aps5_callback) {
+        if (!options.jni_initializer_thread_ids.IsNull()) {
+            WriteJniInitializer(bytes, 0x1000U, *options.jni_version, options.jni_initializer_thread_ids.Add(4U),
+                                false);
+        } else if (options.call_aps5_callback) {
             WriteAps5OnLoad(bytes, *options.jni_version);
         } else {
             Put32(bytes, 0x1000, 0xe59f0000U);
@@ -296,7 +342,8 @@ void WriteAps5OnLoad(std::vector<std::byte>& bytes, const std::uint32_t version)
             Put32(bytes, 0x1008, *options.jni_version);
         }
     }
-    Put32(bytes, options.call_aps5_callback ? 0x10f0U : 0x1010U, 0xe12fff1eU);
+    if (options.jni_initializer_thread_ids.IsNull())
+        Put32(bytes, options.call_aps5_callback ? 0x10f0U : 0x1010U, 0xe12fff1eU);
     return bytes;
 }
 

@@ -78,6 +78,8 @@ public:
     [[nodiscard]] OpenSlesPlayerSnapshot Snapshot(PlayerId player) const;
     [[nodiscard]] std::optional<OpenSlesPlayerSnapshot> TrySnapshot(PlayerId player) const;
     [[nodiscard]] std::size_t BlockingWriterCount() const noexcept;
+    // Interrupt this player's current blocking enqueues. Later calls can wait again.
+    void InterruptWriters(PlayerId player);
     // Process teardown is sticky: wake current writers and reject later ones.
     [[nodiscard]] std::size_t InterruptBlockingWaits() noexcept;
     void Clear(PlayerId player);
@@ -131,6 +133,7 @@ private:
         std::int32_t loop_count{};
         std::int32_t loops_remaining{};
         std::uint64_t stop_generation{};
+        std::uint64_t writer_interrupt_generation{};
         std::vector<Buffer> queue;
     };
 

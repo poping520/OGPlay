@@ -46,6 +46,8 @@ enum class ImportSourceKind : std::uint8_t { apk, archive, unknown };
 
 // What a game archive holds. Data members are mapped to absolute guest paths under /sdcard; members of no known
 // use are grouped by their top-level name as extras, left out unless chosen (then mounted at /sdcard/<path>).
+// A wrapper directory is looked through only when something is recognized below it. For an early Gameloft game
+// (GameloftPackage) with nothing else recognized, the <GameID> directory is data under /sdcard/gameloft/games.
 struct ArchiveData final {
     std::size_t index{};
     std::string guest_path;
@@ -55,6 +57,7 @@ struct ArchiveExtra final {
     std::string name;
     std::vector<ArchiveData> members;
     std::uint64_t bytes{};
+    bool directory{};  // name is a directory rather than a single file
 };
 
 struct ArchivePlan final {
@@ -67,7 +70,8 @@ struct ArchivePlan final {
 // names count as package directories when they do not look like one on their own.
 [[nodiscard]] OGPLAYCORE_API ArchivePlan PlanArchive(const std::vector<ImportFile>& files, std::string_view package);
 // Mount for the planned data plus the chosen extras: their closest common directory, cut back to
-// /sdcard/Android/(obb|data|media)/<name> when deeper; "/sdcard" once an extra is chosen; empty without data.
+// /sdcard/Android/(obb|data|media)/<name> or /sdcard/gameloft/games when deeper; "/sdcard" once an extra is
+// chosen; empty without data.
 [[nodiscard]] OGPLAYCORE_API std::string ArchiveMount(const ArchivePlan& plan, std::span<const std::string> extras);
 // Writes the planned data and chosen extras under destination, laid out relative to ArchiveMount, and returns
 // that mount. Unknown extra names are refused.
@@ -80,7 +84,9 @@ OGPLAYCORE_API std::string ExtractArchiveData(ImportSource& source, const Archiv
 // directories below /sdcard/Android/(data|obb|media) are data: the APK package's, or else the one package name
 // present there (package then names it). Everything else but APKs and top-level readmes is an extra, named by its
 // shallowest part holding no data. With no such directory (or several foreign ones) package is empty and every
-// file is data where it lies, as a plain directory copy. Guest spellings of Android/<kind> are canonical.
+// file is data where it lies, as a plain directory copy; for an early Gameloft game picked at
+// /sdcard/gameloft/games/<name>, a lone directory below it named like a part of the package is the game's own
+// one instead. Guest spellings of Android/<kind> are canonical.
 struct DataDirectoryPlan final {
     ArchivePlan plan;
     std::string package;

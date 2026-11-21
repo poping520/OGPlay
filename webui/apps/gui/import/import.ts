@@ -15,7 +15,7 @@ export interface ArchiveSummary extends ArchiveData {
 /** An archive's data pack as the host planned it, also the answer for a data archive picked on its own. */
 export interface ArchiveData {
   data: (DataDirectory & { guest_dir: string; sdcard: Omit<DataDirectory, 'path'> }) | null;
-  extras: { name: string; files: number; bytes: number }[];
+  extras: { name: string; files: number; bytes: number; directory: boolean }[];
 }
 /** A data pack picked apart from the APK: a directory (planned by its package directories; `package` is the one
  *  used, null when the whole directory is taken) or an archive. */
@@ -48,7 +48,7 @@ export function archivePreview(archive: ArchiveData, extras: string[]): DataDire
   const base = archive.data?.sdcard ?? { entries: [], entry_count: 0, files: 0, bytes: 0, truncated: false };
   return {
     path: '/sdcard', truncated: false,
-    entries: [...base.entries, ...chosen.map(extra => ({ name: extra.name, directory: true }))].slice(0, 8),
+    entries: [...base.entries, ...chosen.map(extra => ({ name: extra.name, directory: extra.directory }))].slice(0, 8),
     entry_count: base.entry_count + chosen.length,
     files: base.files + chosen.reduce((sum, extra) => sum + extra.files, 0),
     bytes: base.bytes + chosen.reduce((sum, extra) => sum + extra.bytes, 0),

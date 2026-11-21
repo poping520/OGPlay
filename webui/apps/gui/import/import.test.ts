@@ -56,11 +56,12 @@ describe('archive data preview', () => {
     data: { path: '/sdcard/Android/obb/a.b', guest_dir: '/sdcard/Android/obb/a.b', entries: [{ name: 'main.1.a.b.obb', directory: false }],
       entry_count: 1, files: 1, bytes: 10, truncated: false,
       sdcard: { entries: [{ name: 'Android', directory: true }], entry_count: 1, files: 1, bytes: 10, truncated: false } },
-    extras: [{ name: 'picture', files: 2, bytes: 4 }],
+    extras: [{ name: 'picture', files: 2, bytes: 4, directory: true }, { name: 'save.bin', files: 1, bytes: 1, directory: false }],
   };
   it('shows the planned mount, or /sdcard with the chosen extras beside the data', () => {
     expect(archivePreview(archive, [])).toBe(archive.data);
     expect(archivePreview(archive, ['picture'])).toEqual({ path: '/sdcard', truncated: false, entry_count: 2, files: 3, bytes: 14,
       entries: [{ name: 'Android', directory: true }, { name: 'picture', directory: true }] });
+    expect(archivePreview(archive, ['save.bin'])?.entries[1]).toEqual({ name: 'save.bin', directory: false });
   });
 });

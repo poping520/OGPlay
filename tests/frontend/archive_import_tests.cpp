@@ -103,6 +103,80 @@ TEST_CASE("archive plan maps pack layouts to sdcard paths") {
     }
 }
 
+TEST_CASE("archive plan keeps unrecognized wrappers and places early Gameloft games") {
+    constexpr std::string_view r6 = "com.gameloft.android.ANMP.GloftR6HP";
+    SUBCASE("a lone directory with nothing recognized below it is content, files are not directories") {
+        const auto files = Files({"Title/.nomedia", "Title/data/a.bin", "Title/Save.bin"});
+        const auto plan = PlanArchive(files, "com.a.b");
+        CHECK(plan.data.empty());
+        REQUIRE(plan.extras.size() == 1);
+        CHECK(plan.extras[0].name == "Title");
+        CHECK(plan.extras[0].directory);
+        CHECK(plan.extras[0].members[2].guest_path == "/sdcard/Title/Save.bin");
+        const auto loose = PlanArchive(Files({"Save.bin", "data/a.bin"}), "com.a.b");
+        REQUIRE(loose.extras.size() == 2);
+        CHECK_FALSE(loose.extras[0].directory);
+        CHECK(loose.extras[1].directory);
+    }
+    SUBCASE("the <GameID> directory goes to gameloft/games, which is the mount") {
+        const auto files = Files({"GloftR6HP/.nomedia", "GloftR6HP/data/3d.zip", "GloftR6HP/SaveGame.bin", "r6.apk"});
+        const auto plan = PlanArchive(files, r6);
+        CHECK(plan.extras.empty());
+        CHECK(GuestOf(plan, files, "GloftR6HP/data/3d.zip") == "/sdcard/gameloft/games/GloftR6HP/data/3d.zip");
+        CHECK(GuestOf(plan, files, "GloftR6HP/.nomedia") == "/sdcard/gameloft/games/GloftR6HP/.nomedia");
+        CHECK(ArchiveMount(plan, {}) == "/sdcard/gameloft/games");
+    }
+    SUBCASE("the ID need not start with Gloft; wrappers and readmes around it are dropped") {
+        const auto files = Files({"Dungeon Hunter HD/DungeonHunter/data/a.bin", "Dungeon Hunter HD/DungeonHunter/b.bin",
+                                  "Dungeon Hunter HD/readme.txt"});
+        const auto plan = PlanArchive(files, "com.gameloft.android.GAND.GloftDUNQ.DungeonHunter");
+        CHECK(GuestOf(plan, files, "Dungeon Hunter HD/DungeonHunter/data/a.bin") ==
+              "/sdcard/gameloft/games/DungeonHunter/data/a.bin");
+        CHECK(plan.data.size() == 2);
+        CHECK(ArchiveMount(plan, {}) == "/sdcard/gameloft/games");
+        // A lone directory is the game whatever its name; several unmatched ones are not guessed.
+        CHECK(ArchiveMount(PlanArchive(Files({"Title/data/a.bin", "Title/b.bin"}), r6), {}) ==
+              "/sdcard/gameloft/games");
+        const auto unsure = PlanArchive(Files({"Pack/Title/data/a.bin", "Pack/Title/b.bin"}), r6);
+        CHECK(unsure.data.empty());
+        REQUIRE(unsure.extras.size() == 1);
+        CHECK(unsure.extras[0].name == "Pack");
+    }
+    SUBCASE("a gameloft/games tree is a layout marker for any package") {
+        const auto files = Files({"Pack/GameLoft/Games/GloftR6HP/data/a.bin", "Pack/GameLoft/Games/GloftR6HP/b.bin"});
+        const auto plan = PlanArchive(files, "com.a.b");
+        CHECK(GuestOf(plan, files, "Pack/GameLoft/Games/GloftR6HP/b.bin") == "/sdcard/gameloft/games/GloftR6HP/b.bin");
+        CHECK(ArchiveMount(plan, {}) == "/sdcard/gameloft/games");
+        const auto sdcard = PlanArchive(Files({"sdcard/gameloft/games/GloftR6HP/b.bin"}), r6);
+        CHECK(ArchiveMount(sdcard, {}) == "/sdcard/gameloft/games");
+    }
+    SUBCASE("Android data of a Gameloft game keeps the usual layout") {
+        const auto files = Files({"Android/data/com.gameloft.x/files/a.bin", "Title/b.bin"});
+        const auto plan = PlanArchive(files, "com.gameloft.x");
+        CHECK(ArchiveMount(plan, {}) == "/sdcard/Android/data/com.gameloft.x");
+        REQUIRE(plan.extras.size() == 1);
+        CHECK(plan.extras[0].name == "Title");
+    }
+}
+
+TEST_CASE("data directory plan places a picked early Gameloft game directory") {
+    constexpr std::string_view r6 = "com.gameloft.android.ANMP.GloftR6HP";
+    const auto guests = [](const ArchivePlan& plan) {
+        std::vector<std::string> result;
+        for (const auto& item : plan.data)
+            result.push_back(item.guest_path);
+        return result;
+    };
+    const auto own = PlanDataDirectory({{"data/a.bin", 1}, {".nomedia", 1}}, "/sdcard/gameloft/games/Title", r6);
+    CHECK(guests(own.plan) ==
+          std::vector<std::string>{"/sdcard/gameloft/games/Title/data/a.bin", "/sdcard/gameloft/games/Title/.nomedia"});
+    CHECK(ArchiveMount(own.plan, {}) == "/sdcard/gameloft/games");
+    const auto wrapped =
+        PlanDataDirectory({{"GloftR6HP/data/a.bin", 1}, {"readme.txt", 1}}, "/sdcard/gameloft/games/R6 data", r6);
+    CHECK(guests(wrapped.plan) == std::vector<std::string>{"/sdcard/gameloft/games/GloftR6HP/data/a.bin"});
+    CHECK(ArchiveMount(wrapped.plan, {}) == "/sdcard/gameloft/games");
+}
+
 TEST_CASE("data directory plan keeps the package's own directories wherever the pick sits") {
     const auto guests = [](const ArchivePlan& plan) {
         std::vector<std::string> result;

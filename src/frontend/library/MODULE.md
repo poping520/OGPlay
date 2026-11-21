@@ -56,7 +56,8 @@ CLI `library data-hint` 同源。
 startup_failed/fault/crashed/no_frame、interrupted 或带 exit_error 为失败。读不出的报告视为无运行信息，不改变条目状态。
 导入前 GuessDataMount 只看宿主路径：最内层 `Android/data|obb|media`、`sdcard`、`emulated/0`
 之下的部分映射到 /sdcard 下，目录名等于包名时映射 Android/data（含 .obb 为 Android/obb），其余为
-`/sdcard/<目录名>`；顶层含 Android/ 的 sdcard 副本保持 /sdcard。
+`/sdcard/<目录名>`（Gameloft 早期游戏为 `/sdcard/gameloft/games/<目录名>`）；顶层含 Android/ 或 gameloft/
+的 sdcard 副本保持 /sdcard。
 
 数据包导入模式（ADR-0144）：copy（默认）把所选目录复制为条目 `data/`，不写配置，加载时条目
 存在 `data/` 目录即解析为该绝对路径并标记 owned（目录被手动删除后视为无数据包）；link 把宿主
@@ -74,7 +75,7 @@ external_dir 与库内路径不同时即按 link 解析。move 把调用方已�
 UTF-8 有效性和 GBK 码表解码，`\` 视为分隔符。加密、分卷、越界路径（`..`、盘符、控制字符）
 与不支持的压缩方法明确失败。解码按索引批量流式写入导入工作目录，支持字节进度与取消；失败时清理工作目录。
 存储布局规则只有一份（`data_layout.h`），GuessDataMount 与 PlanArchive 共用：`Android/data|obb|media`、末尾的
-`Android`、`sdcard`、`emulated/0` 之后的部分映射到 /sdcard 对应位置；以包名命名的目录直接含 .obb 文件时挂到
+`Android`、`sdcard`、`emulated/0`、`gameloft/games`（客体统一小写）之后的部分映射到 /sdcard 对应位置；以包名命名的目录直接含 .obb 文件时挂到
 Android/obb/<名>，否则 Android/data/<名>。两者只在取哪个标记、哪些名字算包名上不同：选定目录的宿主路径取最内层标记、
 只认所选 APK 的包名；压缩包成员取最外层标记（遇到包名目录即停）、包名形的名字都算。
 `PlanDataDirectory` 规划所选数据目录（GUI 导入）：文件按目录在 /sdcard 下的位置（GuessDataMount）放置，Android/<类>
@@ -83,9 +84,14 @@ Android/obb/<名>，否则 Android/data/<名>。两者只在取哪个标记、�
 有多个其他包名时整目录为数据（与普通复制相同）。`OpenDataDirectory` 把宿主目录作为 ImportSource，按文件克隆或复制，
 拒绝与库根互相包含、符号链接与特殊文件。
 `PlanArchive` 只看路径：APK 候选按层级浅、文件名不含独立的 mod 优先；根部扩展文件归 Android/obb/<包>；
-`Android/` 下其他文件忽略；单层包装目录被看穿；说明/图片/清单等根部杂项忽略，
-其余顶层内容为 extras（默认不导入，选中后放在 /sdcard/<路径>）。`ArchiveMount` 取所选内容最近的公共目录，
-深于 Android/<类>/<包> 时截到该层，选了 extras 即 /sdcard。CLI `library inspect|import <压缩包> [--apk <成员>]
+`Android/` 下其他文件忽略；单层包装目录只在其下识别出数据或 APK 时被看穿，否则作为内容保留；说明/图片/清单等
+根部杂项忽略，其余顶层内容为 extras（默认不导入，选中后放在 /sdcard/<路径>，`directory` 区分文件与目录）。
+Gameloft 早期游戏（包名含 gameloft，不区分大小写）在没有其他可识别数据时，从顶部逐层的唯一目录（含包装层）中取
+与包名某段同名的最内层（GameID 不一定以 Gloft 开头），没有同名时只有一层才取它，作为
+`/sdcard/gameloft/games/<GameID>` 的数据；多层且都不同名时不猜。所选目录挂在 `/sdcard/gameloft/games/<名>`
+时同理，下层没有同名目录则所选目录本身即游戏目录。`ArchiveMount` 取所选内容最近的公共目录，
+深于 Android/<类>/<包> 或 gameloft/games 时截到该层，选了 extras 即 /sdcard。引用（link）模式只在宿主祖先目录
+名与挂载点对应时向上引用，否则把所选目录引用在它自己的位置。CLI `library inspect|import <压缩包> [--apk <成员>]
 [--include <extra>]…` 同源。
 
 图标：入库与导入分析按 API19 设备配置将 application icon 引用链解析到最终 drawable，再从 `sdkVersion` ≤ 19 的全部密度变体中选面积最大且可解码的 PNG（跳过 XML、.9.png），

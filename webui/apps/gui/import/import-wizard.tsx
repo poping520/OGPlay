@@ -18,7 +18,7 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
   const locked = useRef(false);
   const disposed = useRef(false);
   const [job, setJob] = useState<ImportJob | null>(null);
-  const [stage, setStage] = useState(() => t('选择安装包'));
+  const [stage, setStage] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [externalGuest, setExternalGuest] = useState('/sdcard');
@@ -64,8 +64,16 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
     try { await action(); } catch (reason) { if (!disposed.current) setError(message(reason)); }
     finally { locked.current = false; if (!disposed.current) setBusy(false); }
   }
+  // The wizard shows once there is an APK to read: cancelling the first pick closes it unseen, cancelling a
+  // later one keeps what was analyzed.
   async function analyze(dropped: File | null) {
     await run(async () => {
+      const picked = dropped ? null : await pickSource('file');
+      if (!dropped && !picked) {
+        if (!dialog.current?.open) onClose();
+        return;
+      }
+      if (!dialog.current?.open) dialog.current?.showModal();
       if (activeJob.current) await rpc('library.job.cancel', { job: activeJob.current });
       activeJob.current = ''; setJob(null); setConfirmed(false); setExternalGuest('/sdcard'); setGuestEdited(false); setExternalMode('copy');
       setExtras([]); setDataPack(null);
@@ -74,11 +82,8 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
         setStage(t('正在读取拖入的 APK…'));
         initial = await upload(dropped, id => { activeJob.current = id; }, value => setStage(t('正在读取 APK… {percent}%', { percent: value })));
       } else {
-        setStage(t('选择安装包'));
-        const picked = await pickSource('file');
-        if (!picked) { setStage(t('已取消文件选择')); return; }
-        setSource(picked.path); setLabel(picked.label); setStage(t('正在分析安装包…'));
-        initial = await rpc<ImportJob>('library.analyze', { path: picked.path });
+        setSource(picked!.path); setLabel(picked!.label); setStage(t('正在分析安装包…'));
+        initial = await rpc<ImportJob>('library.analyze', { path: picked!.path });
         activeJob.current = initial.job;
       }
       setStage(t('正在分析 APK…'));
@@ -117,7 +122,6 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
     catch (reason) { if (!disposed.current) setError(message(reason)); }
   }
   useEffect(() => {
-    dialog.current!.showModal();
     void analyze(file);
     return () => { disposed.current = true; dialog.current?.close(); };
   }, []);

@@ -126,6 +126,7 @@ Value ArchiveJson(JsonWriter& writer, const std::vector<ImportFile>& files, cons
         writer.AddString(item, "name", extra.name);
         writer.AddUnsignedInteger(item, "files", extra.members.size());
         writer.AddUnsignedInteger(item, "bytes", extra.bytes);
+        writer.AddBool(item, "directory", extra.directory);
         writer.Append(extras, item);
     }
     writer.Add(result, "extras", extras);

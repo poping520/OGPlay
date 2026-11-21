@@ -226,17 +226,19 @@ std::optional<std::string> GuessDataMount(const std::filesystem::path& dir, cons
     for (std::size_t index = parts.size(); index-- > 0 && !guest;)
         if (const auto marker = MatchStorageMarker(parts, index)) guest = below(index + marker->parts, marker->guest);
     if (!guest && !parts.empty()) {
-        bool obb{}, android{};
+        bool obb{}, sdcard_copy{};
         std::error_code error;
         for (std::filesystem::directory_iterator it(dir, error), end; !error && it != end; it.increment(error)) {
             obb = obb || (it->is_regular_file(error) && IsObbName(Utf8(it->path().filename())));
-            android = android || (it->is_directory(error) && Fold(Utf8(it->path().filename())) == "android");
+            const auto name = Fold(Utf8(it->path().filename()));
+            sdcard_copy = sdcard_copy || (it->is_directory(error) && (name == "android" || name == "gameloft"));
         }
-        // A copied sdcard root keeps /sdcard; otherwise the picked directory itself appears below it.
+        // A copied sdcard root keeps /sdcard; otherwise the picked directory itself appears below it, in
+        // Gameloft's games directory for an early Gameloft game.
         if (!package.empty() && Fold(parts.back()) == Fold(package))
             guest = PackageDirectoryMount(parts.back(), obb);
-        else if (!android)
-            guest = std::string("/sdcard/").append(parts.back());
+        else if (!sdcard_copy)
+            guest = std::string(GameloftPackage(package) ? kGameloftGames : "/sdcard").append("/").append(parts.back());
     }
     if (!guest || *guest == "/sdcard") return std::nullopt;
     try {

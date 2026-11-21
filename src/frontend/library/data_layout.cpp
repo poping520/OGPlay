@@ -26,11 +26,16 @@ std::optional<StorageMarker> MatchStorageMarker(std::span<const std::string_view
     }
     if (part == "sdcard") return StorageMarker{"/sdcard", 1};
     if (part == "emulated" && next == "0") return StorageMarker{"/sdcard", 2};
+    if (part == "gameloft" && next == "games") return StorageMarker{std::string(kGameloftGames), 2};
     return std::nullopt;
 }
 
 std::string PackageDirectoryMount(std::string_view name, bool holds_obb) {
     return std::string(holds_obb ? "/sdcard/Android/obb/" : "/sdcard/Android/data/").append(name);
+}
+
+bool GameloftPackage(std::string_view package) {
+    return Fold(package).find("gameloft") != std::string::npos;
 }
 
 bool IsObbName(std::string_view name) {

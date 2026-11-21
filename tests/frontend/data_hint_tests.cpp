@@ -140,6 +140,13 @@ TEST_CASE("ADR-0146 guesses the mount from where the picked directory sits") {
     CHECK(GuessDataMount(root / "com.example.game", "com.example.game") == "/sdcard/Android/data/com.example.game");
     Write(root / "Com.Example.Obb" / "main.1.com.example.obb.OBB", "1");
     CHECK(GuessDataMount(root / "Com.Example.Obb", "com.example.obb") == "/sdcard/Android/obb/Com.Example.Obb");
+    // Early Gameloft games keep their directory in gameloft/games, wherever it was picked from.
+    constexpr std::string_view gameloft = "com.gameloft.android.ANMP.GloftR6HP";
+    CHECK(GuessDataMount(root / "GloftR6HP", gameloft) == "/sdcard/gameloft/games/GloftR6HP");
+    CHECK(GuessDataMount(root / "GameLoft" / "Games" / "GloftR6HP") == "/sdcard/gameloft/games/GloftR6HP");
+    CHECK(GuessDataMount(root / "sdcard" / "gameloft" / "games") == "/sdcard/gameloft/games");
+    std::filesystem::create_directories(root / "Phone" / "gameloft" / "games");
+    CHECK_FALSE(GuessDataMount(root / "Phone", gameloft));
 }
 
 TEST_CASE("ADR-0146 without a data pack only says the game may need one") {

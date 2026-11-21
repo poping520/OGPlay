@@ -10,6 +10,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <span>
 #include <system_error>
 #include <tuple>
 #include <utility>
@@ -105,6 +106,46 @@ constexpr std::size_t kChunkBytes = 1U << 20U;
         if (before && after) return true;
     }
     return false;
+}
+
+// The directories every member lies in from the top, one level at a time while nothing but readmes sits
+// beside the next one: a pack's wrappers and the game directory they hold.
+[[nodiscard]] std::vector<std::string> LoneDirectories(std::span<const std::vector<std::string>* const> members) {
+    std::vector<std::string> chain;
+    for (std::size_t depth = 0;; ++depth) {
+        const std::string* name = nullptr;
+        for (const auto* parts : members) {
+            if (parts->size() < depth + 1) continue;  // a readme beside an outer level
+            if (parts->size() == depth + 1) {
+                if (PackJunk(parts->back())) continue;
+                return chain;
+            }
+            if (!name)
+                name = &(*parts)[depth];
+            else if ((*parts)[depth] != *name)
+                return chain;
+        }
+        if (!name) return chain;
+        chain.push_back(*name);
+    }
+}
+
+// Which of the lone directories is an early Gameloft game's <GameID> directory: the innermost one named like a
+// part of the package (any case; the ID need not start with Gloft), else the only one. A picked directory
+// (first in chain) stands for the game unless a deeper one matches.
+[[nodiscard]] std::optional<std::size_t> GameloftGameDirectory(const std::vector<std::string>& chain,
+                                                               std::string_view package, bool picked) {
+    std::set<std::string> segments;
+    std::string_view rest = package;
+    while (!rest.empty()) {
+        const auto dot = std::min(rest.find('.'), rest.size());
+        segments.insert(Lower(rest.substr(0, dot)));
+        rest.remove_prefix(std::min(dot + 1, rest.size()));
+    }
+    for (auto index = chain.size(); index-- > 0;)
+        if (segments.contains(Lower(chain[index]))) return index;
+    if (picked || chain.size() == 1) return chain.empty() ? std::nullopt : std::optional<std::size_t>(0);
+    return std::nullopt;
 }
 
 [[nodiscard]] bool ValidUtf8(std::string_view text) {
@@ -247,77 +288,102 @@ ArchivePlan PlanArchive(const std::vector<ImportFile>& files, std::string_view p
     for (const auto& file : files)
         split.push_back(Split(file.path));
     // A single wrapper directory (the pack's own name) is looked through.
-    std::size_t skip = 0;
+    std::size_t wrappers = 0;
     std::vector<std::vector<std::string_view>> views;
     for (const auto& parts : split)
         views.emplace_back(parts.begin(), parts.end());
     for (;;) {
         if (files.empty()) break;
         const auto& first = split.front();
-        if (first.size() <= skip + 1) break;
-        const auto name = first[skip];
-        if (MatchStorageMarker(views.front(), skip) || PackageLike(name)) break;
+        if (first.size() <= wrappers + 1) break;
+        const auto name = first[wrappers];
+        if (MatchStorageMarker(views.front(), wrappers) || PackageLike(name)) break;
         if (!std::all_of(split.begin(), split.end(),
-                         [&](const auto& parts) { return parts.size() > skip + 1 && parts[skip] == name; }))
+                         [&](const auto& parts) { return parts.size() > wrappers + 1 && parts[wrappers] == name; }))
             break;
-        ++skip;
+        ++wrappers;
     }
-    // Package directories holding .obb files directly are OBB directories; other ones are app data.
-    std::set<std::string> obb_directories;
-    for (const auto& parts : split)
-        if (parts.size() == skip + 2 && IsObbName(parts[skip + 1])) obb_directories.insert(parts[skip]);
-
-    ArchivePlan plan;
-    std::map<std::string, std::size_t> extras;
     const auto lower_package = Lower(package);
-    for (std::size_t index = 0; index < files.size(); ++index) {
-        const auto& parts = split[index];
-        const auto depth = parts.size() - skip;
-        const auto& top = parts[skip];
-        const auto lower = Lower(top);
-        // The outermost storage layout marker maps the member as it stands (a member's deeper parts are the pack's
-        // own content, unlike a picked directory's host path, where the innermost wins); below a package directory
-        // nothing counts. Anything else directly under Android/ (a readme) is not data.
-        std::optional<std::pair<std::size_t, StorageMarker>> layout;
-        for (auto at = skip; at + 1 < parts.size() && !layout; ++at) {
-            if (const auto marker = MatchStorageMarker(views[index], at))
-                layout.emplace(at, *marker);
-            else if (PackageLike(parts[at]))
-                break;
-        }
-        if (layout && layout->first + layout->second.parts < parts.size()) {
-            plan.data.push_back(
-                {index, layout->second.guest + "/" + Join(parts, layout->first + layout->second.parts, parts.size())});
-            continue;
-        }
-        if (lower == "android") continue;
-        if (IsApk(files[index].path)) {
-            plan.apks.push_back(index);
-            continue;
-        }
-        if (depth == 1) {
-            if (const auto owner = ExpansionPackage(top)) {
-                plan.data.push_back({index, PackageDirectoryMount(*owner, true) + "/" + top});
+    const auto classify = [&](std::size_t skip) {
+        // Package directories holding .obb files directly are OBB directories; other ones are app data.
+        std::set<std::string> obb_directories;
+        for (const auto& parts : split)
+            if (parts.size() == skip + 2 && IsObbName(parts[skip + 1])) obb_directories.insert(parts[skip]);
+        ArchivePlan plan;
+        std::map<std::string, std::size_t> extras;
+        for (std::size_t index = 0; index < files.size(); ++index) {
+            const auto& parts = split[index];
+            const auto depth = parts.size() - skip;
+            const auto& top = parts[skip];
+            const auto lower = Lower(top);
+            // The outermost storage layout marker maps the member as it stands (a member's deeper parts are the
+            // pack's own content, unlike a picked directory's host path, where the innermost wins); below a package
+            // directory nothing counts. Anything else directly under Android/ (a readme) is not data.
+            std::optional<std::pair<std::size_t, StorageMarker>> layout;
+            for (auto at = skip; at + 1 < parts.size() && !layout; ++at) {
+                if (const auto marker = MatchStorageMarker(views[index], at))
+                    layout.emplace(at, *marker);
+                else if (PackageLike(parts[at]))
+                    break;
+            }
+            if (layout && layout->first + layout->second.parts < parts.size()) {
+                plan.data.push_back({index, layout->second.guest + "/" +
+                                                Join(parts, layout->first + layout->second.parts, parts.size())});
                 continue;
             }
-            if (PackJunk(top)) continue;
-        } else if (PackageLike(top) || (!lower_package.empty() && lower == lower_package)) {
-            plan.data.push_back({index, PackageDirectoryMount(top, obb_directories.contains(top)) + "/" +
-                                            Join(parts, skip + 1, parts.size())});
-            continue;
+            if (lower == "android") continue;
+            if (IsApk(files[index].path)) {
+                plan.apks.push_back(index);
+                continue;
+            }
+            if (depth == 1) {
+                if (const auto owner = ExpansionPackage(top)) {
+                    plan.data.push_back({index, PackageDirectoryMount(*owner, true) + "/" + top});
+                    continue;
+                }
+                if (PackJunk(top)) continue;
+            } else if (PackageLike(top) || (!lower_package.empty() && lower == lower_package)) {
+                plan.data.push_back({index, PackageDirectoryMount(top, obb_directories.contains(top)) + "/" +
+                                                Join(parts, skip + 1, parts.size())});
+                continue;
+            }
+            auto [found, inserted] = extras.try_emplace(top, plan.extras.size());
+            if (inserted) plan.extras.push_back({top, {}, 0});
+            auto& extra = plan.extras[found->second];
+            extra.members.push_back({index, "/sdcard/" + Join(parts, skip, parts.size())});
+            extra.bytes += files[index].size;
+            extra.directory = extra.directory || depth > 1;
         }
-        auto [found, inserted] = extras.try_emplace(top, plan.extras.size());
-        if (inserted) plan.extras.push_back({top, {}, 0});
-        auto& extra = plan.extras[found->second];
-        extra.members.push_back({index, "/sdcard/" + Join(parts, skip, parts.size())});
-        extra.bytes += files[index].size;
+        std::stable_sort(plan.apks.begin(), plan.apks.end(), [&](std::size_t left, std::size_t right) {
+            const auto key = [&](std::size_t index) {
+                return std::tuple(split[index].size(), ModdedApk(files[index].path), files[index].path);
+            };
+            return key(left) < key(right);
+        });
+        return plan;
+    };
+    auto plan = classify(wrappers);
+    // An early Gameloft game's pack with nothing else recognized holds its <GameID> directory: the lone directory
+    // (wrappers included) named like a part of the package, or the only one.
+    if (GameloftPackage(package) && plan.data.empty() && !plan.extras.empty()) {
+        std::vector<const std::vector<std::string>*> members;
+        for (const auto& extra : plan.extras)
+            for (const auto& member : extra.members)
+                members.push_back(&split[member.index]);
+        const auto chain = LoneDirectories(members);
+        if (const auto game = GameloftGameDirectory(chain, package, false)) {
+            for (const auto* parts : members)
+                if (parts->size() > *game + 1)
+                    plan.data.push_back({static_cast<std::size_t>(parts - split.data()),
+                                         std::string(kGameloftGames) + "/" + Join(*parts, *game, parts->size())});
+            std::sort(plan.data.begin(), plan.data.end(),
+                      [](const ArchiveData& left, const ArchiveData& right) { return left.index < right.index; });
+            plan.extras.clear();
+            return plan;
+        }
     }
-    std::stable_sort(plan.apks.begin(), plan.apks.end(), [&](std::size_t left, std::size_t right) {
-        const auto key = [&](std::size_t index) {
-            return std::tuple(split[index].size(), ModdedApk(files[index].path), files[index].path);
-        };
-        return key(left) < key(right);
-    });
+    // Wrappers are only looked through for what they reveal; with nothing recognized below them they are content.
+    if (wrappers > 0 && plan.data.empty() && plan.apks.empty()) plan = classify(0);
     return plan;
 }
 
@@ -360,6 +426,28 @@ DataDirectoryPlan PlanDataDirectory(const std::vector<ImportFile>& files, std::s
     else if (folded_names.size() == 1 && PackageLike(*folded_names.begin()))
         result.package = *folded_names.begin();
     if (result.package.empty()) {
+        // A directory picked for an early Gameloft game sits at kGameloftGames/<name> (GuessDataMount); it is the
+        // game's own directory unless a lone directory below it is the one named like a part of the package.
+        if (GameloftPackage(package) && base_parts.size() == 4 && Lower(base_parts[1]) == "gameloft" &&
+            Lower(base_parts[2]) == "games") {
+            std::vector<std::vector<std::string>> relative;
+            std::vector<const std::vector<std::string>*> members;
+            relative.reserve(files.size());
+            for (const auto& file : files) {
+                relative.push_back(Split(file.path));
+                relative.back().insert(relative.back().begin(), base_parts[3]);
+            }
+            for (const auto& parts : relative)
+                members.push_back(&parts);
+            const auto game = GameloftGameDirectory(LoneDirectories(members), package, true).value_or(0);
+            if (game > 0) {
+                for (std::size_t index = 0; index < files.size(); ++index)
+                    if (relative[index].size() > game + 1)
+                        result.plan.data.push_back({index, std::string(kGameloftGames) + "/" +
+                                                               Join(relative[index], game, relative[index].size())});
+                return result;
+            }
+        }
         for (std::size_t index = 0; index < files.size(); ++index)
             result.plan.data.push_back({index, path(placed[index].guest, placed[index].guest.size())});
         return result;
@@ -392,6 +480,7 @@ DataDirectoryPlan PlanDataDirectory(const std::vector<ImportFile>& files, std::s
         auto& extra = result.plan.extras[found->second];
         extra.members.push_back({index, path(item.guest, item.guest.size())});
         extra.bytes += files[index].size;
+        extra.directory = extra.directory || count < item.guest.size();
     }
     return result;
 }
@@ -422,8 +511,10 @@ std::string ArchiveMount(const ArchivePlan& plan, std::span<const std::string> e
             ++shared;
         common.resize(shared);
     }
-    // sdcard/Android/<kind>/<package>: one app's own directory is as deep as a mount goes.
+    // sdcard/Android/<kind>/<package>: one app's own directory is as deep as a mount goes; Gameloft's games
+    // directory holds each game's own one and mounts whole.
     if (common.size() > 4 && common[1] == "Android") common.resize(4);
+    if (common.size() > 3 && Lower(common[1]) == "gameloft" && Lower(common[2]) == "games") common.resize(3);
     return "/" + Join(common, 0, common.size());
 }
 

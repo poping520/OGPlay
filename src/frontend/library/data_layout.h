@@ -17,12 +17,18 @@ struct StorageMarker final {
 };
 
 // A layout marker starting at parts[at] (ASCII case folded): Android/data|obb|media, a trailing Android,
-// sdcard, or emulated/0. Nullopt anywhere else ("Android/games" is just a folder called Android).
+// sdcard, emulated/0, or gameloft/games (spelled lower case in the guest). Nullopt anywhere else
+// ("Android/games" is just a folder called Android).
 [[nodiscard]] std::optional<StorageMarker> MatchStorageMarker(std::span<const std::string_view> parts, std::size_t at);
 
 // An app's own directory named after its package: Android/obb/<name> when it holds expansion (.obb) files
 // directly, otherwise Android/data/<name>.
 [[nodiscard]] std::string PackageDirectoryMount(std::string_view name, bool holds_obb);
+
+// Early Gameloft games (package containing "gameloft", any case) keep their data outside Android/, in
+// kGameloftGames/<GameID>; a pack for one mounts at kGameloftGames itself.
+inline constexpr std::string_view kGameloftGames = "/sdcard/gameloft/games";
+[[nodiscard]] bool GameloftPackage(std::string_view package);
 
 // A file name with the .obb extension, in any case.
 [[nodiscard]] bool IsObbName(std::string_view name);

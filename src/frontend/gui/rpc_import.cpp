@@ -173,33 +173,57 @@ void DescribeArchiveData(app::JsonWriter& writer, app::JsonWriter::Value archive
         writer.AddString(item, "name", extra.name);
         writer.AddUnsignedInteger(item, "files", extra.members.size());
         writer.AddUnsignedInteger(item, "bytes", extra.bytes);
+        writer.AddBool(item, "directory", extra.directory);
         writer.Append(extras, item);
     }
     writer.Add(archive, "extras", extras);
 }
 
-// The host directory a linked data pack refers to and its mount: the picked directory's part at the planned mount,
-// or the ancestor standing for it when the mount (an app's own directory) lies above the picked directory.
+// The host directory a linked data pack refers to and its mount: the directory standing for the planned mount,
+// inside the picked one or an ancestor named as the mount's parts below it (an app's own directory above a
+// picked files/). An ancestor that does not stand for the mount (the folder a Gameloft game's directory was
+// picked from) is never linked: the picked directory is then linked at its own place.
 std::pair<std::filesystem::path, std::string> LinkedDataDirectory(const std::filesystem::path& picked,
                                                                   std::string_view base,
                                                                   const std::vector<ImportFile>& files,
                                                                   const ArchivePlan& plan) {
     const auto mount = ArchiveMount(plan, {});
-    const auto depth = static_cast<std::size_t>(std::count(mount.begin(), mount.end(), '/'));
-    const auto base_depth = static_cast<std::size_t>(std::count(base.begin(), base.end(), '/'));
     auto linked = std::filesystem::absolute(picked).lexically_normal();
     if (linked.filename().empty()) linked = linked.parent_path();
-    if (depth <= base_depth) {
-        for (auto step = depth; step < base_depth; ++step)
-            linked = linked.parent_path();
-        return {linked, mount};
+    const std::pair<std::filesystem::path, std::string> own{linked, std::string(base)};
+    const auto fold = [](std::string text) {
+        std::transform(text.begin(), text.end(), text.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return text;
+    };
+    const auto parts = [](std::string_view text) {
+        std::vector<std::string> result;
+        for (std::size_t start = 0; start <= text.size();) {
+            const auto end = std::min(text.find('/', start), text.size());
+            result.emplace_back(text.substr(start, end - start));
+            start = end + 1;
+        }
+        return result;
+    };
+    const auto& item = plan.data.front();
+    const auto host = parts(files[item.index].path);
+    const auto below = parts(std::string_view(item.guest_path).substr(mount.size() + 1));
+    const auto common = std::min(host.size(), below.size());
+    for (std::size_t step = 1; step <= common; ++step)
+        if (fold(host[host.size() - step]) != fold(below[below.size() - step])) return own;
+    if (below.size() <= host.size()) {
+        std::string inside;
+        for (std::size_t index = 0; index < host.size() - below.size(); ++index)
+            inside.append(index ? "/" : "").append(host[index]);
+        return {inside.empty() ? linked : linked / ImportFilePath(inside), mount};
     }
-    // The parts between the picked directory and the mount, as any planned file spells them on the host.
-    const auto& path = files[plan.data.front().index].path;
-    std::size_t end = 0;
-    for (auto step = base_depth; step < depth; ++step)
-        end = path.find('/', end == 0 ? 0 : end + 1);
-    return {linked / ImportFilePath(path.substr(0, end)), mount};
+    for (auto index = below.size() - host.size(); index-- > 0;) {
+        if (fold(Text(linked.filename())) != fold(below[index])) return own;
+        linked = linked.parent_path();
+    }
+    const auto name = mount.substr(mount.rfind('/') + 1);
+    if (fold(Text(linked.filename())) != fold(name)) return own;
+    return {linked, mount};
 }
 
 template <class T>

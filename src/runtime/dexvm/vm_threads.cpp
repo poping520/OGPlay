@@ -364,7 +364,7 @@ void VmThreadRuntime::Start(const VmObjectRef thread_object, std::string name, c
     created->run_method = run_method;
     created->uncaught_dispatcher = std::move(uncaught_dispatcher);
     created->name = name.empty() ? "Thread-" + std::to_string(created->id) : std::move(name);
-    created->context = impl_->vm->CreateExecutionContext();
+    created->context = impl_->vm->CreateExecutionContext(ExecutionTickBudget::unbounded);
     auto* record = created.get();
     impl_->records.emplace(thread_object.Value(), std::move(created));
     // Published under the same lock the teardown join reads it under; the

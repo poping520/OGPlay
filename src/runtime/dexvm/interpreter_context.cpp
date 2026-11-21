@@ -255,13 +255,14 @@ const InterpreterExecutionState& Interpreter::Impl::Execution(const InterpreterE
     return const_cast<Impl*>(this)->Execution(context);
 }
 
-InterpreterExecutionContext Interpreter::CreateExecutionContext() {
+InterpreterExecutionContext Interpreter::CreateExecutionContext(const ExecutionTickBudget tick_budget) {
     InterpreterExecutionContext context;
     context.owner_ = this;
     const std::lock_guard lock(impl_->executions_mutex);
     context.token_ = impl_->next_execution_token++;
     auto execution = std::make_unique<InterpreterExecutionState>();
     execution->token = context.token_;
+    execution->unbounded_ticks = tick_budget == ExecutionTickBudget::unbounded;
     impl_->executions.emplace(context.token_, std::move(execution));
     return context;
 }

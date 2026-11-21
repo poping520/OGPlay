@@ -11,6 +11,7 @@
 #include <array>
 #include <bit>
 #include <cstring>
+#include <limits>
 #include "ogplay/memory/address_space.h"
 #include <optional>
 #include <span>
@@ -324,6 +325,8 @@ void Interpreter::Impl::StepThreaded(InterpreterExecutionState& execution) {
     const auto dex_unit = *frame_ptr->method->dex_unit;
     const auto entry_depth = frames.size();
     std::uint64_t ticks = execution.ticks;
+    const std::uint64_t tick_limit =
+        execution.unbounded_ticks ? std::numeric_limits<std::uint64_t>::max() : config.tick_budget;
     std::uint64_t executed = 0;
     const FastInstruction* insn = nullptr;
     std::uint32_t ip = kInvalidFastIndex;
@@ -347,7 +350,7 @@ void Interpreter::Impl::StepThreaded(InterpreterExecutionState& execution) {
             throw DexVmError(DexVmErrorReason::thread_stopped,
                              "dexvm thread stopped at teardown after " + std::to_string(ticks) + " ticks");
         }
-        if (ticks > config.tick_budget) {
+        if (ticks > tick_limit) {
             stats.executed_instructions += executed;
             executed = 0;
             execution.ticks = ticks;
@@ -388,7 +391,7 @@ void Interpreter::Impl::StepThreaded(InterpreterExecutionState& execution) {
             throw DexVmError(DexVmErrorReason::thread_stopped,                                                         \
                              "dexvm thread stopped at teardown after " + std::to_string(ticks) + " ticks");            \
         }                                                                                                              \
-        if (ticks > config.tick_budget) {                                                                              \
+        if (ticks > tick_limit) {                                                                                      \
             OGPLAY_SYNC_EXECUTION();                                                                                   \
             throw DexVmError(DexVmErrorReason::budget_exhausted,                                                       \
                              "dexvm tick budget exhausted after " + std::to_string(ticks) + " ticks");                 \

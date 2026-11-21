@@ -1021,10 +1021,24 @@ std::shared_ptr<const VfsReadLease> VirtualFileSystem::Impl::CaptureReadLease(co
     }
     if (length > std::numeric_limits<std::size_t>::max()) throw VfsError(kEfbig, "VFS writable lease is too large");
     auto reservation = ReserveResourceMemory(length, true);
-    Materialize(*file);
     std::vector<std::byte> snapshot(static_cast<std::size_t>(length));
-    using Difference = std::vector<std::byte>::difference_type;
-    std::copy_n(file->contents.begin() + static_cast<Difference>(offset), snapshot.size(), snapshot.begin());
+    if (file->read_at) {
+        try {
+            const auto got = file->read_at(offset, snapshot);
+            backing_read_bytes_.fetch_add(got, std::memory_order_relaxed);
+            if (got != length) {
+                throw VfsError(kEio, "VFS backing was truncated");
+            }
+        } catch (const VfsError&) {
+            throw;
+        } catch (const std::exception& error) {
+            throw VfsError(kEio, std::string("VFS backing read failed: ") + error.what());
+        }
+    } else {
+        Materialize(*file);
+        using Difference = std::vector<std::byte>::difference_type;
+        std::copy_n(file->contents.begin() + static_cast<Difference>(offset), snapshot.size(), snapshot.begin());
+    }
     return std::make_shared<SnapshotLease>(std::move(snapshot), std::move(reservation));
 }
 

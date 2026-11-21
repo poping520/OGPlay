@@ -66,6 +66,8 @@ struct InterpreterExecutionState final {
     // Scopes publish newly produced refs here while nested guest calls may GC.
     std::vector<VmObjectRef> intrinsic_roots;
     std::uint64_t ticks{};
+    // Fixed at creation: worker run() contexts carry no instruction budget.
+    bool unbounded_ticks{};
     std::uint64_t token{};
     std::thread::id active_host;
     std::thread::id bound_host;
@@ -347,7 +349,7 @@ public:
             throw DexVmError(DexVmErrorReason::thread_stopped,
                              "dexvm thread stopped at teardown after " + std::to_string(execution.ticks) + " ticks");
         }
-        if (execution.ticks > config.tick_budget) {
+        if (!execution.unbounded_ticks && execution.ticks > config.tick_budget) {
             throw DexVmError(DexVmErrorReason::budget_exhausted,
                              "dexvm tick budget exhausted after " + std::to_string(execution.ticks) + " ticks");
         }

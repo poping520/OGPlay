@@ -58,8 +58,8 @@ struct ThreadedVm final {
     Interpreter interpreter;
     VmThreadRuntime threads;
 
-    explicit ThreadedVm(NativeMethodBridge* bridge = nullptr,
-                        InterpreterBackend backend = InterpreterBackend::threaded, bool platform = false)
+    explicit ThreadedVm(NativeMethodBridge* bridge = nullptr, InterpreterBackend backend = InterpreterBackend::threaded,
+                        bool platform = false, std::uint64_t tick_budget = InterpreterConfig{}.tick_budget)
         : model(arrays, {}), linker(),
           interpreter(
               [this, platform]() -> DexClassLinker& {
@@ -71,7 +71,7 @@ struct ThreadedVm final {
                   linker.Link();
                   return linker;
               }(),
-              model, bridge, ledger, {.backend = backend}),
+              model, bridge, ledger, {.tick_budget = tick_budget, .backend = backend}),
           threads(interpreter) {}
 
     [[nodiscard]] VmMethodId Static(const std::string& class_descriptor, const std::string& name,
@@ -143,6 +143,21 @@ TEST_CASE("dexvm Thread.start runs run() on a real host thread") {
     CHECK(vm.StatusOf(thread_object) == VmThreadStatus::finished);
     CHECK(vm.threads.LiveCount() == 0U);
     CHECK(!vm.threads.TakeFailure().has_value());
+}
+
+TEST_CASE("dexvm worker run() carries no tick budget while root entries keep it") {
+    // LFlow.loopSum(100) needs several hundred ticks, well past this budget.
+    ThreadedVm vm(nullptr, InterpreterBackend::threaded, false, 200);
+    const auto thread_object = vm.Make("LThreadProbe;", "()Ljava/lang/Runnable;");
+    vm.threads.Start(thread_object, "probe", vm.threads.AllocateThreadId());
+    vm.threads.Join(thread_object);
+    CHECK(vm.StatusOf(thread_object) == VmThreadStatus::finished);
+    CHECK(!vm.threads.TakeFailure().has_value());
+    CHECK(vm.ReadInt("LThreadProbe;", "counter") == 4950);
+
+    const std::array arguments{VmValue::Int(100)};
+    CHECK_THROWS_AS(static_cast<void>(vm.interpreter.Call(vm.Static("LFlow;", "loopSum", "(I)I"), arguments)),
+                    DexVmError);
 }
 
 TEST_CASE("dexvm child threads share one object world with the root") {

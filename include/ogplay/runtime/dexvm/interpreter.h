@@ -131,6 +131,15 @@ private:
     friend class Interpreter;
 };
 
+// Instruction budget policy of one execution context. Top-level lifecycle
+// entries get InterpreterConfig::tick_budget per entry; a guest Java worker
+// thread's run() is unbounded like Android and leaves only through teardown
+// stop or a Clock deadline.
+enum class ExecutionTickBudget : std::uint8_t {
+    per_entry,
+    unbounded,
+};
+
 struct InterpreterExecutionSnapshot final {
     std::size_t frame_depth{};
     bool has_pending_exception{};
@@ -352,7 +361,8 @@ public:
     // Creates a new execution context. VmThreadRuntime gives each guest Java
     // thread one of these plus a real host thread; callers may also create
     // one directly to interleave independent calls on a single thread.
-    [[nodiscard]] InterpreterExecutionContext CreateExecutionContext();
+    [[nodiscard]] InterpreterExecutionContext
+    CreateExecutionContext(ExecutionTickBudget tick_budget = ExecutionTickBudget::per_entry);
     void DiscardExecutionContext(const InterpreterExecutionContext& context);
     [[nodiscard]] InterpreterExecutionSnapshot ExecutionSnapshot(const InterpreterExecutionContext& context) const;
 

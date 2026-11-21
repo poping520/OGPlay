@@ -180,6 +180,9 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   TLS/JNI local frame；解释仍由全 VM 锁串行。同步 worker 等待可显式维持 Clock 停摆区间，
   短暂重取 VM 锁不重置起点，补时仍受该区间真实耗时限制。start 虚派真实 `run()`；interrupt/join/sleep/
   park/uncaught handler/ThreadGroup 使用唯一 runtime。priority/daemon 不映射宿主调度或退出。
+- tick 预算只约束 `ExecutionTickBudget::per_entry` context 的顶层入口（主 Looper 每次 pollOnce
+  续期，JNI 附加线程按调用计）；Java worker 的 `run()` 与 Android 一样不设指令预算，
+  忙等或长循环只由 teardown stop 与 Clock 截止时间终止。
 - monitor owner 是 context token；wait 完全释放并恢复 recursion，notify/interrupt/shutdown/
   Clock 唤醒。Java 时间查询可读取纳秒值，等待仍使用从同一读数派生的毫秒。非 owner 操作抛 IllegalMonitorStateException。deadline 只用注入 Clock；无 Clock
   明确失败，禁止读取宿主墙钟。

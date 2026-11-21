@@ -749,6 +749,34 @@ TEST_CASE("VFS writable lease budget is aggregate and released on destruction") 
     vfs.Close(descriptor);
 }
 
+TEST_CASE("VFS writable host lease snapshots only the requested window within budget") {
+    using namespace ogplay::runtime;
+    HostMountFixture fixture;
+    std::string contents(4096, '\0');
+    for (std::size_t i = 0; i < contents.size(); ++i) {
+        contents[i] = static_cast<char>(i % 127);
+    }
+    fixture.Put("large.bin", contents);
+    VirtualFileSystem vfs({.resource_memory_budget_bytes = 64U});
+    vfs.MountHostDirectory("/host", fixture.root);
+    REQUIRE(vfs.Stat("/host/large.bin").writable);
+    const auto descriptor = vfs.Open("/host/large.bin", {.read = true});
+    auto lease = vfs.CaptureReadLease(descriptor, 1000, 32);
+    std::vector<std::byte> expected;
+    for (std::size_t i = 1000; i < 1032; ++i) {
+        expected.push_back(static_cast<std::byte>(contents[i]));
+    }
+    CHECK(ReadLease(lease) == expected);
+    CHECK(vfs.IoStatistics().full_materialized_bytes == 0U);
+    CHECK(vfs.IoStatistics().backing_read_bytes == 32U);
+    CHECK(vfs.IoStatistics().lease_snapshot_bytes == 32U);
+    vfs.Close(descriptor);
+    fixture.Put("large.bin", "changed");
+    CHECK(ReadLease(lease) == expected);
+    lease.reset();
+    CHECK(vfs.IoStatistics().lease_snapshot_bytes == 0U);
+}
+
 TEST_CASE("VFS host directory mount lazily reads and preserves external writes") {
     const auto unique = std::to_string(
         std::chrono::steady_clock::now().time_since_epoch().count());

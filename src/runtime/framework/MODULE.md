@@ -22,7 +22,6 @@ execution、integration 或游戏 profile。
   为 `0..6`，支持 ISO-639 两/三字母代码，其他合法语言明确回退英语索引 `5`。
 - 当前包 PackageInfo 接受 versionCode=0 与空 versionName，原样发布到版本字段。
 - 服务未安装或能力未实现时明确失败，不模拟完整 Android services。
-- `src/` 不得出现游戏、厂商或包名特判。
 
 ## 测试
 

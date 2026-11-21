@@ -31,7 +31,6 @@
 翻译游戏 ARM 机器码，在 syscall、JNI、Android API 与图形/音频边界提供进程内兼容。
 只实现游戏进程会直接调用的能力；不引入 Binder IPC、system_server、Zygote、完整 ART/Dalvik、
 Play 服务或现代支付/社交/反作弊。进程内 Java 对象协议不等于系统服务或跨进程实现。
-游戏差异只进入 data/profiles；src 中禁止游戏名、厂商名、包名及专属分支。
 
 ### 后果
 
@@ -307,7 +306,7 @@ PackageManager 查询保留清单事实；不改变其他组件或扩展同进�
 ### 后果
 
 PackageManager 能查到、AMS 不可托管的视图差异是有意为之。依赖独立进程功能的游戏
-会失去该功能，但记账可查；不引入独立 guest 进程、Binder IPC 或游戏专属分支。
+会失去该功能，但记账可查；不引入独立 guest 进程或 Binder IPC。
 
 <a id="adr-0171"></a>
 

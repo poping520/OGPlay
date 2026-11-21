@@ -82,7 +82,7 @@ guest 主线程在独立宿主线程持续执行 ROM Looper.loop。session 提�
   API 19 与 VM/guest call 默认值由通用实现决定；逻辑表面尺寸由用户设置提供；Manifest 和 APK inventory
   提供入口与 ABI，前端按标准 Android 路径装配 OBB 和外部目录。
 - exact-key table 校验共用 TOML 私有入口，各 table 声明允许键集合与上下文。
-- 身份必须精确匹配声明条件；`src/` 不出现标题、厂商或包名分支。
+- 身份必须精确匹配声明条件。
 - 生命周期清理顺序固定，状态推进由固定帧步进驱动，不依赖 sleep。
 - app process 发布逻辑键盘（id=-1）与鼠标映射触摸（id=0）；触摸轴范围采用逻辑窗口坐标。
   QueueInput 将宿主设备编号归一到这两个 id，Java 与 NativeActivity 输入队列共用该映射。
@@ -93,7 +93,7 @@ guest 主线程在独立宿主线程持续执行 ROM Looper.loop。session 提�
 ## 禁止
 
 - 不复制每游戏帧循环。
-- 不在代码中出现包名、游戏名、厂商名或补丁地址。
+- 不在代码中出现补丁地址。
 - 不把导出符号、文件探针或模糊哈希当作游戏身份。
 - 不恢复 Profile 声明的 JNI 调用序列或 Java handler 映射。
 

@@ -73,7 +73,6 @@
 
 - 不运行时按名称加载 FFmpeg，不镜像 FFmpeg 结构体；只经预编译包公共头调用。
 - 不直接调用平台解码 API；FFmpeg 组件扩充只在 OGPlay-ffmpeg 仓库进行。
-- 不出现游戏名或按 title 分支。
 
 ## 测试
 

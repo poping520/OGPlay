@@ -55,8 +55,8 @@ native/音频回调及重入 CPU 使用同一 Dynarmic context。并发上限可
 
 组合 Bionic、guest JNI ABI、Android boundary、DexVM/框架 HLE，拥有进程会话、动态加载、
 headless/NativeActivity runner 与出口报告。可依赖 jni_guest/boundary/framework/jni/bionic/
-syscall/execution/vfs 及下层；下层不得反向依赖 integration。不直接持有窗口、消费输入或
-实现游戏专属逻辑；executor、Clock、VFS、Profile 必须显式注入或由确定性 fixture 建立。
+syscall/execution/vfs 及下层；下层不得反向依赖 integration。不直接持有窗口或消费输入；
+executor、Clock、VFS、Profile 必须显式注入或由确定性 fixture 建立。
 
 内容树触摸分发、intercept/CANCEL 与非 split 捕获归 ROM ViewRootImpl/ViewGroup；
 integration 的 WMS/WindowSystem 管理窗口命中、焦点与输入通道，session 注入事件，不消费宿主设备。

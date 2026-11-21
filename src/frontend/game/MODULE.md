@@ -14,7 +14,7 @@
 VFS 装配、持久实例选择、MCP/诊断、Clock、输入与退出不变量沿用父模块契约。
 启动或运行故障的 `frontend.run_apk.fault` 保留多行异常诊断。会话结束时 `frontend.run_apk.unimplemented`
 逐条告警 DexVM 能力账本的未实现命中，字段含次数和可用的首个 LR。
-未实现能力明确失败；不拥有启动器窗口，不包含平台 API 或游戏专属分支。
+未实现能力明确失败；不拥有启动器窗口，不包含平台 API。
 参数由 frontend.run_apk_options 和运行选项定向测试验证；真实 APK 按 playbook 验证。
 
 Profile v4 只提供身份匹配；启动固定 API 19，surface 使用 GameRunOptions 用户值，

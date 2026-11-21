@@ -74,6 +74,9 @@ struct AndroidGuestPlatformConfig final {
     // offline WebView policy so unsupported web requests fail through the
     // Android callback surface instead of terminating the guest.
     bool strict_webview_errors{};
+    // Installed Play Store, disabled GSF and no account; local LVL/billing
+    // services only report failure. Off removes the Google Play environment.
+    bool google_play{true};
 };
 
 class AndroidGuestPlatformState final {

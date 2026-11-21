@@ -4,7 +4,7 @@
 
 为 dex_activity 提供 Android native 与进程内服务绑定，将 session 的 VFS、窗口服务、
 ANGLE、媒体、线程及平台事实接入 DexVM。禁止 title/厂商分支；不实现完整 Android、
-跨进程 Binder/system_server、外部包数据库、Play 或手机系统服务。移动宿主经 HAL 接入（ADR-0086）。
+跨进程 Binder/system_server、外部包数据库、真实 Play 或手机系统服务。移动宿主经 HAL 接入（ADR-0086）。
 
 `catalog.cpp` 唯一注册；每类一个声明函数，命名规则同 [intrinsics](../../dexvm/intrinsics/MODULE.md)，shape/handler 在所属
 content/os/view/graphics/gl/media/database/device family TU 同址。`shared.*` 仅跨类 helper；
@@ -83,7 +83,7 @@ Libcore.os 的 Posix native 读取本进程事实，优先级不映射宿主调�
 
 ## PackageManager、权限与路径
 
-本地 PMS 发布 session 封存的当前 APK Manifest/path/label/permission/feature，并从固定的停用系统包清单回答受支持的单包查询。
+本地 PMS 发布 session 封存的当前 APK Manifest/path/label/permission/feature，并从由 `google_play` 过滤的固定系统包表回答受支持的单包查询。
 值对象来自 BootDex，Context 保持稳定 ApplicationInfo，查询返回独立值；FLAG_INSTALLED 是已知事实。
 ApplicationInfo.theme 和 ActivityInfo.theme 发布各自的 Manifest 值，未声明为 0。alias 沿用目标快照，ActivityInfo.getThemeResource() 由 ROM 回落到应用主题。
 meta-data 的 value 解码 ARSC 类型（含 float→Bundle.putFloat），非 RIGID 不支持类型告警忽略，
@@ -93,12 +93,12 @@ key 仍必须存在，NUL/孤立 surrogate 保留 Java code units；resource 保
 
 | 查询 | 支持与失败边界 |
 | --- | --- |
-| getInstalledPackages/getInstalledApplications | 封存当前 APK 安装清单，通过 ROM ParceledListSlice 返回独立列表，分别复用 getPackageInfo/getApplicationInfo 投影。缺安装清单的应用列表查询记账失败 |
+| getInstalledPackages/getInstalledApplications | 封存当前 APK 加上当前存在的 Google Play 系统包（含停用包），通过 ROM ParceledListSlice 返回独立列表，分别复用包/应用投影；系统包不支持的有效 flags 仍记账失败。缺安装清单的应用列表查询记账失败 |
 | getInstallerPackageName(String) | 当前直接加载 APK 无安装器记录则 null；未知包（含空串/system/null）IAE，不推测商店 |
 | getResourcesForApplication(String) | 当前包共用应用 Resources/AssetManager；未知包（含空串/system）NameNotFoundException，null NPE；无跨包/其他重载 |
 | getPackageArchiveInfo | ROM PackageManager/PackageParser 从 guest VFS 中的 APK 解析 Manifest。缺路径或损坏归档沿 ROM 返回 null |
-| getApplicationInfo | 当前包的独立 ApplicationInfo，含按请求返回的元数据及当前应用启用设置；清单内停用系统包返回最小 ApplicationInfo |
-| getPackageInfo/getPackagesHoldingPermissions | 当前包按请求投影 activities、receivers、services、providers、instrumentation、权限、配置及签名。组件数组保留声明顺序和 alias；仅按组件声明过滤禁用项。没有声明时数组为 null；已有声明但全部被过滤时为零长度。Instrumentation 仅发布元数据。getPackageInfo 对清单内停用系统包返回最小 PackageInfo |
+| getApplicationInfo | 当前包的独立 ApplicationInfo，含按请求返回的元数据及当前应用启用设置；表内系统包返回最小 ApplicationInfo |
+| getPackageInfo/getPackagesHoldingPermissions | 当前包按请求投影 activities、receivers、services、providers、instrumentation、权限、配置及签名。组件数组保留声明顺序和 alias；仅按组件声明过滤禁用项。没有声明时数组为 null；已有声明但全部被过滤时为零长度。Instrumentation 仅发布元数据。getPackageInfo 对表内系统包返回最小 PackageInfo |
 | getActivityInfo/getReceiverInfo/getServiceInfo/getProviderInfo/resolveContentProvider/queryContentProviders | 当前包组件或 authority。组件查询看应用与组件启用状态；同名 Activity/receiver/service 取最后声明。Provider 可按请求发布 URI 授权模式 |
 | getPermissionInfo/queryPermissionsByGroup | 当前 Manifest 注册的权限定义，GET_META_DATA 发布定义元数据。仅请求或授予的权限仍无定义 |
 | queryIntentActivities/resolveIntent/queryIntentContentProviders | 当前 APK 显式组件及隐式过滤器。ROM IntentFilter 匹配 action/category、MIME、scheme、authority 与路径模式，按优先级、DEFAULT 与匹配分排序；resolveIntent 取首项 |
@@ -114,13 +114,13 @@ GET_SIGNATURES 从 package_resource_path 对应的封存 APK 字节惰性提取�
 成功的 DER 或解析错误。每次请求创建新的 ROM Signature(byte[]) 和数组，解析失败逐次记账并抛出 UOE。
 证书提取边界见 [loader 契约](../../../loader/MODULE.md#公共-api)。
 
-停用系统包的单包元数据查询接受空有效位和 GET_DISABLED_COMPONENTS、GET_UNINSTALLED_PACKAGES、
-GET_DISABLED_UNTIL_USED_COMPONENTS、GET_INTENT_FILTERS 范围内的有效位；应用仍为停用。
+Google Play 系统包的元数据查询接受空有效位和 GET_DISABLED_COMPONENTS、GET_UNINSTALLED_PACKAGES、
+GET_DISABLED_UNTIL_USED_COMPONENTS、GET_INTENT_FILTERS 范围内的有效位；启用状态取系统包表。
 其他有效位按 `dexvm.disabled_system_packages` 记账并抛出 UnsupportedOperationException。
-getApplicationEnabledSetting 返回 DISABLED_USER，getPackageUid 返回预留的应用 UID，isPackageAvailable 返回 true。
+getApplicationEnabledSetting 对 vending 返回 DEFAULT、对 gsf 返回 DISABLED_USER；getPackageUid 返回预留的应用 UID，isPackageAvailable 返回 true。
 这些查询限 user 0，跨用户查询及 setApplicationEnabledSetting 抛出 SecurityException。
-getInstalledPackages、getInstalledApplications、getPackagesForUid、getNameForUid 和 checkSignatures 的事实范围仍为当前 APK。
-停用系统包的 APK 与数据路径仅作元数据发布。
+getPackagesForUid、getNameForUid 和 checkSignatures 的事实范围仍为当前 APK。
+系统包的 APK 与数据路径仅作元数据发布，GET_SIGNATURES 明确失败，不伪造 Google 证书。
 
 显式查询优先使用 Intent 的 component，其次取 selector 的 component；按对应组件 getter 投影，
 MATCH_DEFAULT_ONLY 和 GET_RESOLVED_FILTER 在显式路径无效果。命中时 ResolveInfo 仅填对应组件；
@@ -166,6 +166,7 @@ calling identity 固定为进程 UID/PID，StrictMode mask 按执行上下文隔
 | WifiLock/MulticastLock | ROM WifiManager 计数、held 和每 manager 50 锁上限；本地 IWifiManager 校验锁模式及 WAKE_LOCK/CHANGE_WIFI_MULTICAST_STATE 权限，不改变连接、网卡或组播。 |
 | Sensor/Telephony/Keyguard | ROM SystemSensorManager 与 NDK 共用会话注入的不可变设备目录和可替换数据源，独立订阅经同一 Looper fd 路径投递。桌面数据源发布静止朝北的运动传感器，手机端可替换数据源。LegacySensorManager 经 IWindowManager 查询固定 ROTATION_0；Keyguard 查询沿进程 provider，缺席表示桌面无锁屏。ITelephony 报告 PHONE_TYPE_GSM，SIM 为 ABSENT，运营商为空，无订阅时 subscriberId=null；身份经 IPhoneSubInfo 与 SystemProperties 读取。ITelephonyRegistry 按掩码推送当前状态，注销时释放回调。 |
 | AccountManager | 本地 IAccountManager 表示零账户、零 authenticator。查询保留 API19 权限检查并返回空数组，令牌失效为空操作。空 feature 查询通过 onResult 返回空数组，需 authenticator 的会话以 onError 报 bind failure。账户权限变更、跨用户与共享账户写入受限。 |
+| Google Play 环境 | `google_play` 默认开启，模拟装有商店且未登录 Google 账号的设备。`android_google_play.cpp` 集中拥有包事实、组件声明与本地 Binder 工厂；PMS 查询及 AMS 绑定共用声明。三个服务分别持有共享 Binder/连接，支持纯 action（包名为空或 vending）及显式组件绑定；BIND_AUTO_CREATE、支持 flags、重复连接合并、禁止跨组件复用、最后解绑释放及 session GC/关闭清理共用一条路由。LVL 经主 Looper 异步回传固定无效响应 999，标准 LVL 校验失败；IAB v3 仅事务 1–5（isBillingSupported/getSkuDetails/getBuyIntent/getPurchases/consumePurchase），v2 仅 sendBillingRequest，均同步回传计费不可用 3，Bundle 只有 RESPONSE_CODE，不发广播、不产生 PendingIntent。其他事务交 Binder.onTransact，v3 新增事务不实现。 |
 | AudioSystem/AudioManager | AudioSystem 发布内置扬声器和未静音麦克风。主输出采样率和缓冲帧数取会话 PCM 输出配置。AudioSystem 的设备、路由、音量、静音和低内存策略 setter 返回错误并逐方法记账。setParameters 接受参数并按键限流告警，getParameters 返回空串。输出延迟根据 PCM 缓冲与目标排队帧数计算，输出参数缺席时返回 -1。IAudioService 用同一份别名流索引、按 token 计数的静音和铃声模式派生线性混音增益。音频模式和强制路由状态只在进程内维护。媒体键经本地 PendingIntent 投递给栈顶接收器，RCC 仅登记。oneway 方法不向调用方抛 Java 异常。显示端及不支持的系统专用操作记账，系统 UI 音效播放走 UI 降级。 |
 | Vibrator | ROM SystemVibrator 经本地 IVibratorService 查询硬件缺席；单次请求及取消更新进程事实，模式请求检查权限和 UID，不驱动宿主硬件。 |
 
@@ -188,7 +189,22 @@ provider 保留最新请求；已登记的回调和请求由会话强持有。�
 外部存储沿 VFS 事实，无 OBB，备份与 USB 无可用后端。同步初始关闭，无账户或适配器。
 可变的剪贴板、通知库存、回调注册和设备开关均归会话；回调及有效 Binder token 由
 会话根保活。进程与任务查询沿 ROM Activity 栈及注入的内存事实。
-设备预装 Google Services Framework（`com.google.android.gsf`），用户已停用该包；其 UID 固定为 10001。
+Google Services Framework（`com.google.android.gsf`）只在 `google_play` 开启时预装，用户已停用；UID 10001。
+
+| 设备事实/行为 | 开启 | 关闭 |
+| --- | --- | --- |
+| com.android.vending | 已安装、启用的系统应用；UID 10002、versionCode 80290013、versionName 4.9.13、targetSdk 19、/system/priv-app/Phonesky.apk，无 sharedUserId | 不存在，单包查询 NameNotFound |
+| com.google.android.gsf | 已安装、用户停用 | 不存在，单包查询 NameNotFound |
+| com.google.android.gms | 不存在，GooglePlayServicesUtil 得到 SERVICE_MISSING；不实现 GMS Binder（Play 游戏、广告 ID、GCM via GMS、定位） | 同左 |
+| LVL / IAB v3 / IAB v2 | queryIntentServices/resolveService 发布 vending 已声明服务，绑定本地失败响应服务 | 查询为空、绑定失败，LVL 客户端走 RETRY |
+| market: VIEW | 解析为 exported/enabled 的 LaunchUrlHandlerActivity（DEFAULT/BROWSABLE）；启动记录 kind=play_store、scheme/host 后静默成功，不切换 Activity；for-result 记账拒绝 | 解析为空，启动抛 ActivityNotFoundException |
+| Google 账户 / 安装来源 | 零账户 / 当前 APK 的 installer 为 null | 同左 |
+
+商店的三个 exported/enabled 服务组件为 LicensingService、InAppBillingService 和 MarketBillingService，
+action 分别为 com.android.vending.licensing.ILicensingService、com.android.vending.billing.InAppBillingService.BIND、
+com.android.vending.billing.MarketBillingService.BIND。隐式服务 Intent 不含 data/type/category/selector；
+服务过滤器无 DEFAULT，MATCH_DEFAULT_ONLY 隐式查询为空。商店链接的 http(s) 及其他 data Intent 既有行为不变。
+无真实授权、购买、推送或 Google 证书。
 
 本包启用的同进程 provider 由 ROM ActivityThread 按 initOrder 安装，AMS 按 authority 登记。
 本地 IContentService 按 authority 与路径匹配观察者，使用 ROM ContentObserver transport 分发。

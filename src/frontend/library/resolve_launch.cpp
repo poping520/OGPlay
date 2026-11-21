@@ -75,6 +75,7 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
         std::get<bool>(EffectiveGameSetting(settings, global, entry, "cpu_limit_parallelism"));
     o.cpu_config.execution.max_mticks_per_second =
         std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "cpu_max_mticks_per_second"));
+    o.google_play = std::get<bool>(EffectiveGameSetting(settings, global, entry, "google_play"));
     const auto interpreter = std::get<std::string>(Setting(config, "interpreter"));
     if (interpreter != "default")
         o.dexvm_interpreter =

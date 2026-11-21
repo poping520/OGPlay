@@ -22,7 +22,8 @@ guest 主线程在独立宿主线程持续执行 ROM Looper.loop。session 提�
   label/icon/meta-data/requested permissions 注入 DexVM Android context；兼容授权集合来自 requested permissions，
   其中 GET_APP_OPS_STATS 和 UPDATE_APP_OPS_STATS 保留为平台权限。
   MANAGE_USERS 和 READ_LOGS 同样保留为平台权限。
-  安装事实装配后显式封存单包清单，当前 guest 仅安装本次 APK；独立未装配 context
+  安装事实装配后显式封存当前 APK 清单；Google Play 固定系统包按注入的 `google_play`
+  开关另行投影（见 dexvm_android 契约）。独立未装配 context
   不视为空安装清单，也不读取宿主或 Launcher 的应用列表。
   同一 sealed Manifest 的 activity/activity-alias 也注入 context，供 `getPackageInfo`
   在 `GET_ACTIVITIES` 下发布当前包 Activity 元数据；Activity 主题注册按组件名以后声明覆盖，

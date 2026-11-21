@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 #include "frontend/gui/dashboard.h"
 
+#include <array>
 #include <atomic>
 #include <algorithm>
 #include <chrono>
@@ -296,6 +297,26 @@ TEST_CASE("BND-43 GUI persists optional execution limits independently of nomina
     const auto defaults = BuildLaunchPlan(cli, tree.path, entry, {}).argv;
     CHECK(std::find(defaults.begin(), defaults.end(), "--cpu-limit-parallelism") == defaults.end());
     CHECK(std::find(defaults.begin(), defaults.end(), "--cpu-max-mticks-per-second") == defaults.end());
+}
+
+TEST_CASE("GUI passes the Google Play switch only when the game turns it off") {
+    using namespace ogplay::frontend;
+    using namespace ogplay::app;
+    TemporaryDirectory tree;
+    const auto cli = tree.path / "ogplay", directory = tree.path / "library" / "org.example.game";
+    Write(cli, "exe");
+    Write(directory / "base.apk", "apk");
+    auto entry = Entry(directory, {});
+    entry.external_dir.reset();
+    const auto defaults = BuildLaunchPlan(cli, tree.path, entry, {}).argv;
+    CHECK(std::find(defaults.begin(), defaults.end(), "--no-google-play") == defaults.end());
+    SaveGameSettings(directory, {{{"google_play", false}}});
+    const auto disabled = BuildLaunchPlan(cli, tree.path, entry, {}).argv;
+    CHECK(std::find(disabled.begin(), disabled.end(), "--no-google-play") != disabled.end());
+    const std::array<std::string_view, 2> args{"game.apk", "--no-google-play"};
+    CHECK_FALSE(ParseGameRunArgs(args).google_play);
+    const std::array<std::string_view, 1> plain{"game.apk"};
+    CHECK(ParseGameRunArgs(plain).google_play);
 }
 
 TEST_CASE("GUI launch tracker rejects duplicates and returns exact exits") {

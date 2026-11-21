@@ -2,6 +2,7 @@
 
 #include "shared.h"
 #include <vector>
+#include <span>
 
 namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_animation_PropertyValuesHolder_Natives(const Context&);
@@ -62,6 +63,32 @@ Decl Declare_local_ContentService_Class(const Context&);
 Decl Declare_local_ClipboardService_Class(const Context&);
 Decl Declare_local_UiModeService_Class(const Context&);
 Decl Declare_local_ContentChange_Class(const Context&);
+Decl Declare_local_PlayLicensingService_Class(const Context&);
+Decl Declare_local_PlayLicensingResponse_Class(const Context&);
+Decl Declare_local_PlayBillingService_Class(const Context&);
+Decl Declare_local_MarketBillingService_Class(const Context&);
+
+struct GooglePlaySystemPackage final {
+    std::string_view name;
+    std::int32_t uid, version_code;
+    std::string_view version_name, shared_user_id;
+    std::int32_t target_sdk_version;
+    std::string_view source_dir;
+    bool enabled;
+};
+
+struct GooglePlayService final {
+    std::string_view name, action, binder_type, descriptor;
+};
+
+[[nodiscard]] std::span<const GooglePlaySystemPackage> GooglePlaySystemPackages(const Context&);
+[[nodiscard]] const GooglePlaySystemPackage* FindGooglePlaySystemPackage(const Context&, std::string_view);
+[[nodiscard]] const GooglePlayService* MatchGooglePlayService(dx::Interpreter&, dx::VmObjectRef);
+[[nodiscard]] dx::VmObjectRef ConstructGooglePlayBinder(dx::Interpreter&, const GooglePlayService&);
+[[nodiscard]] dx::VmObjectRef NewGooglePlayComponentName(dx::Interpreter&, std::string_view);
+inline constexpr auto kPlayStorePackage = "com.android.vending";
+inline constexpr auto kPlayStoreActivity = "com.google.android.finsky.activities.LaunchUrlHandlerActivity";
+[[nodiscard]] bool IsGooglePlayStoreIntent(dx::Interpreter&, dx::VmObjectRef, bool launch = false);
 void NotifyLocalContentChange(dx::Interpreter&, const Context&, dx::VmObjectRef uri, dx::VmObjectRef sender,
                               bool wants_self);
 [[nodiscard]] Decl Declare_android_database_CursorWindow_Natives(const Context& context);

@@ -484,6 +484,8 @@ export const en: Record<string, string> = {
   'CPU 标称主频': 'Nominal CPU frequency',
   '游戏查询到的固定频率；不限制执行速度': 'Fixed frequency the game sees; does not limit execution speed',
   '按虚拟核数限制原生 CPU 并发': 'Limit native CPU concurrency to the virtual cores',
+  'Google Play 商店与服务': 'Google Play Store and services',
+  '模拟未登录账号的 Play 商店（授权验证失败，内购和游戏登录不可用）。关闭可能导致部分游戏无法启动。': 'Simulates the Play Store with no account signed in (license checks fail; in-app purchases and Play Games sign-in are unavailable). Turning this off may prevent some games from starting.',
   '限制同时执行 ARM 指令的线程数；保留一个 guest 线程对应一个宿主线程': 'Limits how many threads run ARM code at once; keeps one host thread per guest thread',
   '原生 CPU 速率上限': 'Native CPU rate cap',
   '百万 tick/秒': 'M ticks/s',

@@ -255,6 +255,7 @@ public:
             runtime::GuestProcessEnvironment::Api19(context->external_storage_root));
         const auto android_id = request.platform.android_id;
         const auto strict_webview_errors = request.platform.strict_webview_errors;
+        const auto google_play = request.platform.google_play;
         request.boundary_options.compressed_texture_family = ResolveManifestCompressedTextureFamily(manifest);
         if (request.logger != nullptr) {
             std::string declarations;
@@ -356,6 +357,7 @@ public:
                     context->package_version_name = manifest.version_name.value_or("");
                     context->target_sdk_version = manifest.target_sdk.value_or(0U);
                     context->strict_webview_errors = strict_webview_errors;
+                    context->google_play = google_play;
                     context->application_class_name = manifest.application_class;
                     context->application_process_name = manifest.application_process_name;
                     context->application_label = manifest.application_label;

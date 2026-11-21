@@ -99,6 +99,24 @@ ResolveAndroidActivity(dx::IntrinsicContext& call, const Context& context, const
     if (context->process_stopping) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "process is stopping"};
     const auto intent = call.arguments[0].ref;
     if (!intent.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "intent is null"};
+    if (IsGooglePlayStoreIntent(call.vm, intent, true)) {
+        if (!context->google_play)
+            throw dx::VmJavaThrow{"Landroid/content/ActivityNotFoundException;", "Play Store is not installed"};
+        if (request_code >= 0) {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_result", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "external Activity results are unavailable"};
+        }
+        const auto data = CallAndroidMethod(call.vm, intent, "getData", "()Landroid/net/Uri;").ref;
+        const auto data_root = call.vm.ProtectReferences(std::array{data});
+        const auto host_ref = CallAndroidMethod(call.vm, data, "getHost", "()Ljava/lang/String;").ref;
+        const auto host = host_ref.IsValid() ? call.vm.StringUtf8(host_ref) : "";
+        if (auto* logger = call.vm.Log())
+            logger->Write(core::LogLevel::info, "runtime.android.google_play", "ignored Play Store launch", {},
+                          {{"kind", "play_store"}, {"scheme", "market"}, {"host", host}},
+                          {.mode = core::RateLimitMode::first_and_count});
+        return std::nullopt;
+    }
     const auto component = CallAndroidMethod(call.vm, intent, "getComponent", "()Landroid/content/ComponentName;").ref;
     const auto roots = call.vm.ProtectReferences(std::array{component});
     std::string component_name;
@@ -1073,27 +1091,6 @@ constexpr std::int32_t kPermissionDenied = -1;
 constexpr auto kPackageManager = "Landroid/content/pm/PackageManager;";
 constexpr auto kApplicationInfo = "Landroid/content/pm/ApplicationInfo;";
 
-struct DisabledSystemPackage {
-    std::string_view name;
-    std::int32_t uid;
-    std::int32_t version_code;
-    std::string_view version_name;
-    std::string_view shared_user_id;
-    std::int32_t target_sdk_version;
-    std::string_view source_dir;
-};
-
-constexpr DisabledSystemPackage kDisabledSystemPackages[]{
-    // The session assigns 10000 to the current APK. Reserve 10001 for this system package.
-    {"com.google.android.gsf", 10001, 19, "4.4.4", "com.google.uid.shared", 19,
-     "/system/app/GoogleServicesFramework.apk"},
-};
-
-const DisabledSystemPackage* FindDisabledSystemPackage(std::string_view name) {
-    const auto found = std::ranges::find(kDisabledSystemPackages, name, &DisabledSystemPackage::name);
-    return found == std::end(kDisabledSystemPackages) ? nullptr : found;
-}
-
 [[nodiscard]] const dx::LinkedField& Field(dx::IntrinsicContext& call, const dx::VmObjectRef object,
                                            const std::string_view name, const std::string_view descriptor) {
     const auto field = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(object), std::string(name),
@@ -1159,12 +1156,13 @@ std::int32_t PackageIntConstant(dx::IntrinsicContext& call, const char* owner, c
     return static_cast<std::int32_t>(linker.Class(linked.owner).static_storage[linked.slot]);
 }
 
-std::int32_t DisabledSystemPackageEnabledSetting(dx::IntrinsicContext& call) {
+std::int32_t GooglePlaySystemPackageEnabledSetting(dx::IntrinsicContext& call) {
     return PackageIntConstant(call, kPackageManager, "COMPONENT_ENABLED_STATE_DISABLED_USER");
 }
 
-void CheckDisabledSystemPackageFlags(dx::IntrinsicContext& call, std::int32_t mask, std::string_view method) {
-    const auto effective = call.arguments[1].AsInt() & mask;
+void CheckGooglePlaySystemPackageFlags(dx::IntrinsicContext& call, std::int32_t raw_flags, std::int32_t mask,
+                                       std::string_view method) {
+    const auto effective = raw_flags & mask;
     const auto allowed = PackageIntConstant(call, kPackageManager, "GET_DISABLED_COMPONENTS") |
                          PackageIntConstant(call, kPackageManager, "GET_UNINSTALLED_PACKAGES") |
                          PackageIntConstant(call, kPackageManager, "GET_DISABLED_UNTIL_USED_COMPONENTS") |
@@ -1172,10 +1170,10 @@ void CheckDisabledSystemPackageFlags(dx::IntrinsicContext& call, std::int32_t ma
     if (effective & ~allowed)
         UnsupportedPackageQuery(call, "dexvm.disabled_system_packages",
                                 std::string(method) +
-                                    ": requested content is unavailable for a disabled system package");
+                                    ": requested content is unavailable for a Google Play system package");
 }
 
-void RequireDisabledSystemPackageUser(dx::IntrinsicContext& call) {
+void RequireGooglePlaySystemPackageUser(dx::IntrinsicContext& call) {
     if (call.arguments[1].AsInt() != 0)
         throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "package query outside the current user"};
 }
@@ -1622,7 +1620,8 @@ dx::VmObjectRef MakePackageSignatures(dx::IntrinsicContext& call, const Context&
     });
 }
 
-dx::VmObjectRef MakeDisabledSystemApplicationInfo(dx::IntrinsicContext& call, const DisabledSystemPackage& package) {
+dx::VmObjectRef MakeGooglePlaySystemApplicationInfo(dx::IntrinsicContext& call,
+                                                    const GooglePlaySystemPackage& package) {
     const auto info = NewQueryObject(call, kApplicationInfo);
     const auto root = call.vm.ProtectReferences(std::array{info});
     const auto name = call.vm.NewStringUtf8(package.name);
@@ -1632,8 +1631,8 @@ dx::VmObjectRef MakeDisabledSystemApplicationInfo(dx::IntrinsicContext& call, co
     SetInt(call, info, "flags",
            PackageIntConstant(call, kApplicationInfo, "FLAG_SYSTEM") |
                PackageIntConstant(call, kApplicationInfo, "FLAG_INSTALLED"));
-    SetBoolean(call, info, "enabled", false);
-    SetInt(call, info, "enabledSetting", DisabledSystemPackageEnabledSetting(call));
+    SetBoolean(call, info, "enabled", package.enabled);
+    SetInt(call, info, "enabledSetting", package.enabled ? 0 : GooglePlaySystemPackageEnabledSetting(call));
     SetInt(call, info, "targetSdkVersion", package.target_sdk_version);
     const auto source_dir = call.vm.NewStringUtf8(package.source_dir);
     SetRef(call, info, "sourceDir", "Ljava/lang/String;", source_dir);
@@ -1643,16 +1642,47 @@ dx::VmObjectRef MakeDisabledSystemApplicationInfo(dx::IntrinsicContext& call, co
     return info;
 }
 
-dx::VmObjectRef MakeDisabledSystemPackageInfo(dx::IntrinsicContext& call, const DisabledSystemPackage& package) {
+dx::VmObjectRef MakeGooglePlaySystemPackageInfo(dx::IntrinsicContext& call, const GooglePlaySystemPackage& package) {
     // The install and update times default to zero, as in the current APK projection.
     const auto info = NewQueryObject(call, "Landroid/content/pm/PackageInfo;");
     const auto root = call.vm.ProtectReferences(std::array{info});
     SetRef(call, info, "packageName", "Ljava/lang/String;", call.vm.NewStringUtf8(package.name));
     SetInt(call, info, "versionCode", package.version_code);
     SetRef(call, info, "versionName", "Ljava/lang/String;", call.vm.NewStringUtf8(package.version_name));
-    SetRef(call, info, "sharedUserId", "Ljava/lang/String;", call.vm.NewStringUtf8(package.shared_user_id));
-    SetRef(call, info, "applicationInfo", kApplicationInfo, MakeDisabledSystemApplicationInfo(call, package));
+    if (!package.shared_user_id.empty())
+        SetRef(call, info, "sharedUserId", "Ljava/lang/String;", call.vm.NewStringUtf8(package.shared_user_id));
+    SetRef(call, info, "applicationInfo", kApplicationInfo, MakeGooglePlaySystemApplicationInfo(call, package));
     return info;
+}
+
+dx::VmObjectRef MakeGooglePlayComponentInfo(dx::IntrinsicContext& call, const Context& context, std::string_view name,
+                                            bool activity) {
+    const auto* package = FindGooglePlaySystemPackage(context, kPlayStorePackage);
+    if (!package) return dx::VmObjectRef{};
+    const auto application = MakeGooglePlaySystemApplicationInfo(call, *package);
+    const auto app_root = call.vm.ProtectReferences(std::array{application});
+    const auto info =
+        NewQueryObject(call, activity ? "Landroid/content/pm/ActivityInfo;" : "Landroid/content/pm/ServiceInfo;");
+    const auto root = call.vm.ProtectReferences(std::array{info});
+    SetRef(call, info, "applicationInfo", kApplicationInfo, application);
+    SetRef(call, info, "packageName", "Ljava/lang/String;", call.vm.NewStringUtf8(kPlayStorePackage));
+    SetRef(call, info, "processName", "Ljava/lang/String;", call.vm.NewStringUtf8(kPlayStorePackage));
+    SetRef(call, info, "name", "Ljava/lang/String;", call.vm.NewStringUtf8(name));
+    SetBoolean(call, info, "enabled", true);
+    SetBoolean(call, info, "exported", true);
+    return info;
+}
+
+dx::VmObjectRef MakeGooglePlayResolveInfo(dx::IntrinsicContext& call, const Context& context, std::string_view name,
+                                          bool activity) {
+    const auto info = MakeGooglePlayComponentInfo(call, context, name, activity);
+    if (!info.IsValid()) return dx::VmObjectRef{};
+    const auto root = call.vm.ProtectReferences(std::array{info});
+    const auto result = NewQueryObject(call, "Landroid/content/pm/ResolveInfo;");
+    SetRef(call, result, activity ? "activityInfo" : "serviceInfo",
+           activity ? "Landroid/content/pm/ActivityInfo;" : "Landroid/content/pm/ServiceInfo;", info);
+    if (activity) SetBoolean(call, result, "isDefault", true);
+    return result;
 }
 
 [[nodiscard]] dx::VmObjectRef MakePackageInfo(dx::IntrinsicContext& call, const Context& context, std::int32_t flags,
@@ -1772,11 +1802,24 @@ dx::VmValue InstalledApplications(dx::IntrinsicContext& call, const Context& con
     const auto application_root = call.vm.ProtectReferences(std::array{application});
     static_cast<void>(
         CallAndroidMethod(call.vm, list, "add", "(Ljava/lang/Object;)Z", {dx::VmValue::Ref(application)}));
+    for (const auto& package : GooglePlaySystemPackages(context)) {
+        CheckGooglePlaySystemPackageFlags(call, flags, kApplicationFlags, "getInstalledApplications");
+        const auto info = MakeGooglePlaySystemApplicationInfo(call, package);
+        const auto root = call.vm.ProtectReferences(std::array{info});
+        static_cast<void>(CallAndroidMethod(call.vm, list, "add", "(Ljava/lang/Object;)Z", {dx::VmValue::Ref(info)}));
+    }
     return dx::VmValue::Ref(list);
 }
 
 dx::VmValue PackageActivityInfo(dx::IntrinsicContext& call, const Context& context, const dx::VmObjectRef component,
                                 const std::int32_t raw_flags) {
+    const auto component_package = CallAndroidMethod(call.vm, component, "getPackageName", "()Ljava/lang/String;").ref;
+    if (call.vm.StringUtf8(component_package) == kPlayStorePackage) {
+        const auto name =
+            call.vm.StringUtf8(CallAndroidMethod(call.vm, component, "getClassName", "()Ljava/lang/String;").ref);
+        return dx::VmValue::Ref(name == kPlayStoreActivity ? MakeGooglePlayComponentInfo(call, context, name, true)
+                                                           : dx::VmObjectRef{});
+    }
     if (!context->activity_inventory_known)
         UnsupportedPackageQuery(call, "dexvm.activity_info",
                                 "getActivityInfo requires current-package component facts");
@@ -1846,6 +1889,17 @@ dx::VmValue QueryReceiverInfo(dx::IntrinsicContext& call, const Context& context
 
 dx::VmValue QueryServiceInfo(dx::IntrinsicContext& call, const Context& context, const dx::VmObjectRef component,
                              const std::int32_t raw_flags) {
+    const auto package = CallAndroidMethod(call.vm, component, "getPackageName", "()Ljava/lang/String;").ref;
+    if (call.vm.StringUtf8(package) == kPlayStorePackage) {
+        const auto intent = NewPlatformObject(call.vm, "Landroid/content/Intent;", "()V", {});
+        const auto root = call.vm.ProtectReferences(std::array{intent});
+        static_cast<void>(CallAndroidMethod(call.vm, intent, "setComponent",
+                                            "(Landroid/content/ComponentName;)Landroid/content/Intent;",
+                                            {dx::VmValue::Ref(component)}));
+        if (const auto* service = MatchGooglePlayService(call.vm, intent))
+            return dx::VmValue::Ref(MakeGooglePlayComponentInfo(call, context, service->name, false));
+        return dx::VmValue::Ref(dx::VmObjectRef{});
+    }
     if (!context->service_inventory_known)
         UnsupportedPackageQuery(call, "dexvm.service_info", "getServiceInfo requires current-package component facts");
     const auto [package_name, class_name] = ReadComponentIdentity(call, context, component);
@@ -2048,6 +2102,12 @@ dx::VmValue QueryInstalledIntentComponents(dx::IntrinsicContext& call, const Con
 }
 
 dx::VmValue QueryInstalledActivities(dx::IntrinsicContext& call, const Context& context, std::string_view method) {
+    const auto intent = dx::IntrinsicCall(call).NonNullRef(0, "intent");
+    if (IsGooglePlayStoreIntent(call.vm, intent)) {
+        if (call.arguments[3].AsInt() != 0)
+            throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "activity query outside the current user"};
+        return MakeComponentQueryList(call, MakeGooglePlayResolveInfo(call, context, kPlayStoreActivity, true));
+    }
     return QueryInstalledIntentComponents(
         call, context, context->activity_components, context->activity_inventory_known, PackageActivityInfo,
         "activityInfo", "Landroid/content/pm/ActivityInfo;", kIntentFlags, method, "dexvm.activity_query",
@@ -2136,9 +2196,9 @@ Decl Declare_local_PackageService_Class(const Context& context) {
                 throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "package query outside the current user"};
             const auto package = RequiredString(call, 0U, "packageName");
             if (package != context->package_name) {
-                if (const auto* system_package = FindDisabledSystemPackage(package)) {
-                    CheckDisabledSystemPackageFlags(call, kPackageFlags, "getPackageInfo");
-                    return dx::VmValue::Ref(MakeDisabledSystemPackageInfo(call, *system_package));
+                if (const auto* system_package = FindGooglePlaySystemPackage(context, package)) {
+                    CheckGooglePlaySystemPackageFlags(call, call.arguments[1].AsInt(), kPackageFlags, "getPackageInfo");
+                    return dx::VmValue::Ref(MakeGooglePlaySystemPackageInfo(call, *system_package));
                 }
                 return dx::VmValue::Ref(dx::VmObjectRef{});
             }
@@ -2158,9 +2218,10 @@ Decl Declare_local_PackageService_Class(const Context& context) {
                 throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "package query outside the current user"};
             const auto package = RequiredString(call, 0U, "packageName");
             if (package != context->package_name) {
-                if (const auto* system_package = FindDisabledSystemPackage(package)) {
-                    CheckDisabledSystemPackageFlags(call, kApplicationFlags, "getApplicationInfo");
-                    return dx::VmValue::Ref(MakeDisabledSystemApplicationInfo(call, *system_package));
+                if (const auto* system_package = FindGooglePlaySystemPackage(context, package)) {
+                    CheckGooglePlaySystemPackageFlags(call, call.arguments[1].AsInt(), kApplicationFlags,
+                                                      "getApplicationInfo");
+                    return dx::VmValue::Ref(MakeGooglePlaySystemApplicationInfo(call, *system_package));
                 }
                 return dx::VmValue::Ref(dx::VmObjectRef{});
             }
@@ -2180,6 +2241,7 @@ Decl Declare_local_PackageService_Class(const Context& context) {
             if (call.arguments[1].AsInt() != 0)
                 throw dx::VmJavaThrow{"Ljava/lang/SecurityException;", "package query outside the current user"};
             const auto applications = InstalledApplications(call, context);
+            const auto root = call.vm.ProtectReferences(std::array{applications.ref});
             return dx::VmValue::Ref(NewPlatformObject(call.vm, "Landroid/content/pm/ParceledListSlice;",
                                                       "(Ljava/util/List;)V", {applications}));
         });
@@ -2229,6 +2291,14 @@ Decl Declare_local_PackageService_Class(const Context& context) {
                                                  "getInstalledPackages", "dexvm.package_info_activities");
             const auto info = MakePackageInfo(call, context, flags, "getInstalledPackages");
             const auto list = MakeComponentQueryList(call, info);
+            const auto list_root = call.vm.ProtectReferences(std::array{list.ref});
+            for (const auto& package : GooglePlaySystemPackages(context)) {
+                CheckGooglePlaySystemPackageFlags(call, flags, kPackageFlags, "getInstalledPackages");
+                const auto system_info = MakeGooglePlaySystemPackageInfo(call, package);
+                const auto root = call.vm.ProtectReferences(std::array{system_info});
+                static_cast<void>(CallAndroidMethod(call.vm, list.ref, "add", "(Ljava/lang/Object;)Z",
+                                                    {dx::VmValue::Ref(system_info)}));
+            }
             return dx::VmValue::Ref(
                 NewPlatformObject(call.vm, "Landroid/content/pm/ParceledListSlice;", "(Ljava/util/List;)V", {list}));
         });
@@ -2268,6 +2338,13 @@ Decl Declare_local_PackageService_Class(const Context& context) {
         const auto raw_flags = call.arguments[2].AsInt();
         if (call.arguments[3].AsInt() != 0 || call.arguments[1].ref.IsValid())
             UnsupportedLocalService(call.vm, "local service query requires current user and no resolved type");
+        if (const auto* service = MatchGooglePlayService(call.vm, intent); service && context->google_play) {
+            const auto component =
+                CallAndroidMethod(call.vm, intent, "getComponent", "()Landroid/content/ComponentName;").ref;
+            // These service filters do not declare CATEGORY_DEFAULT.
+            if (!component.IsValid() && (raw_flags & kMatchDefaultOnly)) return dx::VmObjectRef{};
+            return MakeGooglePlayResolveInfo(call, context, service->name, false);
+        }
         if (const auto result =
                 QueryExplicitComponent(call, context, intent, raw_flags, QueryServiceInfo, "dexvm.service_resolution"))
             return *result;
@@ -2472,11 +2549,11 @@ Decl Declare_local_PackageService_Class(const Context& context) {
         const auto name = call.arguments[index].ref;
         return name.IsValid() && call.vm.StringUtf8(name) == context->package_name;
     };
-    const auto disabled_system_package = [context](dx::IntrinsicContext& call) -> const DisabledSystemPackage* {
+    const auto disabled_system_package = [context](dx::IntrinsicContext& call) -> const GooglePlaySystemPackage* {
         const auto name = call.arguments[0].ref;
         if (!name.IsValid()) return nullptr;
         const auto package = call.vm.StringUtf8(name);
-        return package == context->package_name ? nullptr : FindDisabledSystemPackage(package);
+        return package == context->package_name ? nullptr : FindGooglePlaySystemPackage(context, package);
     };
     for (const auto* name : {"canonicalToCurrentPackageNames", "currentToCanonicalPackageNames"}) {
         builder.VirtualMethod(name, "([Ljava/lang/String;)[Ljava/lang/String;", [](dx::IntrinsicContext& call) {
@@ -2511,7 +2588,7 @@ Decl Declare_local_PackageService_Class(const Context& context) {
     builder.VirtualMethod("getPackageUid", "(Ljava/lang/String;I)I",
                           [context, is_own_package, disabled_system_package](dx::IntrinsicContext& call) {
                               if (const auto* package = disabled_system_package(call)) {
-                                  RequireDisabledSystemPackageUser(call);
+                                  RequireGooglePlaySystemPackageUser(call);
                                   return dx::VmValue::Int(package->uid);
                               }
                               return dx::VmValue::Int(call.arguments[1].AsInt() == 0 && is_own_package(call, 0)
@@ -2533,7 +2610,7 @@ Decl Declare_local_PackageService_Class(const Context& context) {
     builder.VirtualMethod("isPackageAvailable", "(Ljava/lang/String;I)Z",
                           [is_own_package, disabled_system_package](dx::IntrinsicContext& call) {
                               if (disabled_system_package(call)) {
-                                  RequireDisabledSystemPackageUser(call);
+                                  RequireGooglePlaySystemPackageUser(call);
                                   return dx::VmValue::Int(1);
                               }
                               return dx::VmValue::Int(call.arguments[1].AsInt() == 0 && is_own_package(call, 0));
@@ -2652,9 +2729,10 @@ Decl Declare_local_PackageService_Class(const Context& context) {
         });
     builder.VirtualMethod("getApplicationEnabledSetting", "(Ljava/lang/String;I)I",
                           [context, is_own_package, disabled_system_package](dx::IntrinsicContext& call) {
-                              if (disabled_system_package(call)) {
-                                  RequireDisabledSystemPackageUser(call);
-                                  return dx::VmValue::Int(DisabledSystemPackageEnabledSetting(call));
+                              if (const auto* package = disabled_system_package(call)) {
+                                  RequireGooglePlaySystemPackageUser(call);
+                                  return dx::VmValue::Int(
+                                      package->enabled ? 0 : GooglePlaySystemPackageEnabledSetting(call));
                               }
                               if (call.arguments[1].AsInt() != 0) return dx::VmValue::Int(2);
                               if (!is_own_package(call, 0))
@@ -3391,6 +3469,37 @@ void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder& builder, const Co
             const auto intent = dx::IntrinsicCall(call).NonNullRef(2, "service");
             const auto component =
                 CallAndroidMethod(vm, intent, "getComponent", "()Landroid/content/ComponentName;").ref;
+            if (const auto* target = MatchGooglePlayService(vm, intent); target && context->google_play) {
+                const auto flags = call.arguments[5].AsInt();
+                if ((flags & ~(kBindAutoCreate | kBindDebugUnbind | kBindWaivePriority)) != 0)
+                    UnsupportedLocalService(vm, "unsupported local bind flags");
+                if (context->process_stopping || !context->application_enabled || !(flags & kBindAutoCreate))
+                    return dx::VmValue::Int(0);
+                const auto connection = dx::IntrinsicCall(call).NonNullRef(4, "connection");
+                for (const auto& [name, binding] : context->google_play_bindings)
+                    if (name != target->name &&
+                        std::ranges::find(binding.connections, connection) != binding.connections.end())
+                        UnsupportedLocalService(vm, "one connection cannot bind multiple components");
+                if (std::ranges::any_of(context->rom_services, [&](const auto& entry) {
+                        const auto& local = entry.second.connections;
+                        return std::ranges::find(local, connection, &RomService::Connection::dispatcher) != local.end();
+                    }))
+                    UnsupportedLocalService(vm, "one connection cannot bind multiple components");
+                auto& binding = context->google_play_bindings[std::string(target->name)];
+                auto& connections = binding.connections;
+                if (std::ranges::find(connections, connection) != connections.end()) return dx::VmValue::Int(1);
+                const auto name = NewGooglePlayComponentName(vm, target->name);
+                const auto name_root = vm.ProtectReferences(std::array{name});
+                auto& binder = binding.binder;
+                if (!binder.IsValid()) binder = ConstructGooglePlayBinder(vm, *target);
+                connections.push_back(connection);
+                NotifyRomServiceConnection(vm, connection, name, binder);
+                if (auto* logger = vm.Log())
+                    logger->Write(core::LogLevel::info, "runtime.android.google_play", "bound local Play service", {},
+                                  {{"component", std::string(target->name)}},
+                                  {.mode = core::RateLimitMode::first_and_count});
+                return dx::VmValue::Int(1);
+            }
             if (!component.IsValid()) {
                 RequireAbsentService(call, context, intent, [&](const auto& service, const auto&) {
                     return context->application_enabled && service.enabled;
@@ -3412,6 +3521,9 @@ void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder& builder, const Co
             const bool auto_create = (flags & kBindAutoCreate) != 0;
             const auto thread = dx::IntrinsicCall(call).NonNullRef(0, "application thread");
             const auto connection = dx::IntrinsicCall(call).NonNullRef(4, "connection");
+            for (const auto& [name, binding] : context->google_play_bindings)
+                if (std::ranges::find(binding.connections, connection) != binding.connections.end())
+                    UnsupportedLocalService(vm, "one connection cannot bind multiple components");
             RomService::Connection* existing = nullptr;
             for (auto& [name, service] : context->rom_services) {
                 const auto found =
@@ -3455,6 +3567,11 @@ void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder& builder, const Co
     builder.VirtualMethod(
         "unbindService", "(Landroid/app/IServiceConnection;)Z", [context](dx::IntrinsicContext& call) {
             const auto connection = dx::IntrinsicCall(call).NonNullRef(0, "connection");
+            for (auto it = context->google_play_bindings.begin(); it != context->google_play_bindings.end(); ++it) {
+                if (std::erase(it->second.connections, connection) == 0) continue;
+                if (it->second.connections.empty()) context->google_play_bindings.erase(it);
+                return dx::VmValue::Int(1);
+            }
             const auto found = std::ranges::find_if(context->rom_services, [&](const auto& entry) {
                 const auto& connections = entry.second.connections;
                 return std::ranges::find(connections, connection, &RomService::Connection::dispatcher) !=
@@ -3485,6 +3602,7 @@ void AddLocalActivityBindingMethods(dx::IntrinsicClassBuilder& builder, const Co
 namespace ogplay::runtime {
 void ShutdownLocalServices(DexVmAndroidContext& context) {
     context.rom_services.clear();
+    context.google_play_bindings.clear();
     context.local_broadcast_filters.clear();
     context.local_serial_broadcasts.clear();
     android_intrinsics::SetBroadcastDeadline(context, android_intrinsics::kNoBroadcastDeadline);

@@ -19,7 +19,9 @@ OGPlay 是安卓老游戏兼容层，不是 Android 模拟器。只实现游戏�
 framework 代码）会直接调用的能力，进程外的系统组件不实现。
 允许进程内的本地 Binder 对象和 AIDL 服务实现（ServiceManager 返回本进程的服务对象，
 不经 Parcel 传输）；禁止 Binder 驱动、跨进程通信、system_server 进程、Zygote、完整
-ART/Dalvik、Play 服务、现代支付/社交/反作弊能力。范围有争议时先与用户确认；用户已明确
+ART/Dalvik、Play 服务、现代支付/社交/反作弊能力。Google Play 只模拟“装有商店、未登录账号”的
+设备事实（vending/gsf 包、LVL 固定失败、IAB 计费不可用、商店链接静默成功），由 `google_play`
+开关控制；不实现 GMS、真实授权、购买或推送。范围有争议时先与用户确认；用户已明确
 同意的决定不再补写 ADR，结论直接写进本文件或相关 `MODULE.md`。
 
 ## 架构规则

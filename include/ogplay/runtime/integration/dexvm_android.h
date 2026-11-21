@@ -391,6 +391,16 @@ struct DexVmAndroidContext final {
 
     std::map<std::string, RomServiceRecord, std::less<>> rom_services;
 
+    // Installed Play Store, no signed-in account; GMS is always absent.
+    bool google_play{true};
+
+    struct GooglePlayBinding final {
+        dexvm::VmObjectRef binder;
+        std::vector<dexvm::VmObjectRef> connections;
+    };
+
+    std::map<std::string, GooglePlayBinding, std::less<>> google_play_bindings;
+
     // VM execution lock serializes token lookup, mutation and GC. Registry
     // owners are weak; live wrappers trace their Intent snapshot. Alarm entries
     // (when present) strongly retain wrappers until removal or process teardown.

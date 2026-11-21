@@ -101,6 +101,8 @@ struct GameRunOptions final {
     SurfaceAdaptation surface_adaptation{SurfaceAdaptation::none};
     // Frames per second drawn over the presented picture in this corner; absent shows none.
     std::optional<OverlayCorner> fps_overlay;
+    // Installed Play Store with no account: LVL fails, billing is unavailable; off removes Google packages.
+    bool google_play{true};
     bool operator==(const GameRunOptions&) const = default;
 };
 

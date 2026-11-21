@@ -312,6 +312,7 @@ TEST_CASE("DVM-180 getPackageInfo returns current-package Activity metadata") {
 TEST_CASE("DVM-240 installed applications use sealed facts independent values and API19 flags") {
     for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
+        f.context->google_play = false;
         auto& context = *f.context;
         context.package_name = "org.example.game";
         context.package_resource_path = "/data/app/org.example.game-1.apk";
@@ -1077,6 +1078,59 @@ TEST_CASE("PackageManager exposes user-disabled system package metadata through 
         CHECK(f.On(manager, "getApplicationEnabledSetting", "(Ljava/lang/String;)I", {VmValue::Ref(package)}).AsInt() ==
               3);
 
+        const auto vending = f.vm.NewStringUtf8("com.android.vending");
+        const auto vending_root = f.vm.ProtectReferences(std::array{vending});
+        const auto store = f.On(manager, "getPackageInfo", package_info, {VmValue::Ref(vending), VmValue::Int(0)}).ref;
+        const auto store_root = f.vm.ProtectReferences(std::array{store});
+        const auto store_app = PackageRef(f, store, "applicationInfo", "Landroid/content/pm/ApplicationInfo;");
+        CHECK(PackageField(f, store_app, "enabled", "Z") == 1);
+        CHECK((PackageField(f, store_app, "flags", "I") & flag_system) != 0);
+        CHECK(PackageField(f, store_app, "uid", "I") == 10002);
+        CHECK(PackageField(f, store_app, "targetSdkVersion", "I") == 19);
+        CHECK(PackageField(f, store, "versionCode", "I") == 80290013);
+        CHECK(f.vm.StringUtf8(PackageRef(f, store, "versionName", "Ljava/lang/String;")) == "4.9.13");
+        CHECK_FALSE(PackageRef(f, store, "sharedUserId", "Ljava/lang/String;").IsValid());
+        CHECK(f.vm.StringUtf8(PackageRef(f, store_app, "sourceDir", "Ljava/lang/String;")) ==
+              "/system/priv-app/Phonesky.apk");
+        CHECK(f.On(manager, "getApplicationEnabledSetting", "(Ljava/lang/String;)I", {VmValue::Ref(vending)}).AsInt() ==
+              0);
+        REQUIRE(f.On(manager, "getApplicationInfo", "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
+                     {VmValue::Ref(vending), VmValue::Int(0)})
+                    .ref.IsValid());
+        const auto store_signatures =
+            f.OnOutcome(manager, "getPackageInfo", package_info, {VmValue::Ref(vending), VmValue::Int(0x40)});
+        CHECK(store_signatures.exception_class ==
+              f.linker.ResolveDescriptor("Ljava/lang/UnsupportedOperationException;"));
+        f.context->package_inventory_known = true;
+        f.context->package_resource_path = "/data/app/org.example.game-1.apk";
+        for (const auto* method : {"getInstalledApplications", "getInstalledPackages"}) {
+            const auto list = f.On(manager, method, "(I)Ljava/util/List;", {VmValue::Int(0)}).ref;
+            const auto list_root = f.vm.ProtectReferences(std::array{list});
+            REQUIRE(f.On(list, "size", "()I").AsInt() == 3);
+            for (int i = 1; i <= 2; ++i) {
+                const auto item = f.On(list, "get", "(I)Ljava/lang/Object;", {VmValue::Int(i)}).ref;
+                CHECK(f.vm.StringUtf8(PackageRef(f, item, "packageName", "Ljava/lang/String;")) ==
+                      (i == 1 ? gsf : "com.android.vending"));
+            }
+        }
+        f.context->google_play = false;
+        for (const auto name : {package, vending}) {
+            for (const auto* method : {"getPackageInfo", "getApplicationInfo"}) {
+                const auto result = f.OnOutcome(manager, method,
+                                                std::string_view(method) == "getPackageInfo"
+                                                    ? package_info
+                                                    : "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
+                                                {VmValue::Ref(name), VmValue::Int(0)});
+                CHECK(result.exception_class ==
+                      f.linker.ResolveDescriptor("Landroid/content/pm/PackageManager$NameNotFoundException;"));
+            }
+        }
+        for (const auto* method : {"getInstalledApplications", "getInstalledPackages"}) {
+            const auto list = f.On(manager, method, "(I)Ljava/util/List;", {VmValue::Int(0)}).ref;
+            CHECK(f.On(list, "size", "()I").AsInt() == 1);
+        }
+        f.context->google_play = true;
+
         constexpr auto get_signatures = 0x40;
         const auto signatures =
             f.OnOutcome(manager, "getPackageInfo", package_info, {VmValue::Ref(package), VmValue::Int(get_signatures)});
@@ -1303,6 +1357,7 @@ TEST_CASE("PackageManager GET_SIGNATURES caches DER and failures, and returns fr
 TEST_CASE("PMS entry points silently ignore bits outside their API19 masks") {
     for (const auto backend : ogplay::test::InterpreterBackends()) {
         AndroidValueVm f(backend);
+        f.context->google_play = false;
         auto& c = *f.context;
         c.package_name = "fixture.app";
         c.package_resource_path = "/data/app/fixture.app-1.apk";

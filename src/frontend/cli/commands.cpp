@@ -110,6 +110,7 @@ constexpr std::string_view kRunApkHelp =
     "                                bottom-left or bottom-right (default hidden)\n"
     "    --dexvm-interpreter <switch|threaded>\n"
     "                                DexVM interpreter override\n"
+    "    --no-google-play           No Play Store or Google services framework on the device\n"
     "  Guest CPU\n"
     "    --cpu-cores <1..32>         Core count (default 1)\n"
     "    --cpu-frequency-mhz <1..10000>\n"

@@ -1457,7 +1457,7 @@ note = "JNI 附加原生线程首次 Java 调用/字段 clinit/monitor 操作分
 [dexvm.intrinsics_android_core]
 status = "partial"
 test = "tests/session/profile_entry_scope_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/loader/binary_xml_tests.cpp; tests/dexvm/scheduler_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "Android 核心有界 facade：Context/files/cache/obb、Resources、当前 APK PackageManager、输入及软件 Surface。停用系统包 GSF 仅支持单包查询。其他跨包能力、Binder/AMS、service 进程、ContentProvider 与 AttributeSet 长尾不支持。"
+note = "Android 核心有界 facade：Context/files/cache/obb、Resources、当前 APK PackageManager、输入及软件 Surface。google_play 开启时发布 vending/停用 GSF 的有界包、组件及安装列表查询。其他跨包能力、Binder/AMS、service 进程、ContentProvider 与 AttributeSet 长尾不支持。"
 
 [dexvm.location_service]
 status = "partial"
@@ -1547,12 +1547,12 @@ note = "GET_SIGNATURES 首次请求时从会话 APK 解析 v1 签名块并缓存
 [dexvm.package_archive_info]
 status = "partial"
 test = "tests/dexvm/android_package_metadata_tests.cpp#ROM PackageManager parses archive bytes"
-note = "ROM PackageManager 和 PackageParser 从 guest VFS APK 读取 Manifest。缺失或无效归档按 ROM 返回 null。单包安装清单仍由本地 IPackageManager 提供。"
+note = "ROM PackageManager 和 PackageParser 从 guest VFS APK 读取 Manifest。缺失或无效归档按 ROM 返回 null。安装清单仍由本地 IPackageManager 提供。"
 
 [dexvm.installed_applications]
 status = "partial"
 test = "tests/dexvm/android_package_metadata_tests.cpp#DVM-240; tests/runtime/jni_android_platform_tests.cpp#DVM-240"
-note = "封存单 APK 清单，getInstalledApplications 和 getInstalledPackages 分别复用 ApplicationInfo 和 PackageInfo 投影。忽略 API19 未读取的位。缺应用安装清单或无法提供的请求字段记账失败。"
+note = "封存当前 APK 清单加上 google_play 开启时存在的系统包（含停用 gsf）；getInstalledApplications 和 getInstalledPackages 分别复用 ApplicationInfo 和 PackageInfo 投影。忽略 API19 未读取的位。缺应用安装清单或无法提供的请求字段记账失败。"
 
 [dexvm.context_file_stream_path]
 status = "complete"
@@ -1963,6 +1963,11 @@ note = "Manifest receiver 经 session 注入，按当前包完整 ComponentName 
 status = "partial"
 test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp"
 note = "Manifest service 保存名称、启用、exported、process、permission、元数据与 flags。按当前包完整 ComponentName 查询，同名声明取后项。支持元数据、禁用过滤和未安装位，忽略 API19 未读取的位；缺清单或无法解析的共享库记账失败。"
+
+[dexvm.google_play_environment]
+status = "complete"
+test = "tests/dexvm/android_component_services_tests.cpp#Play licensing bind answers an invalid license response; tests/dexvm/android_component_services_tests.cpp#Google Play billing services resolve bind and return unavailable through Parcel; tests/dexvm/android_package_metadata_tests.cpp#PackageManager exposes user-disabled system package metadata through ROM; tests/dexvm/rom_activity_service_tests.cpp#Google Play market links resolve and launch without changing the Activity stack; tests/frontend/gui_launch_tests.cpp#GUI passes the Google Play switch only when the game turns it off"
+note = "google_play 默认开启：发布启用的 vending 与用户停用的 gsf，GMS 始终缺席；LVL 异步固定失败 999，IAB v3 事务 1–5/v2 sendBillingRequest 同步返回计费不可用 3。查询与显式/隐式绑定共用组件表，连接按组件共享并在最后解绑释放。market 链接可解析且静默启动；关闭后包/服务/商店链接缺席。无 Google 账户、真实授权、购买、推送或证书。"
 
 [dexvm.permission_info]
 status = "partial"

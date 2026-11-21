@@ -142,6 +142,8 @@ GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args) {
             }
         } else if (option == "--exit-after-frames" && index + 1 < args.size()) {
             options.exit_after_frames = ParsePositive(args[++index], option);
+        } else if (option == "--no-google-play") {
+            options.google_play = false;
         } else if (option == "--cpu-limit-parallelism") {
             options.cpu_config.execution.limit_parallelism = true;
         } else if (option == "--cpu-max-mticks-per-second" && index + 1 < args.size()) {
@@ -426,6 +428,7 @@ std::vector<std::string> FormatGameRunArgs(const GameRunOptions& o) {
     if (o.supersample_factor != 1) add("--supersample", std::to_string(o.supersample_factor));
     if (o.max_fps) add("--max-fps", std::to_string(o.max_fps));
     if (o.fps_overlay) add("--fps-overlay", std::string(OverlayCornerName(*o.fps_overlay)));
+    if (!o.google_play) args.emplace_back("--no-google-play");
     if (o.mcp_port) add("--mcp-port", std::to_string(*o.mcp_port));
     if (o.key_editor_port) add("--key-editor-port", std::to_string(*o.key_editor_port));
     if (o.mcp_manual_step) args.emplace_back("--mcp-manual-step");

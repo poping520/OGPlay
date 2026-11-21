@@ -218,3 +218,75 @@ TEST_CASE("P3 AMS a fast host resume keeps the queued pause stop resume order") 
     CHECK(x.trace->calls ==
           std::vector<std::string>{"schedulePauseActivity", "scheduleStopActivity", "scheduleResumeActivity"});
 }
+
+TEST_CASE("Google Play market links resolve and launch without changing the Activity stack") {
+    Fixture x;
+    x.Start();
+    x.Resumed();
+    const auto caller = x.Top();
+    const auto calls = x.trace->calls;
+    const auto base = x.f.New("Landroid/content/Context;");
+    const auto base_root = x.f.vm.ProtectReferences(std::array{base});
+    const auto pm = x.f.On(base, "getPackageManager", "()Landroid/content/pm/PackageManager;").ref;
+    const auto pm_root = x.f.vm.ProtectReferences(std::array{pm});
+    const auto intent = x.f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V",
+                                {V::Ref(x.f.vm.NewStringUtf8("android.intent.action.VIEW"))});
+    const auto intent_root = x.f.vm.ProtectReferences(std::array{intent});
+    const auto uri = x.f.Static("Landroid/net/Uri;", "parse", "(Ljava/lang/String;)Landroid/net/Uri;",
+                                {V::Ref(x.f.vm.NewStringUtf8("market://details?id=x"))})
+                         .ref;
+    x.f.On(intent, "setData", "(Landroid/net/Uri;)Landroid/content/Intent;", {V::Ref(uri)});
+    const auto resolve = [&] {
+        return x.f
+            .On(pm, "resolveActivity", "(Landroid/content/Intent;I)Landroid/content/pm/ResolveInfo;",
+                {V::Ref(intent), V::Int(0)})
+            .ref;
+    };
+    const auto start = [&](int request) {
+        return x.f.OnOutcome(x.am, "startActivity", start_signature,
+                             {V::Ref(x.thread), V::Ref(x.f.vm.NewStringUtf8(x.f.context->package_name)), V::Ref(intent),
+                              null, V::Ref(caller), null, V::Int(request), V::Int(0), null, null, null});
+    };
+    for (int mode = 0; mode < 3; ++mode) {
+        if (mode == 1)
+            x.f.On(intent, "setPackage", "(Ljava/lang/String;)Landroid/content/Intent;",
+                   {V::Ref(x.f.vm.NewStringUtf8("com.android.vending"))});
+        if (mode == 2) {
+            const auto package = x.f.vm.NewStringUtf8("com.android.vending");
+            const auto package_root = x.f.vm.ProtectReferences(std::array{package});
+            const auto name = x.f.vm.NewStringUtf8("com.google.android.finsky.activities.LaunchUrlHandlerActivity");
+            x.f.On(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+                   {V::Ref(package), V::Ref(name)});
+        }
+        for (bool enabled : {true, false}) {
+            x.f.context->google_play = enabled;
+            const auto result = resolve();
+            const auto result_root = x.f.vm.ProtectReferences(std::array{result});
+            CHECK(result.IsValid() == enabled);
+            if (enabled) {
+                const auto info =
+                    VmObjectRef{WindowField(x.f.vm, result, "activityInfo", "Landroid/content/pm/ActivityInfo;").bits};
+                CHECK(x.f.vm.StringUtf8(
+                          VmObjectRef{WindowField(x.f.vm, info, "packageName", "Ljava/lang/String;").bits}) ==
+                      "com.android.vending");
+                CHECK(x.f.vm.StringUtf8(VmObjectRef{WindowField(x.f.vm, info, "name", "Ljava/lang/String;").bits}) ==
+                      "com.google.android.finsky.activities.LaunchUrlHandlerActivity");
+            }
+            const auto list = x.f.On(pm, "queryIntentActivities", "(Landroid/content/Intent;I)Ljava/util/List;",
+                                     {V::Ref(intent), V::Int(0)})
+                                  .ref;
+            CHECK(x.f.On(list, "size", "()I").AsInt() == (enabled ? 1 : 0));
+            const auto launched = start(-1);
+            if (enabled)
+                CHECK_FALSE(launched.exception.IsValid());
+            else
+                CHECK(launched.exception_class ==
+                      x.f.linker.ResolveDescriptor("Landroid/content/ActivityNotFoundException;"));
+            CHECK(x.Top() == caller);
+            CHECK(x.trace->calls == calls);
+        }
+    }
+    x.f.context->google_play = true;
+    const auto for_result = start(7);
+    CHECK(for_result.exception_class == x.f.linker.ResolveDescriptor("Ljava/lang/UnsupportedOperationException;"));
+}

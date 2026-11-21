@@ -214,8 +214,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
           diagnostics_enabled, supersample_factor, max_fps, surface_width, surface_height, density_dpi, cpu_config,
           mcp_manual_step, preflight, survey_gaps_output, sandbox_directory, installation_id, ephemeral_sandbox,
           input_config_path, library_root, missing_data_report, run_report, window_title, window_icon,
-          window_icon_style, ui_language, app_language, surface_size_explicit, surface_adaptation, fps_overlay] =
-        std::move(options);
+          window_icon_style, ui_language, app_language, surface_size_explicit, surface_adaptation, fps_overlay,
+          google_play] = std::move(options);
     const auto language = ui_language ? *ui_language : app::SystemUiLanguage();
     const auto guest_language = app_language.value_or(language);
     const auto bundled_data = HostBundledDataPaths();
@@ -585,7 +585,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         app_request.guest_call_slice_observer_thread = std::this_thread::get_id();
         app_request.platform = {.installation_id = sandbox.installation_id,
                                 .android_id = sandbox.android_id,
-                                .version_name = manifest.version_name.value_or("unknown")};
+                                .version_name = manifest.version_name.value_or("unknown"),
+                                .google_play = google_play};
         app_request.dexvm = bridge_config;
         app_request.ledger = &dexvm_ledger;
         app_request.logger = &logger;

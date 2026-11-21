@@ -158,6 +158,11 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRo
         for (const auto& connection : service.connections)
             root(connection.dispatcher);
     }
+    for (const auto& [name, binding] : context.google_play_bindings) {
+        root(binding.binder);
+        for (const auto dispatcher : binding.connections)
+            root(dispatcher);
+    }
     for (const auto& [key, receiver] : context.location_registrations.receivers) {
         root(key.second);
         root(receiver.target);

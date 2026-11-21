@@ -251,6 +251,150 @@ TEST_CASE("DVM-144 failed service binding retains a Context owned dispatcher unt
     }
 }
 
+TEST_CASE("Play licensing bind answers an invalid license response") {
+    constexpr auto action = "com.android.vending.licensing.ILicensingService";
+    constexpr auto transact_signature = "(ILandroid/os/Parcel;Landroid/os/Parcel;I)Z";
+    constexpr int interface_transaction = 0x5f4e5446;
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
+        int connected = 0;
+        int disconnected = 0;
+        VmObjectRef delivered_binder;
+        int listener_code = -1;
+        std::string listener_payload;
+        auto connection_decl = IntrinsicClassBuilder::Class("Ltest/PlayLicensingConnection;", "Ljava/lang/Object;",
+                                                            {"Landroid/content/ServiceConnection;"});
+        connection_decl.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+        connection_decl.VirtualMethod("onServiceConnected", "(Landroid/content/ComponentName;Landroid/os/IBinder;)V",
+                                      [&](IntrinsicContext& call) {
+                                          ++connected;
+                                          delivered_binder = call.arguments[1].ref;
+                                          return VmValue::Void();
+                                      });
+        connection_decl.VirtualMethod("onServiceDisconnected", "(Landroid/content/ComponentName;)V",
+                                      [&](IntrinsicContext&) {
+                                          ++disconnected;
+                                          return VmValue::Void();
+                                      });
+        auto listener_decl = IntrinsicClassBuilder::Class("Ltest/PlayLicensingListener;", "Landroid/os/Binder;");
+        listener_decl.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+        listener_decl.VirtualMethod(
+            "onTransact", "(ILandroid/os/Parcel;Landroid/os/Parcel;I)Z", [&](IntrinsicContext& call) {
+                if (call.arguments[0].AsInt() != 1) return VmValue::Int(1);
+                const auto data = call.arguments[1].ref;
+                static_cast<void>(ogplay::runtime::android_intrinsics::CallAndroidMethod(
+                    call.vm, data, "enforceInterface", "(Ljava/lang/String;)V",
+                    {VmValue::Ref(call.vm.NewStringUtf8("com.android.vending.licensing.ILicenseResultListener"))}));
+                listener_code =
+                    ogplay::runtime::android_intrinsics::CallAndroidMethod(call.vm, data, "readInt", "()I").AsInt();
+                const auto first = ogplay::runtime::android_intrinsics::CallAndroidMethod(call.vm, data, "readString",
+                                                                                          "()Ljava/lang/String;")
+                                       .ref;
+                const auto second = ogplay::runtime::android_intrinsics::CallAndroidMethod(call.vm, data, "readString",
+                                                                                           "()Ljava/lang/String;")
+                                        .ref;
+                listener_payload = call.vm.StringUtf8(first) + "|" + call.vm.StringUtf8(second);
+                return VmValue::Int(1);
+            });
+        AndroidValueVm f(backend, {std::move(connection_decl).Build(), std::move(listener_decl).Build()});
+
+        const auto application = f.New("Landroid/content/Context;");
+        const auto connection = f.New("Ltest/PlayLicensingConnection;");
+        const auto intent =
+            f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8(action))});
+        const auto roots = f.vm.ProtectReferences(std::array{application, connection, intent});
+        f.context->service_inventory_known = true;
+        f.context->package_name = "org.example.game";
+        f.context->service_components = {{"org.example.game.LocalService", true, {}}};
+        const auto bind = [&](VmObjectRef target, int flags) {
+            return f.OnOutcome(application, "bindService",
+                               "(Landroid/content/Intent;Landroid/content/ServiceConnection;I)Z",
+                               {VmValue::Ref(target), VmValue::Ref(connection), VmValue::Int(flags)});
+        };
+        const auto expect_bind = [&](VmObjectRef target, int flags, bool expected) {
+            const auto result = bind(target, flags);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            CHECK(result.value.AsInt() == expected);
+        };
+        const auto expect_rejected = [&](VmObjectRef target, int flags) {
+            const auto result = bind(target, flags);
+            REQUIRE(result.exception.IsValid());
+            CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        };
+        const auto set_package = [&](const char* package) {
+            f.On(intent, "setPackage", "(Ljava/lang/String;)Landroid/content/Intent;",
+                 {VmValue::Ref(f.vm.NewStringUtf8(package))});
+        };
+        const auto drain = [&] {
+            const auto error = ogplay::test::android_value::DispatchFixtureMessages(f.vm, *f.context);
+            REQUIRE_MESSAGE(!error.has_value(), error.value_or(""));
+        };
+        const auto unbind = [&] {
+            f.On(application, "unbindService", "(Landroid/content/ServiceConnection;)V", {VmValue::Ref(connection)});
+        };
+
+        expect_bind(intent, 0, false);
+        set_package("org.example.other");
+        expect_bind(intent, 1, false);
+        set_package("com.android.vending");
+        f.On(intent, "addCategory", "(Ljava/lang/String;)Landroid/content/Intent;",
+             {VmValue::Ref(f.vm.NewStringUtf8("org.example.EXTRA"))});
+        expect_rejected(intent, 1);
+        f.On(intent, "removeCategory", "(Ljava/lang/String;)V",
+             {VmValue::Ref(f.vm.NewStringUtf8("org.example.EXTRA"))});
+        expect_rejected(intent, 0x41);
+        CHECK(f.context->google_play_bindings.empty());
+        // Switched off, the bind resolves like a phone without Play.
+        f.context->google_play = false;
+        expect_bind(intent, 1, false);
+        CHECK(f.context->google_play_bindings.empty());
+        f.context->google_play = true;
+
+        const auto local = f.New("Landroid/content/Intent;");
+        const auto local_root = f.vm.ProtectReferences(std::array{local});
+        f.On(local, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+             {VmValue::Ref(f.vm.NewStringUtf8("org.example.game")),
+              VmValue::Ref(f.vm.NewStringUtf8("org.example.game.LocalService"))});
+        expect_bind(local, 0, true);
+        expect_rejected(intent, 1);
+        unbind();
+        CHECK(f.context->rom_services.empty());
+
+        expect_bind(intent, 1, true);
+        expect_bind(intent, 1, true);
+        expect_rejected(local, 0);
+        drain();
+        REQUIRE(connected == 1);
+        CHECK(disconnected == 0);
+        REQUIRE(delivered_binder.IsValid());
+
+        const auto listener = f.New("Ltest/PlayLicensingListener;");
+        const auto parcel = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+        const auto parcel_roots = f.vm.ProtectReferences(std::array{delivered_binder, listener, parcel});
+        REQUIRE(f.On(delivered_binder, "transact", transact_signature,
+                     {VmValue::Int(interface_transaction), VmValue::Ref(VmObjectRef{}), VmValue::Ref(parcel),
+                      VmValue::Int(0)})
+                    .AsInt() == 1);
+        CHECK(f.vm.StringUtf8(f.On(parcel, "readString", "()Ljava/lang/String;").ref) == action);
+        CHECK(f.On(delivered_binder, "transact", transact_signature,
+                   {VmValue::Int(2), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}), VmValue::Int(0)})
+                  .AsInt() == 0);
+        f.On(parcel, "setDataPosition", "(I)V", {VmValue::Int(0)});
+        f.On(parcel, "writeInterfaceToken", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8(action))});
+        f.On(parcel, "writeLong", "(J)V", {VmValue::Long(7)});
+        f.On(parcel, "writeString", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("org.example.game"))});
+        f.On(parcel, "writeStrongBinder", "(Landroid/os/IBinder;)V", {VmValue::Ref(listener)});
+        REQUIRE(f.On(delivered_binder, "transact", transact_signature,
+                     {VmValue::Int(1), VmValue::Ref(parcel), VmValue::Ref(VmObjectRef{}), VmValue::Int(1)})
+                    .AsInt() == 1);
+        CHECK(listener_code == -1);
+        drain();
+        CHECK(listener_code == 999);
+        CHECK(listener_payload == "|");
+        unbind();
+        CHECK(f.context->google_play_bindings.empty());
+    }
+}
+
 TEST_CASE("DVM-193 receiver queries match independent filters and return BootDex results") {
     using ogplay::loader::AndroidManifestIntentFilter;
     using ogplay::loader::AndroidManifestReceiverComponent;
@@ -971,4 +1115,148 @@ TEST_CASE("ROM ActivityThread attaches to the local activity service and binds a
     CHECK(disconnected == 2);
     CHECK(f.context->rom_services.empty());
     unbind_service(observer);
+}
+
+TEST_CASE("Google Play billing services resolve bind and return unavailable through Parcel") {
+    constexpr auto transact = "(ILandroid/os/Parcel;Landroid/os/Parcel;I)Z";
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
+        VmObjectRef delivered;
+        int connected = 0;
+        std::string component_name;
+        auto declaration = IntrinsicClassBuilder::Class("Ltest/BillingConnection;", "Ljava/lang/Object;",
+                                                        {"Landroid/content/ServiceConnection;"});
+        declaration.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+        declaration.VirtualMethod("onServiceConnected", "(Landroid/content/ComponentName;Landroid/os/IBinder;)V",
+                                  [&](IntrinsicContext& call) {
+                                      delivered = call.arguments[1].ref;
+                                      ++connected;
+                                      component_name = call.vm.StringUtf8(
+                                          ogplay::runtime::android_intrinsics::CallAndroidMethod(
+                                              call.vm, call.arguments[0].ref, "getClassName", "()Ljava/lang/String;")
+                                              .ref);
+                                      return VmValue::Void();
+                                  });
+        declaration.VirtualMethod("onServiceDisconnected", "(Landroid/content/ComponentName;)V",
+                                  [](IntrinsicContext&) { return VmValue::Void(); });
+        AndroidValueVm f(backend, {std::move(declaration).Build()});
+        f.context->service_inventory_known = true;
+        const auto base = f.New("Landroid/content/Context;");
+        const auto base_root = f.vm.ProtectReferences(std::array{base});
+        const auto manager = f.On(base, "getPackageManager", "()Landroid/content/pm/PackageManager;").ref;
+        const auto manager_root = f.vm.ProtectReferences(std::array{manager});
+        const auto connection = f.New("Ltest/BillingConnection;");
+        const auto connection_root = f.vm.ProtectReferences(std::array{connection});
+        const auto second = f.New("Ltest/BillingConnection;");
+        const auto second_root = f.vm.ProtectReferences(std::array{second});
+        const auto bind = [&](VmObjectRef intent, VmObjectRef conn) {
+            return f
+                .On(base, "bindService", "(Landroid/content/Intent;Landroid/content/ServiceConnection;I)Z",
+                    {VmValue::Ref(intent), VmValue::Ref(conn), VmValue::Int(1)})
+                .AsInt();
+        };
+        const auto unbind = [&](VmObjectRef conn) {
+            f.On(base, "unbindService", "(Landroid/content/ServiceConnection;)V", {VmValue::Ref(conn)});
+        };
+        const auto drain = [&] {
+            const auto error = DispatchFixtureMessages(f.vm, *f.context);
+            REQUIRE_MESSAGE(!error, error.value_or(""));
+        };
+        for (const bool legacy : {false, true}) {
+            const auto name = legacy ? "com.android.vending.billing.MarketBillingService"
+                                     : "com.android.vending.billing.InAppBillingService";
+            const auto action = std::string(name) + ".BIND";
+            const auto descriptor = legacy ? "com.android.vending.billing.IMarketBillingService"
+                                           : "com.android.vending.billing.IInAppBillingService";
+            const auto intent =
+                f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8(action))});
+            const auto intent_root = f.vm.ProtectReferences(std::array{intent});
+            const auto query = [&] {
+                return f
+                    .On(manager, "queryIntentServices", "(Landroid/content/Intent;I)Ljava/util/List;",
+                        {VmValue::Ref(intent), VmValue::Int(0)})
+                    .ref;
+            };
+            f.context->google_play = false;
+            CHECK(f.On(query(), "size", "()I").AsInt() == 0);
+            CHECK(bind(intent, connection) == 0);
+            unbind(connection);
+            f.context->google_play = true;
+            const auto list = query();
+            const auto list_root = f.vm.ProtectReferences(std::array{list});
+            REQUIRE(f.On(list, "size", "()I").AsInt() == 1);
+            const auto result = f.On(list, "get", "(I)Ljava/lang/Object;", {VmValue::Int(0)}).ref;
+            const auto result_root = f.vm.ProtectReferences(std::array{result});
+            const auto service_field = f.linker.FindFieldRecursive(f.model.ObjectClass(result), "serviceInfo",
+                                                                   "Landroid/content/pm/ServiceInfo;");
+            REQUIRE(service_field);
+            const auto info = VmObjectRef{f.model.InstanceSlots(result)[f.linker.Field(*service_field).slot].bits};
+            for (const auto& [field, expected] :
+                 {std::pair{"name", name}, std::pair{"packageName", "com.android.vending"}}) {
+                const auto id = f.linker.FindFieldRecursive(f.model.ObjectClass(info), field, "Ljava/lang/String;");
+                REQUIRE(id);
+                CHECK(f.vm.StringUtf8(VmObjectRef{f.model.InstanceSlots(info)[f.linker.Field(*id).slot].bits}) ==
+                      expected);
+            }
+            REQUIRE(f.On(manager, "resolveService", "(Landroid/content/Intent;I)Landroid/content/pm/ResolveInfo;",
+                         {VmValue::Ref(intent), VmValue::Int(0)})
+                        .ref.IsValid());
+            const auto previous = connected;
+            REQUIRE(bind(intent, connection) == 1);
+            REQUIRE(bind(intent, connection) == 1);
+            drain();
+            CHECK(connected == previous + 1);
+            CHECK(component_name == name);
+            const auto binder = delivered;
+            REQUIRE(binder.IsValid());
+            // An explicit binding shares the component's Binder with the implicit binding.
+            const auto package = f.vm.NewStringUtf8("com.android.vending");
+            const auto package_root = f.vm.ProtectReferences(std::array{package});
+            const auto class_name = f.vm.NewStringUtf8(name);
+            f.On(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+                 {VmValue::Ref(package), VmValue::Ref(class_name)});
+            REQUIRE(bind(intent, second) == 1);
+            drain();
+            CHECK(delivered == binder);
+            static_cast<void>(f.vm.CollectGarbage("play-billing-bound"));
+            CHECK(f.vm.MarkReachable().IsMarked(binder));
+            for (int transaction = 1; transaction <= (legacy ? 1 : 5); ++transaction) {
+                const auto data = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+                const auto data_root = f.vm.ProtectReferences(std::array{data});
+                const auto reply = f.Static("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;").ref;
+                const auto reply_root = f.vm.ProtectReferences(std::array{reply});
+                f.On(data, "writeInterfaceToken", "(Ljava/lang/String;)V",
+                     {VmValue::Ref(f.vm.NewStringUtf8(descriptor))});
+                if (!legacy) {
+                    f.On(data, "writeInt", "(I)V", {VmValue::Int(3)});
+                    for (int i = 0; i < (transaction == 3 ? 4 : transaction == 4 ? 3 : 2); ++i)
+                        f.On(data, "writeString", "(Ljava/lang/String;)V",
+                             {VmValue::Ref(f.vm.NewStringUtf8("fixture"))});
+                }
+                if (legacy || transaction == 2) f.On(data, "writeInt", "(I)V", {VmValue::Int(0)});
+                REQUIRE(f.On(binder, "transact", transact,
+                             {VmValue::Int(transaction), VmValue::Ref(data), VmValue::Ref(reply), VmValue::Int(0)})
+                            .AsInt() == 1);
+                f.On(reply, "readException", "()V");
+                if (legacy || (transaction >= 2 && transaction <= 4)) {
+                    REQUIRE(f.On(reply, "readInt", "()I").AsInt() == 1);
+                    const auto bundle = f.New("Landroid/os/Bundle;", "(Landroid/os/Parcel;)V", {VmValue::Ref(reply)});
+                    const auto root = f.vm.ProtectReferences(std::array{bundle});
+                    CHECK(f.On(bundle, "size", "()I").AsInt() == 1);
+                    CHECK(f.On(bundle, "getInt", "(Ljava/lang/String;)I",
+                               {VmValue::Ref(f.vm.NewStringUtf8("RESPONSE_CODE"))})
+                              .AsInt() == 3);
+                } else
+                    CHECK(f.On(reply, "readInt", "()I").AsInt() == 3);
+                f.On(data, "recycle", "()V");
+                f.On(reply, "recycle", "()V");
+            }
+            unbind(connection);
+            REQUIRE(f.context->google_play_bindings.size() == 1);
+            unbind(second);
+            CHECK(f.context->google_play_bindings.empty());
+            f.context->google_play = false;
+            CHECK(bind(intent, connection) == 0);
+            unbind(connection);
+        }
+    }
 }

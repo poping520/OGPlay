@@ -82,6 +82,15 @@ public:
     }
 
     virtual void FlushHandle(std::int32_t handle) = 0;
+
+    // Pipe handles can block. Callers release VM locks and wait for
+    // readiness first, so the IO itself does not block under those locks.
+    [[nodiscard]] virtual bool IsPipe(std::int32_t) const { return false; }
+
+    virtual void WaitStreamReady(std::int32_t, bool /*write*/) {}
+
+    // Bytes buffered in a pipe handle; nullopt for other handles.
+    [[nodiscard]] virtual std::optional<std::size_t> StreamAvailable(std::int32_t) const { return std::nullopt; }
     virtual void TruncateHandle(std::int32_t handle, std::uint64_t size) = 0;
     virtual void CloseHandle(std::int32_t handle) = 0;
 };
@@ -173,6 +182,11 @@ public:
     void BindFileStream(VmObjectRef owner, std::shared_ptr<OpenFileDescription> file, bool close_underlying);
     [[nodiscard]] std::size_t FileAvailable(VmObjectRef owner) const;
     [[nodiscard]] std::size_t ReadFileStream(VmObjectRef owner, std::span<std::byte> destination);
+    // Pipe handle behind an open file stream, for a readiness wait done
+    // without the VM execution lock; nullopt for every other stream.
+    [[nodiscard]] std::optional<std::int32_t> PipeHandle(VmObjectRef owner) const;
+
+    [[nodiscard]] IoFileSystem* FileSystem() const noexcept { return file_system_; }
     [[nodiscard]] std::uint64_t SkipFileStream(VmObjectRef owner, std::uint64_t count);
     [[nodiscard]] std::uint64_t FileOffset(VmObjectRef owner) const;
     [[nodiscard]] std::uint64_t FileSize(VmObjectRef owner) const;

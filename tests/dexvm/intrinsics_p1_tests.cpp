@@ -32,6 +32,9 @@
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/dexvm/object_model.h"
+#include "ogplay/runtime/integration/dexvm_io_vfs.h"
+#include "ogplay/runtime/process/virtual_process.h"
+#include "ogplay/runtime/vfs/vfs.h"
 #include "interpreter_backends.h"
 
 namespace {
@@ -201,6 +204,55 @@ TEST_CASE("dexvm ROM Runtime.exec throws a catchable IOException and parks its r
         REQUIRE(reaper_waiting());
         expect_exec_failure();
         CHECK_FALSE(vm.threads.TakeFailure().has_value());
+    }
+}
+
+TEST_CASE("dexvm ROM Runtime.exec runs a virtual process and reads its output through a pipe") {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
+        INFO("backend=", backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        ogplay::runtime::VirtualFileSystem vfs;
+        ogplay::runtime::DexVmIoVfsAdapter adapter(vfs);
+        ogplay::runtime::VirtualProcessKernel kernel({.vfs = &vfs, .application_name = "com.example.game"});
+        ogplay::runtime::RegisterBuiltinCommands(kernel);
+        CoreIntrinsicServices services;
+        services.spawn_process = [&](const std::vector<std::string>& command,
+                                     const std::optional<std::vector<std::string>>&, const std::optional<std::string>&,
+                                     bool, CoreIntrinsicServices::SpawnedProcess& spawned) -> std::int32_t {
+            const auto path = kernel.ResolveExecutable(command.front(), ogplay::runtime::kVirtualDefaultPath);
+            if (!path) return -2;
+            const auto output = vfs.CreatePipe();
+            const auto input = vfs.CreatePipe();
+            const auto errors = vfs.CreatePipe();
+            const auto pid = kernel.Spawn(
+                kernel.ApplicationPid(), ogplay::runtime::kVfsApplicationDescriptorTable, *path, command, {}, "/", [&] {
+                    vfs.DuplicateTo(input.read_descriptor, 0);
+                    vfs.DuplicateTo(output.write_descriptor, 1);
+                    vfs.DuplicateTo(errors.write_descriptor, 2);
+                    for (const auto fd : {input.read_descriptor, input.write_descriptor, output.read_descriptor,
+                                          output.write_descriptor, errors.read_descriptor, errors.write_descriptor})
+                        vfs.Close(fd);
+                });
+            for (const auto fd : {input.read_descriptor, output.write_descriptor, errors.write_descriptor})
+                vfs.Close(fd);
+            spawned = {pid, output.read_descriptor, input.write_descriptor, errors.read_descriptor};
+            return pid;
+        };
+        services.wait_process = [&](const std::int32_t pid, const bool no_hang, std::int32_t& status) {
+            try {
+                const auto result = kernel.Wait(kernel.ApplicationPid(), pid > 0 ? pid : -1, no_hang);
+                status = result.status;
+                return result.pid;
+            } catch (const ogplay::runtime::VirtualProcessError& error) {
+                return -error.ErrorNumber();
+            }
+        };
+        Vm vm({.backend = backend}, true, services);
+        vm.interpreter.IO().SetFileSystem(&adapter);
+        const auto output = vm.AsString(vm.CallStatic("runtimeExecOutput", "()Ljava/lang/String;"));
+        CHECK(output.starts_with("0:USER     PID   PPID  VSIZE  RSS     WCHAN    PC         NAME\n"));
+        CHECK(output.find(" S com.example.game\n") != std::string::npos);
+        CHECK(output.find(" R ps\n") != std::string::npos);
+        vm.interpreter.IO().SetFileSystem(nullptr);
     }
 }
 

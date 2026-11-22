@@ -256,9 +256,18 @@ std::size_t IoRuntime::FileAvailable(const VmObjectRef owner) const {
         throw IoRuntimeError("file stream is closed or not readable");
     }
     if (file_system_ == nullptr) throw IoRuntimeError("guest filesystem is unavailable");
+    if (const auto buffered = file_system_->StreamAvailable(found->second.file->handle)) return *buffered;
     const auto size = file_system_->HandleInfo(found->second.file->handle).size;
     const auto offset = file_system_->SeekHandle(found->second.file->handle, 0, IoFileSystem::SeekWhence::current);
     return static_cast<std::size_t>(size > offset ? size - offset : 0U);
+}
+
+std::optional<std::int32_t> IoRuntime::PipeHandle(const VmObjectRef owner) const {
+    const auto found = file_streams_.find(owner.Value());
+    if (found == file_streams_.end() || found->second.closed || found->second.file->closed || file_system_ == nullptr)
+        return std::nullopt;
+    const auto handle = found->second.file->handle;
+    return file_system_->IsPipe(handle) ? std::optional<std::int32_t>(handle) : std::nullopt;
 }
 
 std::size_t IoRuntime::ReadFileStream(const VmObjectRef owner, const std::span<std::byte> destination) {

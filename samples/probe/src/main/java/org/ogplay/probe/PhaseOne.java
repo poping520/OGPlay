@@ -114,17 +114,17 @@ final class PhaseOne {
                         "Full-screen root, app display size, resource metrics and dp agree");
             }
         });
-        add(probes, new Probe("runtime.process.exec_rejected", "expected_reject", false,
+        add(probes, new Probe("runtime.process.exec_getprop", "in_scope", false,
                 "Ljava/lang/Runtime;.exec(Ljava/lang/String;)Ljava/lang/Process;",
                 "Ljava/lang/ProcessBuilder;.start()Ljava/lang/Process;") {
             @Override Outcome run(ProbeSession session) throws JSONException {
-                Throwable exec = tryProcess(true);
-                Throwable builder = tryProcess(false);
-                return new Outcome(missing(exec) && missing(builder) ? "pass" : "fail",
-                        obj("exec", rejection(exec), "process_builder", rejection(builder)),
-                        obj("exception", "java.io.IOException", "message_or_io_cause_contains", "No such file or directory"),
-                        "Both subprocess entry points reject exec with ENOENT",
-                        !missing(exec) && exec != null ? exec : !missing(builder) ? builder : null);
+                JSONObject exec = runGetprop(true);
+                JSONObject builder = runGetprop(false);
+                boolean pass = Build.CPU_ABI.equals(exec.opt("stdout")) && Build.CPU_ABI.equals(builder.opt("stdout"))
+                        && exec.optInt("exit", -1) == 0 && builder.optInt("exit", -1) == 0;
+                return new Outcome(pass ? "pass" : "fail", obj("exec", exec, "process_builder", builder),
+                        obj("stdout", Build.CPU_ABI, "exit", 0),
+                        "Both subprocess entry points run getprop and read ro.product.cpu.abi", null);
             }
         });
         add(probes, new Probe(PERSIST, "in_scope", false,
@@ -187,25 +187,18 @@ final class PhaseOne {
                 "density_dpi", metrics.densityDpi);
     }
 
-    private static Throwable tryProcess(boolean exec) {
+    private static JSONObject runGetprop(boolean exec) throws JSONException {
         try {
             Process process = exec ? Runtime.getRuntime().exec("getprop ro.product.cpu.abi")
                     : new ProcessBuilder("getprop", "ro.product.cpu.abi").start();
-            process.destroy();
-            return null;
+            java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(process.getInputStream()));
+            String line = reader.readLine();
+            reader.close();
+            return obj("started", true, "stdout", line, "exit", process.waitFor());
         } catch (Throwable failure) {
-            return failure;
+            return rejection(failure);
         }
-    }
-
-    private static boolean missing(Throwable failure) {
-        // API 19 ProcessManager wraps the native IOException and sets it as the cause.
-        for (int depth = 0; depth < 24 && failure instanceof IOException; depth++) {
-            String message = failure.getMessage();
-            if (message != null && message.contains("No such file or directory")) return true;
-            failure = failure.getCause();
-        }
-        return false;
     }
 
     private static JSONObject rejection(Throwable failure) throws JSONException {

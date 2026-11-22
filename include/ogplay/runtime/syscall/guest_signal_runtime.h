@@ -22,6 +22,11 @@ public:
     [[nodiscard]] bool DeliverSynchronousSigill(cpu::Cpu&, memory::GuestAddress fault_address);
     [[nodiscard]] bool Pending(std::uint64_t thread_id) const;
     void Inherit(std::uint64_t parent, std::uint64_t child);
+    // Blocked-signal mask of a thread (bit n-1 for signal n). A vfork child
+    // shares its parent's thread, so the parent's mask is saved and restored
+    // around the child.
+    [[nodiscard]] std::uint64_t Mask(std::uint64_t thread_id) const;
+    void SetMask(std::uint64_t thread_id, std::uint64_t mask);
     void Retire(std::uint64_t thread_id);
     void InterruptedWait(const A32SyscallFrame&);
     struct SleepResult final {

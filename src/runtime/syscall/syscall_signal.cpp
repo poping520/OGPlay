@@ -443,6 +443,21 @@ void GuestSignalRuntime::Inherit(const std::uint64_t parent, const std::uint64_t
     std::scoped_lock lock(impl_->mutex);
     impl_->masks[child] = impl_->masks[parent];
 }
+
+std::uint64_t GuestSignalRuntime::Mask(const std::uint64_t id) const {
+    std::scoped_lock lock(impl_->mutex);
+    const auto found = impl_->masks.find(id);
+    return found == impl_->masks.end() ? 0U : found->second;
+}
+
+void GuestSignalRuntime::SetMask(const std::uint64_t id, const std::uint64_t mask) {
+    {
+        std::scoped_lock lock(impl_->mutex);
+        // SIGKILL and SIGSTOP can never be blocked.
+        impl_->masks[id] = mask & ~((UINT64_C(1) << 8) | (UINT64_C(1) << 18));
+    }
+    impl_->changed.notify_all();
+}
 void GuestSignalRuntime::Retire(const std::uint64_t id) {
     std::scoped_lock lock(impl_->mutex);
     impl_->masks.erase(id); impl_->alternate_stacks.erase(id);

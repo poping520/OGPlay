@@ -130,6 +130,22 @@ std::int32_t FileDescriptorHandle(IntrinsicContext& call, const VmObjectRef desc
     }
 }
 
+// Blocking pipe IO must not hold the VM execution lock: wait for readiness
+// with the lock released, then do the (now non-blocking) IO under it.
+void WaitForPipe(IntrinsicContext& call, const VmObjectRef descriptor, const bool write) {
+    const auto pipe = call.vm.IO().PipeHandle(descriptor);
+    auto* file_system = call.vm.IO().FileSystem();
+    if (!pipe || file_system == nullptr) return;
+    const auto depth = call.vm.ExecutionLock().ReleaseForBlocking();
+    try {
+        file_system->WaitStreamReady(*pipe, write);
+    } catch (...) {
+        call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+        throw;
+    }
+    call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+}
+
 [[nodiscard]] VmObjectRef NewStructStat(IntrinsicContext& call, const IoFileInfo& info) {
     const auto result = call.vm.NewIntrinsicInstance("Llibcore/io/StructStat;");
     const auto root = call.vm.ProtectReferences(std::array{result});
@@ -918,8 +934,37 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
 #include "api19_posix_natives.inc"
     posix.VirtualMethod(
         "waitpid", "(ILlibcore/util/MutableInt;I)I",
-        [](IntrinsicContext& call) -> VmValue { ThrowErrno(call.vm, "waitpid", 10); },  // API 19 ECHILD
+        [wait = services.wait_process](IntrinsicContext& call) -> VmValue {
+            if (!wait) ThrowErrno(call.vm, "waitpid", 10);  // API 19 ECHILD
+            constexpr std::int32_t kWaitNoHang = 1;
+            const auto pid = call.arguments[0].AsInt();
+            const auto status_holder = call.arguments[1].ref;
+            const auto no_hang = (call.arguments[2].AsInt() & kWaitNoHang) != 0;
+            std::int32_t status{};
+            std::int32_t result{};
+            const auto depth = call.vm.ExecutionLock().ReleaseForBlocking();
+            try {
+                result = wait(pid, no_hang, status);
+            } catch (...) {
+                call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+                throw;
+            }
+            call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+            if (result < 0) ThrowErrno(call.vm, "waitpid", -result);
+            if (result > 0 && status_holder.IsValid()) SetIntField(call.vm, status_holder, "value", status);
+            return VmValue::Int(result);
+        },
         kAccPublic | kAccNative);
+    if (services.kill_process) {
+        posix.VirtualMethod(
+            "kill", "(II)V",
+            [kill = services.kill_process](IntrinsicContext& call) -> VmValue {
+                const auto result = kill(call.arguments[0].AsInt(), call.arguments[1].AsInt());
+                if (result < 0) ThrowErrno(call.vm, "kill", -result);
+                return VmValue::Void();
+            },
+            kAccPublic | kAccNative);
+    }
     posix.VirtualMethod(
         "getenv", "(Ljava/lang/String;)Ljava/lang/String;",
         [read = services.process_environment](IntrinsicContext& call) {
@@ -1183,6 +1228,7 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
         auto bytes = PosixBytes(call, buffer, offset, count, true);
         try {
             if (handle == 0) return VmValue::Int(0);
+            WaitForPipe(call, fd, false);
             const auto amount = call.vm.IO().ReadFileStream(fd, bytes);
             if (amount == 0) return VmValue::Int(-1);
             return VmValue::Int(static_cast<std::int32_t>(amount));
@@ -1206,6 +1252,7 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
             const auto bytes = PosixBytes(call, buffer, offset, count, false);
             try {
                 if (!standard) {
+                    WaitForPipe(call, fd, true);
                     call.vm.IO().WriteFileStream(fd, bytes);
                 } else if (!bytes.empty()) {
                     const bool error = handle == 2;
@@ -1937,7 +1984,71 @@ IntrinsicClassDecl Declare_javax_net_SocketFactory_Overrides(const CoreIntrinsic
 
 using namespace detail;
 
+[[nodiscard]] std::string JavaUtf8(Interpreter& vm, const VmObjectRef value) {
+    if (!value.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "null string"};
+    const auto units = vm.Model().StringChars(value);
+    auto utf8 = core::Utf16ToUtf8(std::span{units}, core::InvalidUtf16Policy::replace, '?');
+    return utf8.has_value() ? std::move(*utf8) : std::string();
+}
+
+[[nodiscard]] std::optional<std::vector<std::string>> JavaStrings(Interpreter& vm, const VmObjectRef array) {
+    if (!array.IsValid()) return std::nullopt;
+    std::vector<std::string> values;
+    const auto length = vm.Model().ArrayLength(array);
+    values.reserve(static_cast<std::size_t>(length));
+    for (std::int32_t index = 0; index < length; ++index)
+        values.push_back(JavaUtf8(vm, vm.Model().GetObjectElement(array, static_cast<JniSize>(index))));
+    return values;
+}
+
+[[nodiscard]] const char* ExecErrorText(const std::int32_t error) {
+    switch (error) {
+    case 2: return "No such file or directory";
+    case 7: return "Argument list too long";
+    case 11: return "Try again";
+    case 13: return "Permission denied";
+    default: return "I/O error";
+    }
+}
+
 }  // namespace
+
+IntrinsicClassDecl Declare_java_lang_ProcessManager_Natives(const CoreIntrinsicServices& services) {
+    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/ProcessManager;", "Ljava/lang/Object;", {}, kAccFinal);
+    builder.MergesBootClass();
+    builder.StaticMethod(
+        "exec",
+        "([Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/io/FileDescriptor;Ljava/io/FileDescriptor;"
+        "Ljava/io/FileDescriptor;Z)I",
+        [spawn = services.spawn_process](IntrinsicContext& context) -> VmValue {
+            auto& vm = context.vm;
+            const auto command = JavaStrings(vm, context.arguments[0].ref);
+            if (!command || command->empty()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "command"};
+            std::int32_t result = -2;
+            CoreIntrinsicServices::SpawnedProcess spawned;
+            if (spawn) {
+                const auto environment = JavaStrings(vm, context.arguments[1].ref);
+                std::optional<std::string> directory;
+                if (context.arguments[2].ref.IsValid()) directory = JavaUtf8(vm, context.arguments[2].ref);
+                result = spawn(*command, environment, directory, context.arguments[6].AsInt() != 0, spawned);
+            }
+            if (result < 0) {
+                if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.process.exec", 0);
+                if (auto* log = vm.Log()) {
+                    constexpr std::size_t kMaxCommandBytes = 128;
+                    log->Write(core::LogLevel::warn, "dexvm.process.exec", "Child process executable is unavailable",
+                               {}, {{"command", command->front().substr(0, kMaxCommandBytes)}});
+                }
+                throw VmJavaThrow{"Ljava/io/IOException;", ExecErrorText(-result)};
+            }
+            SetIntField(vm, context.arguments[3].ref, "descriptor", spawned.stdout_read);
+            SetIntField(vm, context.arguments[4].ref, "descriptor", spawned.stdin_write);
+            SetIntField(vm, context.arguments[5].ref, "descriptor", spawned.stderr_read);
+            return VmValue::Int(result);
+        },
+        kAccPrivate | kAccStatic | kAccNative);
+    return std::move(builder).Build();
+}
 
 void AppendJavaNetPlatform(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services) {
     catalog.push_back(Declare_java_net_HttpURLConnection_Shell());

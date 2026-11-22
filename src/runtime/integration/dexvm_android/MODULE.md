@@ -153,7 +153,7 @@ calling identity 固定为进程 UID/PID，StrictMode mask 按执行上下文隔
 | 能力 | 支持范围与所有权 |
 | --- | --- |
 | DisplayManager/UiModeManager | 本地 IDisplayManager 发布单显示和原版默认 WifiDisplayStatus。本地 IMediaRouterService 登记当前用户的客户端且提供空全局路由目录；默认路由由 ROM MediaRouter 管理。Wi-Fi 显示控制保留权限和扫描登记检查；无适配器时无无线动作。UiModeManager、初始 Configuration 与资源匹配共用设备 uiMode，普通手机默认 NORMAL、NIGHT_NO。 |
-| Settings/SystemProperties | ROM NameValueCache 通过本地 Settings provider 读取 System、Secure、Global。只读默认层取 API19 常量和会话设备状态，进程内写入层优先；URI 表查询包含默认行，支持投影与名称筛选。System 有效值变更递增版本并由 IContentService 通知，写需 WRITE_SETTINGS；Secure/Global 写抛 SecurityException。依赖未建模服务的键不发布。SystemProperties 从显示、电话和 VM 配置读取事实；Secure ANDROID_ID 取自沙盒。 |
+| Settings/SystemProperties | ROM NameValueCache 通过本地 Settings provider 读取 System、Secure、Global。只读默认层取 API19 常量和会话设备状态，进程内写入层优先；URI 表查询包含默认行，支持投影与名称筛选。System 有效值变更递增版本并由 IContentService 通知，写需 WRITE_SETTINGS；Secure/Global 写抛 SecurityException。依赖未建模服务的键不发布。SystemProperties 从显示、电话和 VM 配置读取事实，键集合是 android_os 中的唯一属性表，内置 getprop 读同一张表；Secure ANDROID_ID 取自沙盒。 |
 | Notification | ROM Notification/NotificationManager 持有字段、构造、extras 与本地 Parcel 值；本地 INotificationManager 按当前包 tag/id 保存通知并支持取消。展示记 UI 降级，跨包访问检查 UID；无系统展示、声音、点击或持久库存 |
 | SMS | SmsManager 和 SmsMessage 来自原样的 telephony-common.jar。PDU 由 ROM 解析。本地 ISms 对获准查询返回无 SIM、无 IMS 状态，获准发送请求记账拒绝。无 Phone/RIL、SIM 存储或短信传输 |
 | NFC | ROM NfcAdapter 经 IPackageManager 查询 NFC feature，缺席时 NfcManager 捕获 UOE，默认适配器为 null；无监听或通信 |

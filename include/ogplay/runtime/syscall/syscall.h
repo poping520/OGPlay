@@ -28,6 +28,8 @@
 
 namespace ogplay::runtime {
 
+class VirtualProcessKernel;
+
 inline constexpr std::int32_t kLinuxEnosys = 38;
 inline constexpr std::uint32_t kLinuxCloneVm = 0x00000100U;
 inline constexpr std::uint32_t kLinuxCloneFs = 0x00000200U;
@@ -153,6 +155,10 @@ public:
     void Declare(std::uint32_t number, std::string name, SyscallGroup group);
     void Register(std::uint32_t number, std::string name, SyscallGroup group, Handler handler);
     void Implement(std::uint32_t number, Handler handler);
+    // Wraps an implemented syscall; the decorator decides whether to call
+    // the previous handler.
+    using Decorator = std::function<A32SyscallOutcome(const A32SyscallFrame&, const Handler& previous)>;
+    void Decorate(std::uint32_t number, Decorator decorator);
     void SetObserver(Observer observer);
     void SetDiagnosticObserver(DiagnosticObserver observer);
     [[nodiscard]] A32SyscallOutcome DispatchOutcome(const A32SyscallFrame& frame);
@@ -163,6 +169,11 @@ public:
     std::shared_ptr<GuestSignalBinding> signal_binding{std::make_shared<GuestSignalBinding>()};
     AndroidProcessIdentity identity;
     std::shared_ptr<VirtualFileSystem*> filesystem_binding{std::make_shared<VirtualFileSystem*>(nullptr)};
+    // Descriptor table of the (virtual) process a guest thread currently
+    // runs as. Every dispatch binds it for the handler, together with an
+    // interruption predicate for blocking pipe IO. Unset: the application.
+    using DescriptorTableResolver = std::function<VfsDescriptorTableId(std::uint64_t thread_id)>;
+    std::shared_ptr<DescriptorTableResolver> descriptor_table_binding{std::make_shared<DescriptorTableResolver>()};
     GuestMemoryMappings memory_mappings;
     [[nodiscard]] std::function<void()> MappingMutationRecorder() const;
 
@@ -200,6 +211,13 @@ void BindAndroidProcessSyscalls(A32SyscallDispatcher& dispatcher, memory::Addres
 void BindAndroidArmPrivateSyscalls(A32SyscallDispatcher& dispatcher, memory::AddressSpace& address_space,
                                    GuestThreadPointerSetter thread_pointer_setter);
 void BindAndroidThreadLifecycleSyscalls(A32SyscallDispatcher& dispatcher, GuestThreadLifecycle& thread_lifecycle);
+// fork(2)/vfork(190)/execve(11)/wait4(114)/kill(37) over in-process virtual
+// processes. A vfork child runs on its parent's guest thread and memory until
+// execve or _exit, which then resume the parent with the child pid. Decorates
+// getpid/getppid/exit/exit_group, so bind after the thread lifecycle, signal
+// and file syscalls.
+void BindAndroidProcessSpawnSyscalls(A32SyscallDispatcher& dispatcher, memory::AddressSpace& address_space,
+                                     VirtualProcessKernel& kernel);
 void BindAndroidCloneSyscall(A32SyscallDispatcher& dispatcher, GuestThreadCloneSpawner spawner);
 // File metadata and directory syscalls on top of the same VFS (ADR-0020):
 // mkdir/rmdir/unlink/rename, stat64 family, getdents64, access, ftruncate,

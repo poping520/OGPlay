@@ -40,7 +40,7 @@ void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog);
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_System_Natives(const CoreIntrinsicServices& services);
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Throwable_Natives();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Math_Natives();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_ProcessManager_Natives();
+[[nodiscard]] IntrinsicClassDecl Declare_java_lang_ProcessManager_Natives(const CoreIntrinsicServices& services);
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Runtime_Overrides(const CoreIntrinsicServices& services);
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Class_Natives(const CoreIntrinsicServices& services);
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_AccessibleObject_Natives();

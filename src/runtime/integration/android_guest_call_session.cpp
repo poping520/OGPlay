@@ -50,6 +50,7 @@
 #include "ogplay/runtime/jni/jni_native_export.h"
 #include "ogplay/runtime/jni/jni_native_registry.h"
 #include "ogplay/runtime/jni/jni_object.h"
+#include "ogplay/runtime/process/virtual_process.h"
 #include "ogplay/runtime/syscall/arm_kernel_helpers.h"
 #include "ogplay/video/ffmpeg_video_player.h"
 #include "runtime/integration/nested_guest_cpu_pool.h"
@@ -891,12 +892,17 @@ public:
     ~Impl() {
         proc_maps_.reset();
         if (diagnostics_) diagnostics_->SetFutexProvider({});
-        if (!running_) return;
-        try {
-            Stop();
-        } catch (const std::exception&) {
+        if (running_) {
+            try {
+                Stop();
+            } catch (const std::exception&) {
+            }
         }
+        // Command threads may still write to the guest stdout endpoint.
+        virtual_processes_.reset();
     }
+
+    VirtualProcessKernel& VirtualProcesses() noexcept { return *virtual_processes_; }
 
     void RethrowAsyncFailure() {
         if (clone_runtime_) clone_runtime_->RethrowFailure();
@@ -1884,6 +1890,39 @@ public:
                                           lifecycle_.SetThreadPointer(thread_id, pointer);
                                           return true;
                                       });
+        virtual_processes_ = std::make_unique<VirtualProcessKernel>(VirtualProcessKernelConfig{
+            .vfs = filesystem_,
+            .ledger = &ledger_,
+            .application_pid = static_cast<std::int32_t>(dispatcher_.identity.process_id),
+            .application_parent_pid = kGuestParentProcessId,
+            .application_uid = dispatcher_.identity.user_id,
+            .application_name = "app_process",
+            .application_memory =
+                [this] {
+                    VirtualProcessMemory memory;
+                    if (const auto statistics = address_space_.TrySnapshot()) {
+                        const auto page = address_space_.PageSize();
+                        for (std::size_t protection = 0; protection < statistics->pages_by_protection.size();
+                             ++protection) {
+                            const auto bytes = statistics->pages_by_protection[protection] * page;
+                            memory.virtual_size_bytes += bytes;
+                            if ((protection & 2U) != 0U) memory.resident_size_bytes += bytes;
+                        }
+                    }
+                    return memory;
+                },
+            .reserved_id =
+                [this](const std::int32_t id) {
+                    try {
+                        static_cast<void>(lifecycle_.State(static_cast<std::uint64_t>(id)));
+                        return true;
+                    } catch (const std::exception&) {
+                        return false;
+                    }
+                },
+        });
+        RegisterBuiltinCommands(*virtual_processes_);
+        BindAndroidProcessSpawnSyscalls(dispatcher_, address_space_, *virtual_processes_);
         const auto device_paths = std::make_shared<std::map<std::int32_t, std::string>>();
         dispatcher_.SetObserver([this, device_paths](const A32SyscallFrame& frame, const std::int32_t result) {
             if ((frame.number == 3 || frame.number == 4 || frame.number == 6 || frame.number == 146) && result >= 0) {
@@ -2581,6 +2620,9 @@ private:
     AndroidBoundaryHle boundary_;
     GuestJniAbi guest_jni_;
     core::CapabilityLedger ledger_;
+    // Outlives the dispatcher handlers that reference it; ~Impl() stops its
+    // command threads once guest threads have stopped.
+    std::unique_ptr<VirtualProcessKernel> virtual_processes_;
     A32SyscallDispatcher dispatcher_;
     const GuestModuleLocator module_locator_ = [this](memory::GuestAddress address) {
         std::scoped_lock lock(dynamic_link_mutex_);
@@ -2907,6 +2949,10 @@ void AndroidGuestProcess::SetAuxiliaryAudioMix(std::function<void(std::span<std:
 
 VirtualFileSystem* AndroidGuestProcess::Filesystem() noexcept {
     return impl_->Filesystem();
+}
+
+VirtualProcessKernel& AndroidGuestProcess::VirtualProcesses() noexcept {
+    return impl_->VirtualProcesses();
 }
 
 const GuestCpuConfig& AndroidGuestProcess::CpuConfig() const noexcept {

@@ -7,8 +7,8 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
 
 ## 依赖
 
-依赖 `cpu`、`memory`、`hal` 与 `runtime/vfs`；不得依赖 Bionic、JNI、framework、execution
-或 integration。
+依赖 `cpu`、`memory`、`hal`、`runtime/vfs` 与 `runtime/process`；不得依赖 Bionic、JNI、framework、
+execution 或 integration。
 
 ## 不变量
 
@@ -68,7 +68,7 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
 - ARM kuser v5 提供真实 DMB 屏障、32/64 位 compare-exchange 及 TLS；compare-exchange
   包含前后屏障，失去 reservation 时重试，r0 为零且 C=1 当且仅当交换成功。
   64 位入口使用自然对齐目标和 guest 栈，保存非 clobbered 寄存器；访存错误保留 CPU fault。
-- `pipe` 必须先验证完整两元素输出数组，再原子创建 VFS descriptor pair；发布失败回收
+- `pipe`/`pipe2` 必须先验证完整两元素输出数组，再原子创建 VFS descriptor pair；发布失败回收
   两端，不泄漏半完成状态。
 - `poll`(168)/`ppoll`(336) 随文件绑定装配（`syscall_poll.cpp`），共用同一 VFS 与诊断端点表。
   先整表受检读入（nfds 上限 1024，超出 EINVAL，坏表 EFAULT），每轮先取 VFS 管道就绪代数再
@@ -96,11 +96,24 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
 - action 保留 SA_NOCLDSTOP 供查询；对非 SIGCHLD 无效果，不扩展子进程/作业控制支持面。
 - 信号通知不制造 futex WAKE token；目标 wait 的谓词检查 pending/退出，SA_RESTART 仅
   重启无超时 futex WAIT，有超时等待中断为 EINTR。sigsuspend 退出请求可取消。
-- fd 0/1/2 与 `/dev/log/*` 由进程内诊断端点表保存访问模式和存活状态；stdin 是无宿主输入的
-  EOF 端点，stdout/stderr 的 `write`/`writev` 先受检搬运 guest bytes，再交给
-  上层 sink；内核日志使用进程内 synthetic descriptor，不访问宿主设备。单次 payload 上限
-  1 MiB，iovec 上限 64，普通 descriptor 仍走同一 VFS。dup 保留端点身份，close 后查询和
-  新写入返回 EBADF，不因 fd 数字继续截获；不提供这些端点的 fstat/seek/终端 ioctl。
+- fd 0/1/2 与 `/dev/log/*` 是装入 VFS FD 表的流端点（按 kind 识别本层端点），随 dup、dup2、close
+  与虚拟进程继承；stdin 是 EOF 端点，stdout/stderr 的 `write`/`writev` 先受检搬运 guest bytes，再以
+  写入线程交给上层 sink；经 VFS 写入（内置命令）的端点字节以线程 0 进入同一 sink。单次 payload
+  上限 1 MiB，iovec 上限 64；close 后返回 EBADF，不提供端点的 fstat/终端 ioctl，lseek 为 ESPIPE。
+- 每次 file/poll 组分派都按 `descriptor_table_binding` 为调用线程绑定 VFS FD 表（vfork 子进程用其
+  子表），阻塞管道 IO 以 signal runtime 的 Pending 作为中断谓词返回 EINTR。
+- `BindAndroidProcessSpawnSyscalls`：vfork(190) 与 fork(2) 都在调用线程上进入子进程模式：保存父
+  A32 状态与信号掩码，分配虚拟 pid 并复制 FD 表，返回 0；子进程与父进程共享同一 guest 内存。fork
+  另按 TLS 槽 1 指向的 API19 `pthread_internal_t.attr` 栈基址/大小保存调用线程 `[sp, 栈顶)`（上限 8 MiB），
+  恢复父进程前写回，使父进程的 fork() 栈帧与 TLS 不受子进程影响；子进程在 exec 前对堆和全局变量的写入
+  父进程仍可见，记账 `syscall.fork.shared_memory`，栈界无法确定时不保存并记账 `syscall.fork.unknown_stack`。
+  子进程模式下 getpid/getppid 返回子/父 pid，gettid 不变，
+  期间送达的信号按该线程现有规则投递。execve(11) 受检读取路径与 argv/envp（共 1024 项、128 KiB），
+  相对路径按 VFS cwd 解析；未注册命令等失败返回 -errno 且子进程继续执行；成功后关闭 cloexec、启动
+  内置命令并以 `restored_state` 恢复父状态，r0 为子 pid。子进程模式下 exit/exit_group 结束子进程并
+  同样恢复父进程，不终止父线程。非子进程调用 execve 返回 ENOSYS。wait4(114) 阻塞等待子进程（WNOHANG、
+  EINTR、ECHILD），回写状态并清零 rusage；kill(37) 发给本进程时转为对调用线程的 tgkill，发给虚拟子
+  进程走协作终止，init 为 EPERM，pid ≤ -1 为 EPERM/ESRCH。SIGCHLD 不投递；clone 的 CLONE_VFORK 未接入。
 
 ## 测试
 
@@ -111,8 +124,10 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
 VFS 字符设备使用 ARM stat64 的 S_IFCHR、st_rdev（偏移 32）与 DT_CHR；文件大小为 0
 不限制 read。open 放行 O_NOCTTY（VFS 没有控制终端）及字符设备 O_NONBLOCK，普通文件
 的非阻塞 IO 仍明确 EINVAL。dup(41) 共享 VFS 打开状态。
-fcntl(55)/fcntl64(221) 共用 F_GETFL：按真实 VFS/诊断端点状态返回 ARM O_ACCMODE、O_APPEND、
-O_NONBLOCK、O_DIRECTORY、O_NOFOLLOW、O_LARGEFILE，不含创建标志与 FD_CLOEXEC。
+fcntl(55)/fcntl64(221) 共用 F_GETFL：按真实 VFS/端点状态返回 ARM O_ACCMODE、O_APPEND、
+O_NONBLOCK、O_DIRECTORY、O_NOFOLLOW、O_LARGEFILE，不含创建标志与 FD_CLOEXEC；F_GETFD/F_SETFD 读写
+表项的 FD_CLOEXEC。open/openat 的 O_CLOEXEC、dup3 的 O_CLOEXEC 与 pipe2 的 O_CLOEXEC/O_NONBLOCK 同样生效；
+dup2(63)/dup3(358) 替换目标表项，dup3 拒绝相同编号与其他标志（EINVAL）。
 未知/已关闭 fd 返回 EBADF；其他 fcntl 命令继续 ENOSYS 并记账。
 open/openat 显式解码 ARM O_APPEND=0x400，传入 VFS 打开状态，不由 syscall seek 模拟。
 writev 完整预检向量/输入，在共享资源预算内合并后只提交一次 Write；向量上限 64，

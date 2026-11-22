@@ -39,6 +39,9 @@ public:
     void FlushHandle(std::int32_t handle) override;
     void TruncateHandle(std::int32_t handle, std::uint64_t size) override;
     void CloseHandle(std::int32_t handle) override;
+    [[nodiscard]] bool IsPipe(std::int32_t handle) const override;
+    void WaitStreamReady(std::int32_t handle, bool write) override;
+    [[nodiscard]] std::optional<std::size_t> StreamAvailable(std::int32_t handle) const override;
 
 private:
     VirtualFileSystem& file_system_;

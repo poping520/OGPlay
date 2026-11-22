@@ -64,6 +64,25 @@ struct CoreIntrinsicServices final {
     std::function<std::int32_t()> process_id;
     std::function<std::int32_t()> process_uid;
     std::function<std::int32_t(Interpreter&)> current_thread_id;
+
+    // In-process virtual processes behind ProcessManager and Posix
+    // waitpid/kill. Each returns a pid (or 0) or a negative errno; unset
+    // callbacks keep exec failing with ENOENT and waitpid with ECHILD.
+    struct SpawnedProcess final {
+        std::int32_t pid{};
+        // Parent ends: the child's stdout (read), stdin (write), stderr (read).
+        std::int32_t stdout_read{-1};
+        std::int32_t stdin_write{-1};
+        std::int32_t stderr_read{-1};
+    };
+
+    std::function<std::int32_t(
+        const std::vector<std::string>& command, const std::optional<std::vector<std::string>>& environment,
+        const std::optional<std::string>& working_directory, bool redirect_error_stream, SpawnedProcess& spawned)>
+        spawn_process;
+    // Blocks unless no_hang; the caller has released the VM execution lock.
+    std::function<std::int32_t(std::int32_t pid, bool no_hang, std::int32_t& status)> wait_process;
+    std::function<std::int32_t(std::int32_t pid, std::int32_t signal)> kill_process;
     std::function<const GuestMemoryMappings*()> memory_mappings;
     std::function<const std::vector<GuestNetworkInterface>&(Interpreter&)> network_interfaces;
 

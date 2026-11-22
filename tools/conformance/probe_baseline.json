@@ -50,7 +50,6 @@
   "runtime.codec.gzip": "pass",
   "runtime.nio.direct_views": "pass",
   "runtime.nio.file_channel": "pass",
-  "runtime.process.exec_rejected": "pass",
   "runtime.resources.aapt2_typespec": "pass",
   "runtime.resources.table_control": "pass",
   "runtime.thread.async_task": "pass",

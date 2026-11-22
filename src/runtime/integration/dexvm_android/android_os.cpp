@@ -79,31 +79,64 @@ Decl Declare_android_os_Debug_Natives(const Context& context, const DebugMemoryI
 
 namespace {
 
-[[nodiscard]] std::string_view BuildProperty(const std::string_view key) {
-    if (key == "ro.product.cpu.abi") return "armeabi";
-    if (key == "ro.build.tags") return "release-keys";
-    if (key == "ro.build.version.release") return "4.4.4";
-    if (key == "ro.build.version.sdk") return "19";
-    if (key == "ro.build.version.codename") return "REL";
-    return {};
-}
+using PropertyReader = std::string (*)(dx::Interpreter&, const Context&);
+
+struct AndroidProperty final {
+    std::string_view key;
+    PropertyReader read;
+};
+
+constexpr std::uint64_t kBytesPerMiB = 1024U * 1024U;
+
+// Every property the simulated device defines. SystemProperties.get and the
+// getprop command both read this table, so the two can never disagree.
+constexpr std::array kAndroidProperties{
+    AndroidProperty{"config.disable_renderscript",
+                    [](dx::Interpreter&, const Context&) { return std::string("true"); }},
+    AndroidProperty{
+        "ro.product.manufacturer",
+        [](dx::Interpreter&, const Context& context) { return context->device_state.build_identity.manufacturer; }},
+    AndroidProperty{
+        "ro.product.model",
+        [](dx::Interpreter&, const Context& context) { return context->device_state.build_identity.model; }},
+    AndroidProperty{"persist.sys.language",
+                    [](dx::Interpreter&, const Context& context) { return context->locale_language; }},
+    AndroidProperty{"ro.product.locale.language",
+                    [](dx::Interpreter&, const Context& context) { return context->locale_language; }},
+    AndroidProperty{"persist.sys.country",
+                    [](dx::Interpreter&, const Context& context) { return context->locale_region; }},
+    AndroidProperty{"ro.product.locale.region",
+                    [](dx::Interpreter&, const Context& context) { return context->locale_region; }},
+    AndroidProperty{
+        "sys.settings_system_version",
+        [](dx::Interpreter&, const Context& context) { return std::to_string(context->settings_system_version); }},
+    AndroidProperty{"gsm.sim.state", [](dx::Interpreter&, const Context&) { return std::string("ABSENT"); }},
+    AndroidProperty{
+        "gsm.operator.numeric",
+        [](dx::Interpreter&, const Context& context) { return context->device_state.telephony.network_operator; }},
+    AndroidProperty{"ro.opengles.version",
+                    [](dx::Interpreter&, const Context&) { return std::to_string(kManagedGlesVersion); }},
+    AndroidProperty{"ro.sf.lcd_density",
+                    [](dx::Interpreter&, const Context& context) { return std::to_string(DeviceDensityDpi(context)); }},
+    AndroidProperty{"dalvik.vm.heapgrowthlimit",
+                    [](dx::Interpreter& vm, const Context&) {
+                        return std::to_string(vm.Model().NormalHeapGrowthLimitBytes() / kBytesPerMiB) + "m";
+                    }},
+    AndroidProperty{"dalvik.vm.heapsize",
+                    [](dx::Interpreter& vm, const Context&) {
+                        return std::to_string(vm.Model().MaximumHeapBytes() / kBytesPerMiB) + "m";
+                    }},
+    AndroidProperty{"ro.product.cpu.abi", [](dx::Interpreter&, const Context&) { return std::string("armeabi"); }},
+    AndroidProperty{"ro.build.tags", [](dx::Interpreter&, const Context&) { return std::string("release-keys"); }},
+    AndroidProperty{"ro.build.version.release", [](dx::Interpreter&, const Context&) { return std::string("4.4.4"); }},
+    AndroidProperty{"ro.build.version.sdk", [](dx::Interpreter&, const Context&) { return std::string("19"); }},
+    AndroidProperty{"ro.build.version.codename", [](dx::Interpreter&, const Context&) { return std::string("REL"); }},
+};
 
 [[nodiscard]] std::string ReadAndroidProperty(dx::Interpreter& vm, const Context& context, const std::string& key) {
-    constexpr std::uint64_t kBytesPerMiB = 1024U * 1024U;
-    if (key == "config.disable_renderscript") return "true";
-    if (key == "ro.product.manufacturer") return context->device_state.build_identity.manufacturer;
-    if (key == "ro.product.model") return context->device_state.build_identity.model;
-    if (key == "persist.sys.language" || key == "ro.product.locale.language") return context->locale_language;
-    if (key == "persist.sys.country" || key == "ro.product.locale.region") return context->locale_region;
-    if (key == "sys.settings_system_version") return std::to_string(context->settings_system_version);
-    if (key == "gsm.sim.state") return "ABSENT";
-    if (key == "gsm.operator.numeric") return context->device_state.telephony.network_operator;
-    if (key == "ro.opengles.version") return std::to_string(kManagedGlesVersion);
-    if (key == "ro.sf.lcd_density") return std::to_string(DeviceDensityDpi(context));
-    if (key == "dalvik.vm.heapgrowthlimit")
-        return std::to_string(vm.Model().NormalHeapGrowthLimitBytes() / kBytesPerMiB) + "m";
-    if (key == "dalvik.vm.heapsize") return std::to_string(vm.Model().MaximumHeapBytes() / kBytesPerMiB) + "m";
-    return std::string(BuildProperty(key));
+    for (const auto& property : kAndroidProperties)
+        if (property.key == key) return property.read(vm, context);
+    return {};
 }
 
 template <typename Integer>
@@ -114,6 +147,16 @@ template <typename Integer>
 }
 
 }  // namespace
+
+std::vector<std::pair<std::string, std::string>> AndroidSystemProperties(dx::Interpreter& vm, const Context& context) {
+    std::vector<std::pair<std::string, std::string>> properties;
+    for (const auto& property : kAndroidProperties) {
+        auto value = property.read(vm, context);
+        if (!value.empty()) properties.emplace_back(property.key, std::move(value));
+    }
+    return properties;
+}
+
 }  // namespace ogplay::runtime::android_intrinsics
 
 // ---- BootDex native boundary for android_os_SystemProperties.cpp ----

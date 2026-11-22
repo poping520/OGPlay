@@ -436,6 +436,43 @@
     .catch Ljava/io/IOException; :try_start :try_end :handler
 .end method
 
+# Runtime.exec("ps") through ProcessManager: "<exit code>:<stdout>".
+.method static public runtimeExecOutput()Ljava/lang/String;
+.registers 8
+    invoke-static {}, Ljava/lang/Runtime;->getRuntime()Ljava/lang/Runtime;
+    move-result-object v0
+    const-string v1, "ps"
+    invoke-virtual {v0, v1}, Ljava/lang/Runtime;->exec(Ljava/lang/String;)Ljava/lang/Process;
+    move-result-object v0
+    invoke-virtual {v0}, Ljava/lang/Process;->getInputStream()Ljava/io/InputStream;
+    move-result-object v1
+    new-instance v2, Ljava/io/ByteArrayOutputStream;
+    invoke-direct {v2}, Ljava/io/ByteArrayOutputStream;-><init>()V
+    const/16 v3, 512
+    new-array v3, v3, [B
+    :loop
+    invoke-virtual {v1, v3}, Ljava/io/InputStream;->read([B)I
+    move-result v4
+    if-ltz v4, :done
+    const/4 v5, 0
+    invoke-virtual {v2, v3, v5, v4}, Ljava/io/ByteArrayOutputStream;->write([BII)V
+    goto :loop
+    :done
+    invoke-virtual {v0}, Ljava/lang/Process;->waitFor()I
+    move-result v4
+    new-instance v5, Ljava/lang/StringBuilder;
+    invoke-direct {v5}, Ljava/lang/StringBuilder;-><init>()V
+    invoke-virtual {v5, v4}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
+    const-string v6, ":"
+    invoke-virtual {v5, v6}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v2}, Ljava/io/ByteArrayOutputStream;->toString()Ljava/lang/String;
+    move-result-object v6
+    invoke-virtual {v5, v6}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v5}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v0
+    return-object v0
+.end method
+
 .method static public mathMix()I
 .registers 6
     const/16 v0, -7

@@ -522,7 +522,11 @@ ogplay_add_module(ogplay_runtime Runtime
     src/runtime/syscall/syscall_poll.cpp
     src/runtime/syscall/syscall_process.cpp
     src/runtime/syscall/syscall_signal.cpp
+    src/runtime/syscall/syscall_process_spawn.cpp
     src/runtime/syscall/syscall_thread_lifecycle.cpp
+    src/runtime/process/process_commands.cpp
+    src/runtime/process/shell.cpp
+    src/runtime/process/virtual_process_kernel.cpp
     src/runtime/vfs/sandbox_store.cpp
     src/runtime/vfs/vfs.cpp
     src/runtime/vfs/host_file_backing.cpp

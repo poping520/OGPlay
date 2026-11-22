@@ -1371,6 +1371,44 @@ TEST_CASE("ARM F_GETFL standard endpoints share write dup and close state") {
     }
 }
 
+TEST_CASE("ARM dup2 dup3 and FD_CLOEXEC redirect standard endpoints") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::runtime::VirtualFileSystem vfs;
+    ogplay::memory::AddressSpace memory;
+    memory.Map({GuestAddress{0x10000}, memory.PageSize()},
+               ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
+    std::vector<ogplay::runtime::GuestIoRecord> records;
+    ogplay::runtime::BindAndroidFileSyscalls(dispatcher, vfs, memory,
+                                             [&](const auto& record) { records.push_back(record); });
+    const auto call = [&](std::uint32_t number, std::array<std::uint32_t, 7> args) {
+        ogplay::runtime::A32SyscallFrame frame;
+        frame.number = number;
+        frame.arguments = args;
+        frame.thread_id = 7;
+        return dispatcher.Dispatch(frame);
+    };
+    CHECK(call(42, {0x10000}) == 0);
+    const auto read_end = memory.Read32(GuestAddress{0x10000});
+    const auto write_end = memory.Read32(GuestAddress{0x10004});
+    memory.Write8(GuestAddress{0x10100}, 'p');
+    // popen's child: stdout becomes the pipe's write end.
+    CHECK(call(63, {write_end, 1}) == 1);
+    CHECK(call(4, {1, 0x10100, 1}) == 1);
+    CHECK(records.empty());
+    CHECK(call(3, {read_end, 0x10180, 4}) == 1);
+    CHECK(memory.Read8(GuestAddress{0x10180}) == 'p');
+    CHECK(call(63, {99, 1}) == -9);
+    CHECK(call(358, {write_end, write_end, 0}) == -22);
+    CHECK(call(358, {write_end, 20, 0x80000}) == 20);
+    CHECK(call(55, {20, 1}) == 1);
+    CHECK(call(55, {20, 2, 0}) == 0);
+    CHECK(call(221, {20, 1}) == 0);
+    CHECK(call(55, {write_end, 2, 1}) == 0);
+    CHECK(vfs.CloseOnExec(static_cast<std::int32_t>(write_end)));
+    CHECK(call(55, {99, 1}) == -9);
+}
+
 TEST_CASE("Android mkdir, stat64 and unlink syscalls reach the VFS") {
     MetadataSyscallFixture fixture;
     // mkdir does not imply -p: the parent has to exist first.

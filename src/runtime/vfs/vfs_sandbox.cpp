@@ -72,11 +72,10 @@ VfsFileMetadata& VirtualFileSystem::Impl::PathMetadataLocked(const std::string& 
 }
 
 void VirtualFileSystem::Impl::UpdateDirectoryMetadataLocked(std::string_view path, const VfsFileMetadata& metadata) {
-    for (const auto& [fd, open] : descriptors_) {
-        static_cast<void>(fd);
+    ForEachOpenLocked([&](std::int32_t, const std::shared_ptr<OpenFile>& open) {
         if (open->directory && !open->directory->unlinked && open->directory->path == path)
             open->directory->info.metadata = metadata;
-    }
+    });
 }
 
 void VirtualFileSystem::Impl::SetLastModified(std::string_view path, std::int64_t millis) {
@@ -398,7 +397,7 @@ std::int32_t VirtualFileSystem::Impl::OpenDirectory(const std::string_view path,
     auto opened = std::make_shared<OpenFile>(nullptr, 0, true, false, std::move(directory));
     opened->large_file = large_file;
     opened->no_follow = no_follow;
-    descriptors_.emplace(descriptor, std::move(opened));
+    CurrentTableLocked().entries.emplace(descriptor, std::move(opened));
     return descriptor;
 }
 
@@ -423,8 +422,10 @@ std::vector<VfsDirectoryEntry> VirtualFileSystem::Impl::ReadDirectory(const std:
 
 VfsFileInfo VirtualFileSystem::Impl::DescriptorInfo(const std::int32_t descriptor) const {
     std::scoped_lock lock(mutex_);
-    const auto found = descriptors_.find(descriptor);
-    if (found == descriptors_.end()) {
+    const auto& entries = CurrentTableLocked().entries;
+    const auto found = entries.find(descriptor);
+    // Stream endpoints keep their historical fstat behaviour: no metadata.
+    if (found == entries.end() || found->second->endpoint) {
         throw VfsError(kEbadf, "VFS descriptor is not open");
     }
     const auto& open = found->second;
@@ -514,10 +515,9 @@ void VirtualFileSystem::Impl::RemoveDirectory(const std::string_view path) {
         working_directory_unlinked_ = true;
         working_directory_.reset();
     }
-    for (const auto& [fd, open] : descriptors_) {
-        static_cast<void>(fd);
+    ForEachOpenLocked([&](std::int32_t, const std::shared_ptr<OpenFile>& open) {
         if (open->directory && open->directory->path == normalized) open->directory->unlinked = true;
-    }
+    });
 }
 
 void VirtualFileSystem::Impl::Rename(const std::string_view from, const std::string_view to) {
@@ -597,10 +597,9 @@ void VirtualFileSystem::Impl::Rename(const std::string_view from, const std::str
     files_.insert_or_assign(target, file);
     file->canonical_path = std::move(canonical_target);
     file->spelling = std::move(spelling);
-    for (const auto& [fd, open] : descriptors_) {
-        static_cast<void>(fd);
+    ForEachOpenLocked([&](std::int32_t, const std::shared_ptr<OpenFile>& open) {
         if (open->file == file) open->owner_id = OwnerLocked(target);
-    }
+    });
     tombstones_.erase(target);
     MarkOverlayLocked(target, *file);
     SetNodeSizeDirtyLocked(*file, file->size, file->dirty || !file->overlay_path.empty());
@@ -621,6 +620,7 @@ void VirtualFileSystem::Impl::Truncate(const std::int32_t descriptor, const std:
     if (!open->writable) {
         throw VfsError(kEbadf, "VFS descriptor is not writable");
     }
+    if (open->pipe || open->endpoint) throw VfsError(kEinval, "VFS stream cannot be truncated");
     if (size > std::numeric_limits<std::size_t>::max()) {
         throw VfsError(kEfbig, "VFS truncate size is not representable");
     }
@@ -647,6 +647,7 @@ void VirtualFileSystem::Impl::Flush(const std::int32_t descriptor) {
         std::scoped_lock lock(mutex_);
         open = FindDescriptor(descriptor);
     }
+    if (open->pipe || open->endpoint) return;
     std::scoped_lock operation(open->mutex);
     if (open->directory) return;
     if (open->file->character_device) throw VfsError(kEinval, "VFS character device cannot be flushed");

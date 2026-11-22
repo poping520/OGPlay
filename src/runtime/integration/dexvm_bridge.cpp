@@ -29,9 +29,96 @@
 #include "ogplay/runtime/jni/jni_field_store.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/integration/dexvm_io_vfs.h"
+#include "ogplay/runtime/process/virtual_process.h"
 #include "ogplay/runtime/integration/apk_assets.h"
 
 namespace ogplay::runtime {
+namespace {
+
+// Java ProcessManager and Posix waitpid/kill share the native virtual
+// process kernel; Java threads use the application descriptor table.
+void BindVirtualProcessServices(dexvm::CoreIntrinsicServices& services, AndroidGuestProcess& process,
+                                const std::shared_ptr<DexVmAndroidContext>& android_context) {
+    constexpr std::int32_t kEnoent = 2;
+    auto& kernel = process.VirtualProcesses();
+    if (android_context && !android_context->package_name.empty())
+        kernel.SetApplicationName(android_context->package_name);
+    services.spawn_process =
+        [&process, &kernel](const std::vector<std::string>& command,
+                            const std::optional<std::vector<std::string>>& environment,
+                            const std::optional<std::string>& working_directory, const bool redirect_error_stream,
+                            dexvm::CoreIntrinsicServices::SpawnedProcess& spawned) -> std::int32_t {
+        std::vector<std::string> variables;
+        if (environment) {
+            variables = *environment;
+        } else {
+            for (const auto& entry : process.ProcessEnvironmentEntries())
+                variables.push_back(entry.name + "=" + entry.value);
+        }
+        std::string search_path(kVirtualDefaultPath);
+        for (const auto& variable : variables)
+            if (variable.starts_with("PATH=")) search_path = variable.substr(5);
+        const auto path = kernel.ResolveExecutable(command.front(), search_path);
+        if (!path) return -kEnoent;
+        auto& vfs = kernel.Vfs();
+        const auto directory = working_directory.value_or(vfs.WorkingDirectory().value_or("/"));
+        std::vector<std::int32_t> opened;
+        const auto close_all = [&vfs](const std::vector<std::int32_t>& descriptors) {
+            for (const auto descriptor : descriptors) {
+                try {
+                    vfs.Close(descriptor);
+                } catch (const VfsError&) {
+                }
+            }
+        };
+        try {
+            const auto input = vfs.CreatePipe();
+            opened.insert(opened.end(), {input.read_descriptor, input.write_descriptor});
+            const auto output = vfs.CreatePipe();
+            opened.insert(opened.end(), {output.read_descriptor, output.write_descriptor});
+            const auto errors = vfs.CreatePipe();
+            opened.insert(opened.end(), {errors.read_descriptor, errors.write_descriptor});
+            const auto pid = kernel.Spawn(
+                kernel.ApplicationPid(), kVfsApplicationDescriptorTable, *path, command, std::move(variables),
+                directory, [&] {
+                    vfs.DuplicateTo(input.read_descriptor, 0);
+                    vfs.DuplicateTo(output.write_descriptor, 1);
+                    vfs.DuplicateTo(redirect_error_stream ? output.write_descriptor : errors.write_descriptor, 2);
+                    for (const auto descriptor : opened)
+                        vfs.Close(descriptor);
+                });
+            close_all({input.read_descriptor, output.write_descriptor, errors.write_descriptor});
+            spawned = {pid, output.read_descriptor, input.write_descriptor, errors.read_descriptor};
+            return pid;
+        } catch (const VirtualProcessError& error) {
+            close_all(opened);
+            return -error.ErrorNumber();
+        } catch (const VfsError& error) {
+            close_all(opened);
+            return -error.ErrorNumber();
+        }
+    };
+    services.wait_process = [&kernel](const std::int32_t pid, const bool no_hang, std::int32_t& status) {
+        try {
+            const auto result = kernel.Wait(kernel.ApplicationPid(), pid > 0 ? pid : -1, no_hang);
+            status = result.status;
+            return result.pid;
+        } catch (const VirtualProcessError& error) {
+            return -error.ErrorNumber();
+        }
+    };
+    services.kill_process = [&kernel](const std::int32_t pid, const std::int32_t signal) {
+        try {
+            kernel.Kill(pid, signal);
+            return 0;
+        } catch (const VirtualProcessError& error) {
+            return -error.ErrorNumber();
+        }
+    };
+}
+
+}  // namespace
+
 namespace {
 
 constexpr std::uint64_t kRootThreadId = 1;
@@ -1530,6 +1617,7 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
         bridge_state->session->Process().WriteStandardStream(
             error, bytes, bridge_state->ProcessThreadForToken(vm.CurrentContextToken()));
     };
+    BindVirtualProcessServices(services, session.Process(), android_context);
     if (config.configure_core_services) config.configure_core_services(services);
     auto core_catalog = dx::CoreIntrinsicCatalog(std::move(services));
     BindPlatformCoreHandlers(core_catalog, android_context);
@@ -1583,6 +1671,19 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
     impl_->model->SetPrimitiveAllocationMutex(impl_->vm->ExecutionLock());
     impl_->vm->BindDefaultExecutionHost();
     impl_->vm->SetGuestMemoryAccess(session.Process().GuestMemoryAccess());
+    if (android_context) {
+        // getprop runs on a command thread; property values live in VM-owned
+        // state, so read them under the execution lock.
+        session.Process().VirtualProcesses().SetSystemPropertySource([bridge_state = impl_.get()] {
+            auto& lock = bridge_state->vm->ExecutionLock();
+            lock.Acquire();
+            struct Release final {
+                dx::VmExecutionLock& lock;
+                ~Release() { lock.Release(); }
+            } release{lock};
+            return android_intrinsics::AndroidSystemProperties(*bridge_state->vm, bridge_state->android_context);
+        });
+    }
     session.DirectBuffers() = {
         [bridge_state](std::uint64_t thread, memory::GuestAddress address, std::int32_t capacity) {
             JniReference result;
@@ -2111,6 +2212,12 @@ std::unique_ptr<dx::NativeCleanupScope> DexVmGuestBridge::EnterResourceCleanup()
 }
 
 DexVmGuestBridge::~DexVmGuestBridge() {
+    if (impl_->vm) {
+        // Clearing waits for a getprop in flight, which needs the execution lock.
+        const auto depth = impl_->vm->ExecutionLock().ReleaseForBlocking(false);
+        impl_->session->Process().VirtualProcesses().SetSystemPropertySource({});
+        impl_->vm->ExecutionLock().ReacquireAfterBlocking(depth, false);
+    }
     if (impl_->android_context && impl_->owns_process_memory_reader) impl_->android_context->read_process_memory = {};
     if (impl_->android_context) {
         ShutdownAndroidScheduler(*impl_->android_context);

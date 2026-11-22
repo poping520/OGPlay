@@ -58,6 +58,7 @@ class JavaPayloadProvider;
 class JniFieldStore;
 class JniGuestObjectRegistry;
 class FrameworkScreenPolicyState;
+class VirtualProcessKernel;
 struct FrameworkLocaleConfig;
 
 struct AndroidGuestPlatformConfig final {
@@ -309,6 +310,9 @@ public:
     [[nodiscard]] audio::OpenSlesPcmMixer& PcmPlayback() noexcept;
     void SetAuxiliaryAudioMix(std::function<void(std::span<std::int64_t>, std::uint32_t)> mix);
     [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;
+    // In-process virtual processes of this guest process (fork/exec/wait,
+    // built-in commands); shared by native syscalls and Java ProcessManager.
+    [[nodiscard]] VirtualProcessKernel& VirtualProcesses() noexcept;
     [[nodiscard]] const GuestCpuConfig& CpuConfig() const noexcept;
     [[nodiscard]] const GuestMemorySnapshot& MemorySnapshot() const noexcept;
     void WriteStandardStream(bool error, std::span<const std::byte> bytes, std::uint64_t thread);

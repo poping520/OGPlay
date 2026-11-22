@@ -8,6 +8,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <deque>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -26,8 +27,10 @@
 namespace ogplay::runtime {
 
 inline constexpr std::int32_t kEnoent = 2;
+inline constexpr std::int32_t kEintr = 4;
 inline constexpr std::int32_t kEio = 5;
 inline constexpr std::int32_t kEbadf = 9;
+inline constexpr std::int32_t kEagain = 11;
 inline constexpr std::int32_t kEacces = 13;
 inline constexpr std::int32_t kEbusy = 16;
 inline constexpr std::int32_t kEexist = 17;
@@ -36,6 +39,8 @@ inline constexpr std::int32_t kEisdir = 21;
 inline constexpr std::int32_t kEinval = 22;
 inline constexpr std::int32_t kEfbig = 27;
 inline constexpr std::int32_t kEspipe = 29;
+inline constexpr std::int32_t kEpipe = 32;
+inline constexpr std::int32_t kEmfile = 24;
 inline constexpr std::int32_t kEnospc = 28;
 inline constexpr std::int32_t kErofs = 30;
 inline constexpr std::int32_t kEnotempty = 39;
@@ -124,6 +129,57 @@ struct OpenDirectoryState final {
     bool unlinked{};       // Guarded by the VFS namespace mutex.
 };
 
+// Wakes pollers and blocked pipe IO. Shared so pipe ends that outlive a
+// descriptor table entry can still signal their peers when they retire.
+struct PipeReadiness final {
+    std::mutex mutex;
+    std::condition_variable changed;
+    std::uint64_t generation{};
+
+    void Notify() {
+        {
+            std::scoped_lock lock(mutex);
+            ++generation;
+        }
+        changed.notify_all();
+    }
+};
+
+// Bounded pipe buffer. readers/writers count open descriptions (not
+// descriptor numbers), so the counts stay right across tables and dup.
+struct PipeState final {
+    std::mutex mutex;
+    std::deque<std::byte> buffer;
+    std::size_t readers{};
+    std::size_t writers{};
+};
+
+// One per pipe open description; retiring it updates the end count.
+class PipeEnd final {
+public:
+    PipeEnd(std::shared_ptr<PipeState> state, std::shared_ptr<PipeReadiness> readiness, bool reader)
+        : state_(std::move(state)), readiness_(std::move(readiness)), reader_(reader) {
+        std::scoped_lock lock(state_->mutex);
+        ++(reader_ ? state_->readers : state_->writers);
+    }
+
+    ~PipeEnd() {
+        {
+            std::scoped_lock lock(state_->mutex);
+            --(reader_ ? state_->readers : state_->writers);
+        }
+        readiness_->Notify();
+    }
+
+    PipeEnd(const PipeEnd&) = delete;
+    PipeEnd& operator=(const PipeEnd&) = delete;
+
+private:
+    std::shared_ptr<PipeState> state_;
+    std::shared_ptr<PipeReadiness> readiness_;
+    bool reader_{};
+};
+
 struct OpenFile final {
     OpenFile(std::shared_ptr<File> initial_file, std::uint64_t initial_offset, bool initial_readable,
              bool initial_writable, std::shared_ptr<OpenDirectoryState> initial_directory, bool initial_pipe = false)
@@ -144,6 +200,16 @@ struct OpenFile final {
     std::uint32_t owner_id{};
     bool system_partition{};
     std::shared_ptr<const hal::HostReadFile> host_pin;
+    // Set for pipe ends: IO goes to the shared buffer, never to `file`.
+    std::shared_ptr<PipeState> pipe_state;
+    std::unique_ptr<PipeEnd> pipe_end;
+    // Set for stream endpoints; `file` is then an empty placeholder node.
+    std::shared_ptr<const VfsStreamEndpoint> endpoint;
+};
+
+struct DescriptorTable final {
+    std::map<std::int32_t, std::shared_ptr<OpenFile>> entries;
+    std::set<std::int32_t> close_on_exec;
 };
 
 struct ResourceBudget final {
@@ -183,7 +249,7 @@ public:
     [[nodiscard]] std::vector<VfsDirectoryEntry> ReadDirectory(std::int32_t descriptor, std::size_t maximum);
     [[nodiscard]] VfsFileInfo DescriptorInfo(std::int32_t descriptor) const;
     [[nodiscard]] VfsOpenStatus DescriptorStatus(std::int32_t descriptor) const;
-    [[nodiscard]] VfsPipeDescriptors CreatePipe();
+    [[nodiscard]] VfsPipeDescriptors CreatePipe(bool non_blocking);
     [[nodiscard]] std::optional<std::uint32_t> PipePollEvents(std::int32_t descriptor) const;
     [[nodiscard]] std::uint64_t PipeReadinessGeneration() const;
     void WaitPipeReadiness(std::uint64_t observed, std::chrono::nanoseconds timeout) const;
@@ -253,12 +319,42 @@ public:
     void PersistRemovalLocked(const std::string& path);
     [[nodiscard]] std::int32_t AllocateDescriptor() const;
     [[nodiscard]] std::shared_ptr<OpenFile> FindDescriptor(std::int32_t descriptor) const;
+    // The calling thread's table (VfsThreadBinding, else table 0).
+    [[nodiscard]] DescriptorTable& CurrentTableLocked() const;
+    [[nodiscard]] VfsDescriptorTableId CurrentTableId() const;
+    // Removes the entry and returns its open state; EBADF when absent.
+    [[nodiscard]] std::shared_ptr<OpenFile> DetachDescriptorLocked(DescriptorTable& table, std::int32_t descriptor);
+    // Last-close work for a detached open state: waits in-flight operations
+    // and flushes dirty writable files.
+    void RetireOpenFile(const std::shared_ptr<OpenFile>& open);
+    void DuplicateTo(std::int32_t source, std::int32_t target, bool close_on_exec);
+    void SetCloseOnExec(std::int32_t descriptor, bool close_on_exec);
+    [[nodiscard]] bool CloseOnExec(std::int32_t descriptor) const;
+    void CloseOnExecDescriptors();
+    void InstallStreamEndpoint(std::int32_t descriptor, std::shared_ptr<const VfsStreamEndpoint> endpoint);
+    [[nodiscard]] std::int32_t OpenStreamEndpoint(std::shared_ptr<const VfsStreamEndpoint> endpoint,
+                                                  VfsOpenStatus status);
+    [[nodiscard]] std::shared_ptr<const VfsStreamEndpoint> StreamEndpoint(std::int32_t descriptor) const;
+    [[nodiscard]] VfsDescriptorTableId ForkDescriptorTable(VfsDescriptorTableId source);
+    void ReleaseDescriptorTable(VfsDescriptorTableId table);
+    [[nodiscard]] std::size_t ReadPipe(OpenFile& open, std::span<std::byte> destination);
+    [[nodiscard]] std::size_t WritePipe(OpenFile& open, std::span<const std::byte> source);
+    // Waits for a readiness change after `observed`; EINTR when the calling
+    // thread's binding reports an interruption.
+    void WaitPipeInterruptible(std::uint64_t observed) const;
+
+    template <typename Visitor>
+    void ForEachOpenLocked(Visitor&& visitor) const {
+        for (const auto& [id, table] : descriptor_tables_) {
+            static_cast<void>(id);
+            for (const auto& [fd, open] : table.entries)
+                visitor(fd, open);
+        }
+    }
 
     mutable std::mutex mutex_;
-    // Leaf lock: holders never take another VFS lock.
-    mutable std::mutex pipe_readiness_mutex_;
-    mutable std::condition_variable pipe_readiness_changed_;
-    mutable std::uint64_t pipe_readiness_generation_{};
+    // Leaf lock inside: holders never take another VFS lock.
+    std::shared_ptr<PipeReadiness> pipe_readiness_{std::make_shared<PipeReadiness>()};
     // Separate from mutex_ so notification never runs under the index lock.
     mutable std::mutex lookup_observer_mutex_;
     std::shared_ptr<const VfsLookupObserver> lookup_observer_;
@@ -273,7 +369,8 @@ public:
     // Folded path -> original spelling for explicit directories.
     std::map<std::string, std::string, std::less<>> directories_;
     std::vector<VfsMountSnapshot> mounts_;
-    std::map<std::int32_t, std::shared_ptr<OpenFile>> descriptors_;
+    mutable std::map<VfsDescriptorTableId, DescriptorTable> descriptor_tables_{{kVfsApplicationDescriptorTable, {}}};
+    VfsDescriptorTableId next_descriptor_table_{1U};
     // Sandbox overlay (ADR-0020). Absent until AttachSandbox.
     SandboxStore* sandbox_{};
     std::vector<std::string> writable_roots_;

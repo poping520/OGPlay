@@ -169,14 +169,30 @@ mkdir/unlink/rmdir/rename 立即落元数据。unlink/覆盖后的存活句柄�
 
 `TrySnapshot` 分别 try-lock 全局元数据、打开状态与资源预算；挂载/FD 各最多 128 项。打开状态忙时该 FD 标 busy，offset/node_id 未知，不等待 backing IO；总数和 partial 显式返回。`TryDescriptorNode` 仅尝试读取稳定节点身份。flushes 只累计挂载沙盒成功完成的 FlushAll，不把未挂载算成功落盘。
 
-## Pipe readiness
+## 描述符表与流端点
 
-PipePollEvents 是不消费数据的快照查询：返回读/写/错误/挂断/无效位，普通文件或目录返回
-不支持。可读性来自当前 offset 与 backing size，另一端关闭从真实 descriptor 表推导；
-不以任意文件写入作为 pipe 事件。调用侧负责等待和重新查询，VFS 不依赖 Looper。
-PipeReadinessGeneration 是进程内单调计数，pipe 写入成功与 pipe descriptor 关闭后递增并唤醒
-WaitPipeReadiness；等待方先取计数再查询 PipePollEvents，再以该计数等待，变化不会丢失。
-计数只表示“可能变化”，等待方必须重新查询；其锁是叶子锁，持有时不进入其他 VFS 锁。
+- 每个（虚拟）进程一张 FD 表，表 0 是游戏进程且永久存在。`ForkDescriptorTable` 复制表项并共享
+  打开状态（Linux 无 CLONE_FILES 的 fork 语义），保留 close-on-exec 位；`ReleaseDescriptorTable`
+  按 Close 语义关闭全部表项。所有按 int fd 的操作作用于调用线程经 `VfsThreadBinding` 绑定的表，
+  未绑定线程使用表 0；绑定可嵌套，已释放的表返回 EBADF。元数据遍历（目录 unlink、rename 归属、
+  快照）覆盖全部表。
+- `DuplicateTo` 实现 dup2/dup3：先替换目标表项，再在锁外按 Close 语义退役被替换的打开状态；
+  close-on-exec 是表项属性，`CloseOnExecDescriptors` 只关闭当前表带该位的项。新 FD 仍从 3 起取最小空号。
+- `VfsStreamEndpoint` 是上层拥有的字节流（stdin/stdout/stderr、Android log），与文件共用表、dup、
+  close 及继承；读返回 EOF，写交给端点回调，不可定位/租约/截断，`DescriptorInfo` 保持 EBADF。
+
+## 管道
+
+管道是 64 KiB 有界缓冲，读写端按打开状态计数（dup 与跨表共享不增加端数）。读：有数据即返回并丢弃
+已读字节，空且仍有写端时阻塞，写端全部退役后 EOF；写：≤4096 字节原子写入，缓冲满时阻塞，无读端
+EPIPE（不产生 SIGPIPE）；pipe2 的 O_NONBLOCK 端以 EAGAIN 代替阻塞。阻塞不持打开状态操作锁，
+以 10 ms 片检查绑定的中断谓词并返回 EINTR；未绑定线程不可中断。
+
+PipePollEvents 是不消费数据的快照查询：返回读/写/错误/挂断/无效位，普通文件或目录返回不支持。
+读端有数据或无写端为可读，无写端同时报挂断；写端无读端报错误，剩余空间 ≥4096 才报可写。
+PipeReadinessGeneration 是进程内单调计数，管道读写、端退役后递增并唤醒 WaitPipeReadiness；
+等待方先取计数再查询，再以该计数等待，变化不会丢失。计数只表示“可能变化”，等待方必须重新查询；
+其锁是叶子锁，持有时不进入其他 VFS 锁。
 
 ## 查找观察（ADR-0146）
 

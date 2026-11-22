@@ -47,6 +47,10 @@ void DenyServiceMethod(dx::IntrinsicClassBuilder& builder, const char* name, con
 // The managed ANGLE window path guarantees ES 2.0.
 inline constexpr std::int32_t kManagedGlesVersion = 2 << 16;
 [[nodiscard]] std::int32_t DeviceDensityDpi(const Context& context);
+// Non-empty system properties of the simulated device, as SystemProperties.get
+// answers them. The caller holds the VM execution lock.
+[[nodiscard]] std::vector<std::pair<std::string, std::string>> AndroidSystemProperties(dx::Interpreter& vm,
+                                                                                       const Context& context);
 void PopulateAndroidDisplayMetrics(dx::IntrinsicContext& call, const Context& context, dx::VmObjectRef metrics);
 
 // Helpers shared across handler batches; batch-local helpers stay private to

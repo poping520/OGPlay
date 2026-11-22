@@ -117,30 +117,6 @@ IntrinsicClassDecl Declare_dalvik_system_VMRuntime_Natives(const CoreIntrinsicSe
 namespace ogplay::runtime::dexvm::intrinsics {
 using namespace detail;
 
-IntrinsicClassDecl Declare_java_lang_ProcessManager_Natives() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/lang/ProcessManager;", "Ljava/lang/Object;", {}, kAccFinal);
-    builder.MergesBootClass();
-    builder.StaticMethod(
-        "exec",
-        "([Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/io/FileDescriptor;Ljava/io/FileDescriptor;"
-        "Ljava/io/FileDescriptor;Z)I",
-        [](IntrinsicContext& context) -> VmValue {
-            auto& vm = context.vm;
-            if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.process.exec", 0);
-            if (auto* log = vm.Log()) {
-                constexpr std::size_t kMaxCommandUnits = 128;
-                const auto executable = vm.Model().GetObjectElement(context.arguments[0].ref, 0);
-                const auto name = vm.Model().StringChars(executable).substr(0, kMaxCommandUnits);
-                auto command = core::Utf16ToUtf8(std::span{name}, core::InvalidUtf16Policy::replace);
-                log->Write(core::LogLevel::warn, "dexvm.process.exec", "Child process execution is unavailable", {},
-                           {{"command", std::move(command).value()}});
-            }
-            throw VmJavaThrow{"Ljava/io/IOException;", "No such file or directory"};
-        },
-        kAccPrivate | kAccStatic | kAccNative);
-    return std::move(builder).Build();
-}
-
 IntrinsicClassDecl Declare_java_lang_Runtime_Overrides(const CoreIntrinsicServices& services) {
     auto builder = IntrinsicClassBuilder::Class("Ljava/lang/Runtime;", "Ljava/lang/Object;");
     builder.MergesBootClass();

@@ -25,7 +25,7 @@ posix.UnimplementedVirtual("getsockoptUcred", "(Ljava/io/FileDescriptor;II)Llibc
 if (!services.current_thread_id) posix.UnimplementedVirtual("gettid", "()I");
 if (!services.process_uid) posix.UnimplementedVirtual("getuid", "()I");
 posix.UnimplementedVirtual("if_indextoname", "(I)Ljava/lang/String;");
-posix.UnimplementedVirtual("kill", "(II)V");
+if (!services.kill_process) posix.UnimplementedVirtual("kill", "(II)V");
 posix.UnimplementedVirtual("lchown", "(Ljava/lang/String;II)V");
 posix.UnimplementedVirtual("listen", "(Ljava/io/FileDescriptor;I)V");
 posix.UnimplementedVirtual("mincore", "(JJ[B)V");

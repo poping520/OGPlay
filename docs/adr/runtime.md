@@ -151,10 +151,11 @@ JNI、CPU 执行、Android native 与 Java 平台服务需要独立所有权，�
 
 ### 决定
 
-runtime 按 common、jni、dexvm、framework、bionic、syscall、execution、vfs、database、resources、raster、
+runtime 按 common、jni、dexvm、framework、bionic、syscall、execution、vfs、process、database、resources、raster、
 jni_guest、boundary、debug 与 integration 分工，每个生产目录维护 MODULE。
 jni 拥有 JNI 语义；dexvm 拥有解释执行与 Java 对象模型；jni_guest 只物化 guest JNI ABI。
-bionic 拥有真实库 profile；execution 单向依赖 bionic/syscall，syscall 单向使用 VFS 与下层。
+bionic 拥有真实库 profile；execution 单向依赖 bionic/syscall，syscall 单向使用 VFS、process 与下层；
+process（进程内虚拟进程）只依赖 VFS 与下层。
 boundary 拥有 Android native/GLES ABI，依赖 gles 与显式窄服务，不依赖 JNI、VM 或 integration。
 jni_guest 与 boundary 互不依赖；framework 的声明式 HLE 只通过 JNI 及受限资源接口工作。
 integration 装配进程、桥与平台接缝；Android family 归其 dexvm_android 子模块，不在低层复制。

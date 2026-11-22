@@ -1,5 +1,7 @@
 #include "ogplay/runtime/integration/dexvm_io_vfs.h"
 
+#include <chrono>
+
 #include <utility>
 
 #include "ogplay/runtime/vfs/vfs.h"
@@ -220,6 +222,38 @@ dexvm::IoFileInfo DexVmIoVfsAdapter::HandleInfo(const std::int32_t handle) const
                 info.uid,
                 info.gid,
                 info.metadata.modified_millis};
+    } catch (const VfsError& error) {
+        throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
+    }
+}
+
+bool DexVmIoVfsAdapter::IsPipe(const std::int32_t handle) const {
+    try {
+        return file_system_.PipeBuffered(handle).has_value();
+    } catch (const VfsError&) {
+        return false;
+    }
+}
+
+void DexVmIoVfsAdapter::WaitStreamReady(const std::int32_t handle, const bool write) {
+    // POLLIN|POLLHUP for readers; POLLOUT|POLLERR for writers.
+    const auto ready = write ? 2U | 4U : 1U | 8U;
+    for (;;) {
+        const auto observed = file_system_.PipeReadinessGeneration();
+        std::optional<std::uint32_t> events;
+        try {
+            events = file_system_.PipePollEvents(handle);
+        } catch (const VfsError&) {
+            return;
+        }
+        if (!events || (*events & (ready | 16U)) != 0U) return;
+        file_system_.WaitPipeReadiness(observed, std::chrono::milliseconds(10));
+    }
+}
+
+std::optional<std::size_t> DexVmIoVfsAdapter::StreamAvailable(const std::int32_t handle) const {
+    try {
+        return file_system_.PipeBuffered(handle);
     } catch (const VfsError& error) {
         throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
     }

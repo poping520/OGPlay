@@ -707,65 +707,70 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path, const Vf
     opened->large_file = options.large_file;
     opened->no_follow = options.no_follow;
     opened->host_pin = std::move(host_pin);
-    descriptors_.emplace(descriptor, std::move(opened));
+    CurrentTableLocked().entries.emplace(descriptor, std::move(opened));
     return descriptor;
 }
 
 std::optional<std::uint32_t> VirtualFileSystem::Impl::PipePollEvents(std::int32_t descriptor) const {
     std::shared_ptr<OpenFile> open;
-    bool reader{}, writer{};
     {
         std::scoped_lock lock(mutex_);
-        const auto found = descriptors_.find(descriptor);
-        if (found == descriptors_.end()) return 16U;
+        auto& table = CurrentTableLocked();
+        const auto found = table.entries.find(descriptor);
+        if (found == table.entries.end()) return 16U;
         open = found->second;
-        if (!open->pipe) return std::nullopt;
-        for (const auto& [fd, peer] : descriptors_) {
-            static_cast<void>(fd);
-            if (peer->file != open->file) continue;
-            reader = reader || peer->readable;
-            writer = writer || peer->writable;
-        }
     }
-    std::scoped_lock operation(open->mutex);
-    std::scoped_lock contents(*open->file->mutex);
+    if (!open->pipe_state) return std::nullopt;
+    std::scoped_lock contents(open->pipe_state->mutex);
+    const auto& state = *open->pipe_state;
     std::uint32_t events{};
     if (open->readable) {
-        if (open->offset < open->file->size || !writer) events |= 1U;
-        if (!writer) events |= 8U;
+        if (!state.buffer.empty() || state.writers == 0) events |= 1U;
+        if (state.writers == 0) events |= 8U;
     }
-    if (open->writable) events |= reader ? 2U : 4U;
+    if (open->writable) {
+        if (state.readers == 0) {
+            events |= 4U;
+        } else if (kVfsPipeCapacity - state.buffer.size() >= kVfsPipeAtomicWrite) {
+            events |= 2U;
+        }
+    }
     return events;
 }
 
 std::uint64_t VirtualFileSystem::Impl::PipeReadinessGeneration() const {
-    std::scoped_lock lock(pipe_readiness_mutex_);
-    return pipe_readiness_generation_;
+    std::scoped_lock lock(pipe_readiness_->mutex);
+    return pipe_readiness_->generation;
 }
 
 void VirtualFileSystem::Impl::WaitPipeReadiness(const std::uint64_t observed,
                                                 const std::chrono::nanoseconds timeout) const {
-    std::unique_lock lock(pipe_readiness_mutex_);
-    pipe_readiness_changed_.wait_for(lock, timeout,
-                                     [this, observed] { return pipe_readiness_generation_ != observed; });
+    std::unique_lock lock(pipe_readiness_->mutex);
+    pipe_readiness_->changed.wait_for(lock, timeout,
+                                      [this, observed] { return pipe_readiness_->generation != observed; });
 }
 
 void VirtualFileSystem::Impl::NotifyPipeReadiness() const {
-    {
-        std::scoped_lock lock(pipe_readiness_mutex_);
-        ++pipe_readiness_generation_;
-    }
-    pipe_readiness_changed_.notify_all();
+    pipe_readiness_->Notify();
 }
 
-VfsPipeDescriptors VirtualFileSystem::Impl::CreatePipe() {
+VfsPipeDescriptors VirtualFileSystem::Impl::CreatePipe(const bool non_blocking) {
     std::scoped_lock lock(mutex_);
     auto pipe = std::make_shared<File>(File{{}, 0, {}, {}, true, VfsSource::runtime, false, {}});
     pipe->node_id = next_node_id_++;
+    auto state = std::make_shared<PipeState>();
+    auto& table = CurrentTableLocked();
+    const auto make_end = [&](const bool reader) {
+        auto open = std::make_shared<OpenFile>(pipe, 0, reader, !reader, nullptr, true);
+        open->pipe_state = state;
+        open->non_blocking = non_blocking;
+        open->pipe_end = std::make_unique<PipeEnd>(state, pipe_readiness_, reader);
+        return open;
+    };
     const auto read_descriptor = AllocateDescriptor();
-    descriptors_.emplace(read_descriptor, std::make_shared<OpenFile>(pipe, 0, true, false, nullptr, true));
+    table.entries.emplace(read_descriptor, make_end(true));
     const auto write_descriptor = AllocateDescriptor();
-    descriptors_.emplace(write_descriptor, std::make_shared<OpenFile>(std::move(pipe), 0, false, true, nullptr, true));
+    table.entries.emplace(write_descriptor, make_end(false));
     return {read_descriptor, write_descriptor};
 }
 
@@ -774,6 +779,12 @@ std::size_t VirtualFileSystem::Impl::Read(const std::int32_t descriptor, const s
     {
         std::scoped_lock lock(mutex_);
         open = FindDescriptor(descriptor);
+    }
+    // Pipe IO may block, so it never holds the open-state operation lock.
+    if (open->pipe_state) return ReadPipe(*open, destination);
+    if (open->endpoint) {
+        if (!open->readable) throw VfsError(kEbadf, "VFS stream endpoint is not readable");
+        return 0;
     }
     std::scoped_lock operation(open->mutex);
     if (open->directory) throw VfsError(kEisdir, "VFS descriptor is a directory");
@@ -828,7 +839,7 @@ std::size_t VirtualFileSystem::Impl::ReadAt(const std::int32_t descriptor, const
     }
     std::scoped_lock operation(open->mutex);
     if (open->directory) throw VfsError(kEisdir, "VFS descriptor is a directory");
-    if (open->pipe) throw VfsError(kEspipe, "VFS pipe does not support positioned IO");
+    if (open->pipe || open->endpoint) throw VfsError(kEspipe, "VFS pipe does not support positioned IO");
     if (open->file->character_device) throw VfsError(kEspipe, "VFS character device does not support positioned IO");
     if (!open->readable) throw VfsError(kEbadf, "VFS descriptor is not readable");
     auto file = open->file;
@@ -862,6 +873,12 @@ std::size_t VirtualFileSystem::Impl::Write(const std::int32_t descriptor, const 
     {
         std::scoped_lock lock(mutex_);
         open = FindDescriptor(descriptor);
+    }
+    if (open->pipe_state) return WritePipe(*open, source);
+    if (open->endpoint) {
+        if (!open->writable || !open->endpoint->write) throw VfsError(kEbadf, "VFS stream endpoint is not writable");
+        if (!source.empty()) open->endpoint->write(source);
+        return source.size();
     }
     std::scoped_lock operation(open->mutex);
     if (open->directory) throw VfsError(kEisdir, "VFS descriptor is a directory");
@@ -904,7 +921,6 @@ std::size_t VirtualFileSystem::Impl::Write(const std::int32_t descriptor, const 
         open->offset = end;
         SetNodeSizeDirtyLocked(*file, file->contents.size(), file->dirty || !file->overlay_path.empty());
     }
-    if (open->pipe) NotifyPipeReadiness();
     return source.size();
 }
 
@@ -917,7 +933,7 @@ std::size_t VirtualFileSystem::Impl::WriteAt(const std::int32_t descriptor, cons
     }
     std::scoped_lock operation(open->mutex);
     if (open->directory) throw VfsError(kEisdir, "VFS descriptor is a directory");
-    if (open->pipe) throw VfsError(kEspipe, "VFS pipe does not support positioned IO");
+    if (open->pipe || open->endpoint) throw VfsError(kEspipe, "VFS pipe does not support positioned IO");
     if (!open->writable) throw VfsError(kEbadf, "VFS descriptor is not writable");
     auto file = open->file;
     std::scoped_lock file_lock(*file->mutex);
@@ -980,7 +996,7 @@ VfsMappingSource VirtualFileSystem::CaptureMappingSource(const std::int32_t desc
         open = impl_->FindDescriptor(descriptor);
     }
     std::scoped_lock operation(open->mutex);
-    if (open->directory || open->pipe || open->file->character_device)
+    if (open->directory || open->pipe || open->endpoint || open->file->character_device)
         throw VfsError(19, "VFS descriptor is not a regular mapping source");
     auto file = open->file;
     std::scoped_lock file_lock(*file->mutex);
@@ -1003,7 +1019,7 @@ std::shared_ptr<const VfsReadLease> VirtualFileSystem::Impl::CaptureReadLease(co
     }
     std::scoped_lock operation(open->mutex);
     if (open->directory) throw VfsError(kEisdir, "cannot lease a directory");
-    if (open->pipe) throw VfsError(kEspipe, "cannot lease a VFS pipe");
+    if (open->pipe || open->endpoint) throw VfsError(kEspipe, "cannot lease a VFS pipe");
     if (!open->readable) throw VfsError(kEbadf, "VFS descriptor is not readable");
     auto file = open->file;
     std::scoped_lock file_lock(*file->mutex);
@@ -1073,7 +1089,7 @@ std::uint64_t VirtualFileSystem::Impl::Seek(const std::int32_t descriptor, const
         open->directory->cursor = static_cast<std::size_t>(result);
         return result;
     }
-    if (open->pipe) throw VfsError(kEspipe, "VFS pipe is not seekable");
+    if (open->pipe || open->endpoint) throw VfsError(kEspipe, "VFS pipe is not seekable");
     if (open->file->character_device) throw VfsError(kEspipe, "VFS character device is not seekable");
     std::uint64_t base{};
     if (whence == VfsSeekWhence::current) base = open->offset;
@@ -1101,15 +1117,27 @@ void VirtualFileSystem::Impl::Close(const std::int32_t descriptor) {
     std::shared_ptr<OpenFile> open;
     {
         std::scoped_lock lock(mutex_);
-        const auto found = descriptors_.find(descriptor);
-        if (found == descriptors_.end()) {
-            throw VfsError(kEbadf, "VFS descriptor is not open");
-        }
-        open = found->second;
-        descriptors_.erase(found);
+        open = DetachDescriptorLocked(CurrentTableLocked(), descriptor);
     }
-    // Closing an end can raise hangup or error on its peer.
-    if (open->pipe) NotifyPipeReadiness();
+    RetireOpenFile(open);
+}
+
+std::shared_ptr<OpenFile> VirtualFileSystem::Impl::DetachDescriptorLocked(DescriptorTable& table,
+                                                                          const std::int32_t descriptor) {
+    const auto found = table.entries.find(descriptor);
+    if (found == table.entries.end()) {
+        throw VfsError(kEbadf, "VFS descriptor is not open");
+    }
+    auto open = std::move(found->second);
+    table.entries.erase(found);
+    table.close_on_exec.erase(descriptor);
+    return open;
+}
+
+void VirtualFileSystem::Impl::RetireOpenFile(const std::shared_ptr<OpenFile>& open) {
+    // Pipe ends signal their peers when the open description retires
+    // (PipeEnd); a still-shared description keeps the end open.
+    if (open->pipe_state || open->endpoint) return;
     std::scoped_lock operation(open->mutex);
     if (!open->file) return;
     {
@@ -1125,8 +1153,202 @@ std::int32_t VirtualFileSystem::Impl::Duplicate(const std::int32_t descriptor) {
     std::scoped_lock lock(mutex_);
     auto open = FindDescriptor(descriptor);
     const auto duplicate = AllocateDescriptor();
-    descriptors_.emplace(duplicate, std::move(open));
+    CurrentTableLocked().entries.emplace(duplicate, std::move(open));
     return duplicate;
+}
+
+void VirtualFileSystem::Impl::DuplicateTo(const std::int32_t source, const std::int32_t target,
+                                          const bool close_on_exec) {
+    if (target < 0) throw VfsError(kEbadf, "VFS descriptor number is negative");
+    std::shared_ptr<OpenFile> replaced;
+    {
+        std::scoped_lock lock(mutex_);
+        auto& table = CurrentTableLocked();
+        auto open = FindDescriptor(source);
+        if (source == target) return;
+        if (const auto found = table.entries.find(target); found != table.entries.end()) {
+            replaced = std::move(found->second);
+            found->second = std::move(open);
+        } else {
+            table.entries.emplace(target, std::move(open));
+        }
+        if (close_on_exec) {
+            table.close_on_exec.insert(target);
+        } else {
+            table.close_on_exec.erase(target);
+        }
+    }
+    if (replaced) RetireOpenFile(replaced);
+}
+
+void VirtualFileSystem::Impl::SetCloseOnExec(const std::int32_t descriptor, const bool close_on_exec) {
+    std::scoped_lock lock(mutex_);
+    static_cast<void>(FindDescriptor(descriptor));
+    auto& table = CurrentTableLocked();
+    if (close_on_exec) {
+        table.close_on_exec.insert(descriptor);
+    } else {
+        table.close_on_exec.erase(descriptor);
+    }
+}
+
+bool VirtualFileSystem::Impl::CloseOnExec(const std::int32_t descriptor) const {
+    std::scoped_lock lock(mutex_);
+    static_cast<void>(FindDescriptor(descriptor));
+    return CurrentTableLocked().close_on_exec.contains(descriptor);
+}
+
+void VirtualFileSystem::Impl::CloseOnExecDescriptors() {
+    std::vector<std::shared_ptr<OpenFile>> closed;
+    {
+        std::scoped_lock lock(mutex_);
+        auto& table = CurrentTableLocked();
+        const auto marked = table.close_on_exec;
+        for (const auto descriptor : marked)
+            closed.push_back(DetachDescriptorLocked(table, descriptor));
+    }
+    for (const auto& open : closed)
+        RetireOpenFile(open);
+}
+
+namespace {
+
+[[nodiscard]] std::shared_ptr<OpenFile> MakeEndpointOpen(std::shared_ptr<const VfsStreamEndpoint> endpoint,
+                                                         const VfsOpenStatus& status) {
+    if (!endpoint) throw VfsError(kEinval, "VFS stream endpoint is empty");
+    auto open = std::make_shared<OpenFile>(std::make_shared<File>(), 0, status.read, status.write, nullptr);
+    open->append = status.append;
+    open->non_blocking = status.non_blocking;
+    open->large_file = status.large_file;
+    open->no_follow = status.no_follow;
+    open->endpoint = std::move(endpoint);
+    return open;
+}
+
+}  // namespace
+
+void VirtualFileSystem::Impl::InstallStreamEndpoint(const std::int32_t descriptor,
+                                                    std::shared_ptr<const VfsStreamEndpoint> endpoint) {
+    if (descriptor < 0) throw VfsError(kEbadf, "VFS descriptor number is negative");
+    const VfsOpenStatus status{.read = endpoint && endpoint->readable, .write = endpoint && endpoint->writable};
+    auto open = MakeEndpointOpen(std::move(endpoint), status);
+    std::shared_ptr<OpenFile> replaced;
+    {
+        std::scoped_lock lock(mutex_);
+        auto& table = CurrentTableLocked();
+        auto& slot = table.entries[descriptor];
+        replaced = std::exchange(slot, std::move(open));
+        table.close_on_exec.erase(descriptor);
+    }
+    if (replaced) RetireOpenFile(replaced);
+}
+
+std::int32_t VirtualFileSystem::Impl::OpenStreamEndpoint(std::shared_ptr<const VfsStreamEndpoint> endpoint,
+                                                         const VfsOpenStatus status) {
+    auto open = MakeEndpointOpen(std::move(endpoint), status);
+    std::scoped_lock lock(mutex_);
+    const auto descriptor = AllocateDescriptor();
+    CurrentTableLocked().entries.emplace(descriptor, std::move(open));
+    return descriptor;
+}
+
+std::shared_ptr<const VfsStreamEndpoint> VirtualFileSystem::Impl::StreamEndpoint(const std::int32_t descriptor) const {
+    std::scoped_lock lock(mutex_);
+    const auto& table = CurrentTableLocked();
+    const auto found = table.entries.find(descriptor);
+    return found == table.entries.end() ? nullptr : found->second->endpoint;
+}
+
+VfsDescriptorTableId VirtualFileSystem::Impl::ForkDescriptorTable(const VfsDescriptorTableId source) {
+    std::scoped_lock lock(mutex_);
+    const auto found = descriptor_tables_.find(source);
+    if (found == descriptor_tables_.end()) throw VfsError(kEbadf, "VFS descriptor table does not exist");
+    if (next_descriptor_table_ == std::numeric_limits<VfsDescriptorTableId>::max())
+        throw VfsError(kEmfile, "VFS descriptor tables are exhausted");
+    const auto id = next_descriptor_table_++;
+    descriptor_tables_.emplace(id, found->second);
+    return id;
+}
+
+void VirtualFileSystem::Impl::ReleaseDescriptorTable(const VfsDescriptorTableId table) {
+    if (table == kVfsApplicationDescriptorTable) throw VfsError(kEinval, "VFS application table cannot be released");
+    DescriptorTable released;
+    {
+        std::scoped_lock lock(mutex_);
+        const auto found = descriptor_tables_.find(table);
+        if (found == descriptor_tables_.end()) throw VfsError(kEbadf, "VFS descriptor table does not exist");
+        released = std::move(found->second);
+        descriptor_tables_.erase(found);
+    }
+    for (const auto& [descriptor, open] : released.entries) {
+        static_cast<void>(descriptor);
+        RetireOpenFile(open);
+    }
+}
+
+std::size_t VirtualFileSystem::Impl::ReadPipe(OpenFile& open, const std::span<std::byte> destination) {
+    if (!open.readable) throw VfsError(kEbadf, "VFS descriptor is not readable");
+    if (destination.empty()) return 0;
+    auto& state = *open.pipe_state;
+    for (;;) {
+        const auto observed = PipeReadinessGeneration();
+        {
+            std::unique_lock lock(state.mutex);
+            if (!state.buffer.empty()) {
+                const auto count = std::min(destination.size(), state.buffer.size());
+                using Difference = std::deque<std::byte>::difference_type;
+                const auto last = state.buffer.begin() + static_cast<Difference>(count);
+                std::copy(state.buffer.begin(), last, destination.begin());
+                state.buffer.erase(state.buffer.begin(), last);
+                lock.unlock();
+                NotifyPipeReadiness();
+                return count;
+            }
+            if (state.writers == 0) return 0;
+        }
+        if (open.non_blocking) throw VfsError(kEagain, "VFS pipe is empty");
+        WaitPipeInterruptible(observed);
+    }
+}
+
+std::size_t VirtualFileSystem::Impl::WritePipe(OpenFile& open, const std::span<const std::byte> source) {
+    if (!open.writable) throw VfsError(kEbadf, "VFS descriptor is not writable");
+    auto& state = *open.pipe_state;
+    std::size_t written{};
+    while (written < source.size()) {
+        const auto observed = PipeReadinessGeneration();
+        {
+            std::unique_lock lock(state.mutex);
+            if (state.readers == 0) {
+                if (written != 0) return written;
+                throw VfsError(kEpipe, "VFS pipe has no reader");
+            }
+            const auto remaining = source.size() - written;
+            const auto room = kVfsPipeCapacity - state.buffer.size();
+            // Writes up to PIPE_BUF are atomic; larger ones may interleave.
+            const auto needed = remaining <= kVfsPipeAtomicWrite ? remaining : std::size_t{1};
+            if (room >= needed) {
+                const auto count = std::min(room, remaining);
+                const auto first = source.subspan(written, count);
+                state.buffer.insert(state.buffer.end(), first.begin(), first.end());
+                written += count;
+                lock.unlock();
+                NotifyPipeReadiness();
+                continue;
+            }
+        }
+        if (open.non_blocking) {
+            if (written != 0) return written;
+            throw VfsError(kEagain, "VFS pipe is full");
+        }
+        try {
+            WaitPipeInterruptible(observed);
+        } catch (const VfsError&) {
+            if (written != 0) return written;
+            throw;
+        }
+    }
+    return written;
 }
 
 void VirtualFileSystem::Impl::Materialize(File& file) {
@@ -1158,18 +1380,73 @@ void VirtualFileSystem::Impl::Materialize(File& file) {
 }
 
 std::int32_t VirtualFileSystem::Impl::AllocateDescriptor() const {
+    const auto& entries = CurrentTableLocked().entries;
     for (std::int32_t descriptor = 3; descriptor < std::numeric_limits<std::int32_t>::max(); ++descriptor) {
-        if (!descriptors_.contains(descriptor)) return descriptor;
+        if (!entries.contains(descriptor)) return descriptor;
     }
     throw VfsError(kEbadf, "VFS descriptor table is full");
 }
 
 std::shared_ptr<OpenFile> VirtualFileSystem::Impl::FindDescriptor(const std::int32_t descriptor) const {
-    const auto found = descriptors_.find(descriptor);
-    if (found == descriptors_.end()) {
+    const auto& entries = CurrentTableLocked().entries;
+    const auto found = entries.find(descriptor);
+    if (found == entries.end()) {
         throw VfsError(kEbadf, "VFS descriptor is not open");
     }
     return found->second;
+}
+
+namespace {
+
+struct ThreadBindingFrame final {
+    const void* owner{};
+    VfsDescriptorTableId table{};
+    const std::function<bool()>* interrupted{};
+};
+
+thread_local std::vector<ThreadBindingFrame> thread_bindings;
+
+[[nodiscard]] const ThreadBindingFrame* FindThreadBinding(const void* owner) noexcept {
+    for (auto it = thread_bindings.rbegin(); it != thread_bindings.rend(); ++it)
+        if (it->owner == owner) return &*it;
+    return nullptr;
+}
+
+}  // namespace
+
+VfsDescriptorTableId VirtualFileSystem::Impl::CurrentTableId() const {
+    const auto* binding = FindThreadBinding(this);
+    return binding == nullptr ? kVfsApplicationDescriptorTable : binding->table;
+}
+
+DescriptorTable& VirtualFileSystem::Impl::CurrentTableLocked() const {
+    const auto found = descriptor_tables_.find(CurrentTableId());
+    if (found == descriptor_tables_.end()) throw VfsError(kEbadf, "VFS descriptor table was released");
+    return found->second;
+}
+
+void VirtualFileSystem::Impl::WaitPipeInterruptible(const std::uint64_t observed) const {
+    const auto* binding = FindThreadBinding(this);
+    const auto* interrupted = binding == nullptr ? nullptr : binding->interrupted;
+    if (interrupted != nullptr && *interrupted && (*interrupted)()) throw VfsError(kEintr, "VFS pipe wait interrupted");
+    WaitPipeReadiness(observed, std::chrono::milliseconds(10));
+    if (interrupted != nullptr && *interrupted && (*interrupted)()) throw VfsError(kEintr, "VFS pipe wait interrupted");
+}
+
+VfsThreadBinding::VfsThreadBinding(const VirtualFileSystem& vfs, const VfsDescriptorTableId table,
+                                   std::function<bool()> interrupted)
+    : owner_(vfs.impl_.get()), table_(table), interrupted_(std::move(interrupted)) {
+    thread_bindings.push_back({owner_, table_, &interrupted_});
+}
+
+VfsThreadBinding::~VfsThreadBinding() {
+    for (auto it = thread_bindings.end(); it != thread_bindings.begin();) {
+        --it;
+        if (it->owner == owner_ && it->interrupted == &interrupted_) {
+            thread_bindings.erase(it);
+            return;
+        }
+    }
 }
 
 VirtualFileSystem::VirtualFileSystem(const VfsConfig config) : impl_(std::make_unique<Impl>(config)) {}
@@ -1330,6 +1607,48 @@ std::int32_t VirtualFileSystem::Duplicate(const std::int32_t descriptor) {
     return impl_->Duplicate(descriptor);
 }
 
+void VirtualFileSystem::DuplicateTo(const std::int32_t source, const std::int32_t target, const bool close_on_exec) {
+    impl_->DuplicateTo(source, target, close_on_exec);
+}
+
+void VirtualFileSystem::SetCloseOnExec(const std::int32_t descriptor, const bool close_on_exec) {
+    impl_->SetCloseOnExec(descriptor, close_on_exec);
+}
+
+bool VirtualFileSystem::CloseOnExec(const std::int32_t descriptor) const {
+    return impl_->CloseOnExec(descriptor);
+}
+
+void VirtualFileSystem::CloseOnExecDescriptors() {
+    impl_->CloseOnExecDescriptors();
+}
+
+void VirtualFileSystem::InstallStreamEndpoint(const std::int32_t descriptor,
+                                              std::shared_ptr<const VfsStreamEndpoint> endpoint) {
+    impl_->InstallStreamEndpoint(descriptor, std::move(endpoint));
+}
+
+std::int32_t VirtualFileSystem::OpenStreamEndpoint(std::shared_ptr<const VfsStreamEndpoint> endpoint,
+                                                   const VfsOpenStatus status) {
+    return impl_->OpenStreamEndpoint(std::move(endpoint), status);
+}
+
+std::shared_ptr<const VfsStreamEndpoint> VirtualFileSystem::StreamEndpoint(const std::int32_t descriptor) const {
+    return impl_->StreamEndpoint(descriptor);
+}
+
+VfsDescriptorTableId VirtualFileSystem::ForkDescriptorTable(const VfsDescriptorTableId source) {
+    return impl_->ForkDescriptorTable(source);
+}
+
+void VirtualFileSystem::ReleaseDescriptorTable(const VfsDescriptorTableId table) {
+    impl_->ReleaseDescriptorTable(table);
+}
+
+VfsDescriptorTableId VirtualFileSystem::CurrentDescriptorTable() const {
+    return impl_->CurrentTableId();
+}
+
 std::vector<VfsDirectoryEntry> VirtualFileSystem::ListDirectory(const std::string_view path) const {
     // A missing directory lists as empty, so success here is no evidence it exists.
     return ObserveLookup(*impl_, path, [&] { return impl_->ListDirectory(path); }, false);
@@ -1389,6 +1708,17 @@ std::optional<std::uint32_t> VirtualFileSystem::PipePollEvents(std::int32_t desc
     return impl_->PipePollEvents(descriptor);
 }
 
+std::optional<std::size_t> VirtualFileSystem::PipeBuffered(const std::int32_t descriptor) const {
+    std::shared_ptr<OpenFile> open;
+    {
+        std::scoped_lock lock(impl_->mutex_);
+        open = impl_->FindDescriptor(descriptor);
+    }
+    if (!open->pipe_state) return std::nullopt;
+    std::scoped_lock contents(open->pipe_state->mutex);
+    return open->pipe_state->buffer.size();
+}
+
 std::uint64_t VirtualFileSystem::PipeReadinessGeneration() const {
     return impl_->PipeReadinessGeneration();
 }
@@ -1397,8 +1727,8 @@ void VirtualFileSystem::WaitPipeReadiness(const std::uint64_t observed, const st
     impl_->WaitPipeReadiness(observed, timeout);
 }
 
-VfsPipeDescriptors VirtualFileSystem::CreatePipe() {
-    return impl_->CreatePipe();
+VfsPipeDescriptors VirtualFileSystem::CreatePipe(const bool non_blocking) {
+    return impl_->CreatePipe(non_blocking);
 }
 
 std::size_t VirtualFileSystem::Read(const std::int32_t descriptor, const std::span<std::byte> destination) {
@@ -1474,15 +1804,17 @@ std::optional<VfsSnapshot> VirtualFileSystem::Impl::TrySnapshot() const {
         if (!lock.owns_lock()) return std::nullopt;
         result.sandbox_attached = sandbox_ != nullptr;
         result.total_mounts = mounts_.size();
-        result.total_descriptors = descriptors_.size();
+        for (const auto& [id, table] : descriptor_tables_) {
+            static_cast<void>(id);
+            result.total_descriptors += table.entries.size();
+        }
         for (const auto& mount : mounts_) {
             if (result.mounts.size() == 128) break;
             result.mounts.push_back(mount);
         }
-        for (const auto& entry : descriptors_) {
-            if (opens.size() == 128) break;
-            opens.push_back(entry);
-        }
+        ForEachOpenLocked([&opens](const std::int32_t fd, const std::shared_ptr<OpenFile>& open) {
+            if (opens.size() < 128) opens.emplace_back(fd, open);
+        });
     }
     result.partial = result.total_mounts > 128 || result.total_descriptors > 128;
     for (const auto& [fd, open] : opens) {
@@ -1517,8 +1849,9 @@ namespace ogplay::runtime {
 std::optional<std::uint64_t> VirtualFileSystem::TryDescriptorNode(std::int32_t fd) const {
     std::unique_lock lock(impl_->mutex_, std::try_to_lock);
     if (!lock.owns_lock()) return std::nullopt;
-    const auto found = impl_->descriptors_.find(fd);
-    if (found == impl_->descriptors_.end() || !found->second->file) return std::nullopt;
+    const auto& entries = impl_->CurrentTableLocked().entries;
+    const auto found = entries.find(fd);
+    if (found == entries.end() || !found->second->file) return std::nullopt;
     return found->second->file->node_id;
 }
 }  // namespace ogplay::runtime

@@ -479,10 +479,15 @@ status = "complete"
 test = "tests/loader/elf_tests.cpp"
 note = "M2 三平台完成 ELF32/ARM 多模块事务装载、TLS/版本/exidx、dlopen/dlsym/dladdr、生命周期与目标 ARM REL"
 
+[runtime.virtual_process]
+status = "partial"
+test = "tests/runtime/virtual_process_tests.cpp; tests/runtime/vfs_descriptor_table_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp#Runtime.exec; tools/conformance/probe_tests.py run --config a --filter runtime.process"
+note = "进程内虚拟进程：vfork/fork（共享内存，fork 保存父线程栈）/execve/exit/wait4/kill 与 Java ProcessManager/waitpid/kill 共用一个内核，只运行内置 sh（-c/文件/stdin 子集）、ps、getprop（与 SystemProperties 同源）与 toolbox，不启动宿主进程。每进程 FD 表、64 KiB 阻塞管道。缺口：SIGCHLD、CLONE_VFORK、/proc/<pid>、/system/bin 文件节点、其他命令。"
+
 [runtime.syscall]
 status = "complete"
 test = "tests/runtime/syscall_tests.cpp; tests/runtime/arm_kernel_helpers_tests.cpp"
-note = "Android ARM 分组 syscall 目录；未实现项 ENOSYS 并记账。55/221 支持 F_GETFL，按真实 VFS/端点打开状态返回 ARM 标志，非法/关闭 fd 为 EBADF，其他 fcntl 仍未实现。0/1/2 与日志端点共用查询/dup/close/输出状态，stdin EOF，不接宿主输入；端点 fstat/seek/ioctl 未实现。kuser v5 屏障/CAS 与受检 nanosleep 沿既有边界。getpid/getppid 与 Java 共用进程身份，uname 返回同源 API19 ARM 标识。"
+note = "Android ARM 分组 syscall 目录；未实现项 ENOSYS 并记账。fcntl 支持 F_GETFL/F_GETFD/F_SETFD，dup2/dup3/pipe2 与 O_CLOEXEC 生效，其他 fcntl 未实现。0/1/2 与日志端点是 VFS FD 表中的流端点，stdin EOF，不接宿主输入；端点 fstat/ioctl 未实现。vfork/fork/execve/wait4/kill 见 runtime.virtual_process。getpid/getppid 与 Java 共用进程身份，uname 返回同源 API19 ARM 标识。"
 
 [runtime.bionic]
 status = "complete"

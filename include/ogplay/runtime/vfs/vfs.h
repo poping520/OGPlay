@@ -183,6 +183,27 @@ struct VfsDirectoryEntry final {
     bool operator==(const VfsDirectoryEntry&) const = default;
 };
 
+// Descriptor table of one (virtual) process. Table 0 is the guest
+// application process and always exists.
+using VfsDescriptorTableId = std::uint32_t;
+inline constexpr VfsDescriptorTableId kVfsApplicationDescriptorTable = 0;
+// Linux pipe capacity and the size up to which pipe writes are atomic.
+inline constexpr std::size_t kVfsPipeCapacity = 64U * 1024U;
+inline constexpr std::size_t kVfsPipeAtomicWrite = 4096U;
+
+// A descriptor that is a byte stream owned by an upper layer (stdin/stdout/
+// stderr, Android log devices). Reads return EOF; writes go to `write`.
+struct VfsStreamEndpoint final {
+    std::string name;
+    // Opaque to the VFS; the installing layer identifies its endpoints by it.
+    std::uint32_t kind{};
+    bool readable{};
+    bool writable{};
+    // Writes made through the VFS (for example by built-in commands). Empty
+    // makes such writes fail with EBADF.
+    std::function<void(std::span<const std::byte>)> write;
+};
+
 struct VfsPipeDescriptors final {
     std::int32_t read_descriptor{};
     std::int32_t write_descriptor{};
@@ -320,10 +341,12 @@ public:
     [[nodiscard]] VfsOpenStatus DescriptorStatus(std::int32_t descriptor) const;
     // Append status is immutable for the lifetime of an open description.
     [[nodiscard]] bool IsAppend(std::int32_t descriptor) const;
-    [[nodiscard]] VfsPipeDescriptors CreatePipe();
+    [[nodiscard]] VfsPipeDescriptors CreatePipe(bool non_blocking = false);
     // ALOOPER-style bits: read=1, write=2, error=4, hangup=8, invalid=16.
     // nullopt means the descriptor type is outside the pipe polling contract.
     [[nodiscard]] std::optional<std::uint32_t> PipePollEvents(std::int32_t descriptor) const;
+    // Bytes buffered in a pipe; nullopt when the descriptor is not a pipe.
+    [[nodiscard]] std::optional<std::size_t> PipeBuffered(std::int32_t descriptor) const;
     // Counter bumped after a pipe write or a pipe descriptor close. Read it before
     // PipePollEvents, then WaitPipeReadiness with that value so no change is lost.
     [[nodiscard]] std::uint64_t PipeReadinessGeneration() const;
@@ -361,10 +384,50 @@ public:
     void Close(std::int32_t descriptor);
     // Shares the open state and its operation lock, as Linux dup does.
     [[nodiscard]] std::int32_t Duplicate(std::int32_t descriptor);
+    // dup2/dup3: closes `target` if open, then shares `source`'s open state
+    // under that exact number. Equal numbers only validate `source`.
+    void DuplicateTo(std::int32_t source, std::int32_t target, bool close_on_exec = false);
+    void SetCloseOnExec(std::int32_t descriptor, bool close_on_exec);
+    [[nodiscard]] bool CloseOnExec(std::int32_t descriptor) const;
+    // Closes every close-on-exec descriptor of the calling thread's table.
+    void CloseOnExecDescriptors();
+
+    // Stream endpoints share the table and dup/close semantics of files.
+    void InstallStreamEndpoint(std::int32_t descriptor, std::shared_ptr<const VfsStreamEndpoint> endpoint);
+    [[nodiscard]] std::int32_t OpenStreamEndpoint(std::shared_ptr<const VfsStreamEndpoint> endpoint,
+                                                  VfsOpenStatus status);
+    // Null when the descriptor is absent or not an endpoint.
+    [[nodiscard]] std::shared_ptr<const VfsStreamEndpoint> StreamEndpoint(std::int32_t descriptor) const;
+
+    // Per-process descriptor tables. A fork shares every open state, as
+    // Linux fork without CLONE_FILES does, and keeps close-on-exec flags.
+    [[nodiscard]] VfsDescriptorTableId ForkDescriptorTable(VfsDescriptorTableId source);
+    // Closes all descriptors of a forked table. Table 0 cannot be released.
+    void ReleaseDescriptorTable(VfsDescriptorTableId table);
+    // The table descriptor operations of the calling thread act on.
+    [[nodiscard]] VfsDescriptorTableId CurrentDescriptorTable() const;
 
 private:
+    friend class VfsThreadBinding;
     class Impl;
     std::unique_ptr<Impl> impl_;
+};
+
+// Binds the calling thread's descriptor operations on `vfs` to `table`
+// until destruction; bindings nest. `interrupted` is polled by blocking pipe
+// operations, which then fail with EINTR. Unbound threads use table 0 and
+// block uninterruptibly.
+class VfsThreadBinding final {
+public:
+    VfsThreadBinding(const VirtualFileSystem& vfs, VfsDescriptorTableId table, std::function<bool()> interrupted = {});
+    ~VfsThreadBinding();
+    VfsThreadBinding(const VfsThreadBinding&) = delete;
+    VfsThreadBinding& operator=(const VfsThreadBinding&) = delete;
+
+private:
+    const void* owner_{};
+    VfsDescriptorTableId table_{};
+    std::function<bool()> interrupted_;
 };
 
 }  // namespace ogplay::runtime

@@ -83,6 +83,11 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   JNI 解释方法因 thread_stopped 展开时，保留调用线程身份转为 A32GuestCallCancelled，供
   native clone 正常退出；其他解释器错误继续传播为失败，不按消息或关闭阶段吞掉异常。
 
+- AndroidGuestProcess 拥有一个 `VirtualProcessKernel`（应用 pid/uid、地址空间统计作 VSIZE/RSS、
+  存活 guest TID 作保留号），注册内置命令并绑定 fork/vfork/execve/wait4/kill；析构时在 guest 线程
+  停止后、其余成员析构前停止命令线程。DexVM 桥把包名设为应用进程名，并以该内核提供 ProcessManager
+  的 spawn（三对管道，环境缺省继承进程 environ，按 PATH 解析）与 waitpid/kill 服务；VM 建立后注册
+  系统属性源（持 VM 执行锁读取 SystemProperties 同一张属性表），桥析构时先释放执行锁清除该源。
 - AndroidGuestProcess 注册 `/dev/urandom` (1:9) 与 `/dev/random` (1:8)，通过 VFS reader
   注入 `hal::FillSecureRandom`；每次读取生成新的完整随机字节，失败由 VFS 映射 EIO。
   两者均使用宿主 OS CSPRNG，不模拟 Linux 熵池；O_NONBLOCK 不引入 EAGAIN/熵量等待。

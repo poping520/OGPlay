@@ -182,6 +182,8 @@ set(OGPLAY_TEST_SOURCES
     tests/runtime/tls_trust_tests.cpp
     tests/runtime/preferences_xml_tests.cpp
     tests/runtime/sandbox_store_tests.cpp
+    tests/runtime/vfs_descriptor_table_tests.cpp
+    tests/runtime/virtual_process_tests.cpp
     tests/runtime/vfs_sandbox_tests.cpp
     tests/runtime/vfs_tests.cpp
     tests/frontend/run_apk_vfs_tests.cpp

@@ -36,6 +36,8 @@ JNI、framework 或 integration。
 - 外部退出请求可发生在 child 首次执行前或任意 budget slice 之间；runner 必须在下一安全
   边界完成 lifecycle exit 与 clear-child-tid/futex 清理，不能再次以 running 前置条件失败。
 - `InvokeA32GuestCall` 只接受非空目标、运行中线程、8 字节对齐栈和非零 tick 预算；
+  `A32GuestCallFrame` 末尾可借用 Java native class/method/descriptor 供上层故障诊断，
+  调用者保证字符串在同步调用及异常展开期间有效；执行器不解释这些字段，无 Java 边界时可为空。
   r0-r3 与栈参数一次装配，Linux SVC 和显式 HLE trap 复用统一分派，且只允许在受检
   `SVC #1` 返回哨兵结束。长计算按 2000 万 tick 上限切片，并只在切片边界调用显式 observer；
   observer 接收当前调用实际累计 tick，SVC 安全边界同样报告该累计值；回调次数不得被解释

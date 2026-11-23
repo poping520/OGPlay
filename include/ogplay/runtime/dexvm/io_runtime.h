@@ -34,6 +34,7 @@ struct IoFileInfo final {
     bool writable{};
     std::uint32_t mode{}, uid{}, gid{};
     std::int64_t modified_millis{};
+    std::uint32_t device{}, inode{};
 };
 
 class IoFileSystem {

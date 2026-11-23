@@ -12,6 +12,14 @@
   overlay 归属；路径只是可替换的名字。`OpenFile` 独立拥有 offset、权限和操作锁，FD 表
   保存其 `shared_ptr`。Close 先移除表项，再等待旧打开状态的在途操作；复用同一数字不会
   将旧结果提交到新 FD。
+- `VfsFileInfo.device/inode` 是 guest 的 st_dev/st_ino，与字符设备的 device_number（rdev）
+  分开。inode 非零且限于 32 位，文件、管道和惰性目录身份共用受索引锁保护的 node_id
+  分配序列，耗尽明确 EOVERFLOW；不用路径哈希或宿主 inode。普通节点身份随 rename，
+  写入/截断/元数据更新/落盘不变；unlink/覆盖后旧 FD 保留旧节点，同名重建另取身份。
+  目录身份按规范路径缓存，不参与存在性判断；rmdir 退役缓存，旧目录 FD 保留冻结身份。
+  ListDirectory 与 OpenDirectory 的冻结条目 inode 按解析别名后的子路径查询，与 Stat 一致；
+  子项自身 Stat 报错（目录墓碑残留、别名目标缺失等）不影响列举，仍给出非零 inode；
+  条目相等比较仅考虑名称及类型。管道两端共享身份，不同管道独立；流端点仍无元数据。
 - 内存、小文件、宿主文件和上层注入的 APK/OBB backing 共用 `Read`/`ReadAt` 数据面。
   `PutReadOnlyFile` 发布 runtime 来源只读节点，字节由调用方经 `read_at` 持有，VFS
   不复制；读取、lease 与映射均走 `read_at`，仅需自有内容的路径才整份物化。
@@ -74,6 +82,10 @@ data 与 sdcard 共用安装身份 fsid。总量按配额向下取整，剩余�
 配额范围与账本异常明确失败。其他卷的 fsid 按卷名稳定派生，名称上限为 255。
 统计使用虚拟配额与 VFS 元数据，不查询宿主磁盘。
 
+st_dev 与上述统计共用唯一规范路径卷分类，按 rootfs/data/sdcard/system/proc/dev/pipefs
+分别使用 Linux makedev(0, 1..7)。身份查询不依赖沙盒挂载；StatVfs 的 ENOTSUP 保持不变。
+打开节点按最后的规范路径确定卷，unlink 不丢失该路径。身份仅保证会话内稳定，不写入沙盒格式。
+
 `StatVfs(fd)` 在 FD 表及索引锁下按打开节点当前的规范路径查询，unlink 后继续使用该节点最后的路径。
 目录和字符设备按路径归属，管道返回 pipefs (`0x50495045`)，块与条目计数为 0。无效 FD 返回 EBADF。
 
@@ -87,7 +99,8 @@ UID 作为 uid/gid，系统、APK 和共享存储使用确定性的 guest 属主
 
 `RegisterGeneratedReadOnly` 注册有界 provider，stat 大小为 0；每次 open 先预留最大输出
 预算，再在 VFS 锁外生成独立不可变快照。read/readAt/seek/fstat/lease 共用既有 FD 语义；
-fstat 报当前快照大小。write/create/truncate/unlink/rename 拒绝，回调不得递归打开自身。
+fstat 报当前快照大小。每份快照保留独立 node_id 供 lease/缓存/诊断使用，但继承 provider
+的 inode，stat、各次 fstat 与目录项报告同一身份。write/create/truncate/unlink/rename 拒绝，回调不得递归打开自身。
 注册句柄销毁同步等待正在生成的调用并撤销 provider；新 stat/open 返回 ENOENT，
 已有快照继续可读，close/lease 释放回收预算。退役路径可重新注册，不允许覆盖活跃节点。
 VFS 不依赖 provider 所属上层模块，也不调用宿主 procfs。

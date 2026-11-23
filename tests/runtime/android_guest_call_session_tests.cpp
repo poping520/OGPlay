@@ -10,6 +10,8 @@
 #include <fstream>
 #include <iterator>
 #include <span>
+#include <sstream>
+#include <string>
 #include <string_view>
 #include <thread>
 #include <vector>
@@ -18,6 +20,7 @@
 
 #include "ogplay/audio/java_sound_pool.h"
 #include "ogplay/core/byte_order.h"
+#include "ogplay/core/logger.h"
 #include "ogplay/runtime/dexvm/guest_memory.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/runtime/framework/framework_lifecycle.h"
@@ -26,6 +29,7 @@
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "ogplay/runtime/jni/jni_invocation.h"
+#include "ogplay/runtime/jni/jni_native_registry.h"
 #include "ogplay/runtime/jni/jni_object.h"
 #include "runtime/boundary/core/boundary_symbols.h"
 #include "runtime/boundary/modules/module_catalog.h"
@@ -520,7 +524,7 @@ TEST_CASE("Android process observes native clone failure without another guest i
     }
     INFO(invocation_failure);
     REQUIRE_FALSE(failure.empty());
-    CHECK(failure == "ALooper is stale or unregistered");
+    CHECK(failure.starts_with("ALooper is stale or unregistered\n"));
     CHECK_THROWS_WITH(process->RethrowAsyncFailure(), failure.c_str());
     auto session = ogplay::runtime::AndroidGuestCallSession::AdoptProcess(std::move(process));
     CHECK_THROWS_WITH(session->RethrowAsyncFailure(), failure.c_str());
@@ -1090,6 +1094,21 @@ TEST_CASE("DVM-232/DVM-236 healthy DSO fini honors termination policy and runs a
 
 TEST_CASE("DVM-232 fatal native CPU faults quarantine guest calls and skip fini") {
     using namespace ogplay;
+    core::Logger logger;
+    core::Logger* selected_logger = &logger;
+    SUBCASE("structured logger") {}
+    SUBCASE("null logger") {
+        selected_logger = nullptr;
+    }
+    SUBCASE("throwing logger sink") {
+        class ThrowingSink final : public core::LogSink {
+            void Consume(const core::LogRecord&, std::string_view, std::string_view) override {
+                throw std::runtime_error("log sink failed");
+            }
+        };
+
+        logger.AddSink(std::make_shared<ThrowingSink>(), core::LogLevel::error, "runtime.native_fault");
+    }
     auto libc = LibdlDefaultLibcElf();
     Put32(libc, 0x130, loader::kElfDynamicFini);
     Put32(libc, 0x134, 0x11040U);
@@ -1100,8 +1119,9 @@ TEST_CASE("DVM-232 fatal native CPU faults quarantine guest calls and skip fini"
     Put32(libc, 0x1040, 0xe5902000U);  // fini also faults if attempted
     const loader::Elf32ModuleInput module{"libc.so", libc, memory::GuestAddress{0x10000000U}};
     runtime::VirtualFileSystem filesystem;
-    auto process =
-        runtime::AndroidGuestProcess::Start({19, std::span{&module, 1}, {}, 64, 36, 100000, 1, &filesystem, {}});
+    runtime::AndroidGuestProcessRequest request{19, std::span{&module, 1}, {}, 64, 36, 100000, 1, &filesystem, {}};
+    request.boundary_options.logger = selected_logger;
+    auto process = runtime::AndroidGuestProcess::Start(request);
     std::string failure;
     try {
         static_cast<void>(process->Invoke({memory::GuestAddress{0x10011000U}}));
@@ -1109,13 +1129,172 @@ TEST_CASE("DVM-232 fatal native CPU faults quarantine guest calls and skip fini"
         failure = error.what();
     }
     CHECK(failure.find("reason=memory_fault(4)") != std::string::npos);
-    CHECK_THROWS_WITH(static_cast<void>(process->Invoke({memory::GuestAddress{0x10011040U}})),
-                      "guest native state is unsafe after a CPU fault");
+    std::string rejected;
+    try {
+        static_cast<void>(process->Invoke({memory::GuestAddress{0x10011040U}}));
+        FAIL("faulted process admitted another guest call");
+    } catch (const runtime::AndroidGuestProcessError& error) {
+        rejected = error.what();
+    }
+    CHECK(rejected.starts_with("guest native state is unsafe after a CPU fault\n"));
+    CHECK(rejected.find("reason=memory_fault(4)") != std::string::npos);
+    CHECK(rejected.find("guest_thread=1") != std::string::npos);
+    CHECK(rejected.find("registers:") != std::string::npos);
+    CHECK(rejected.find("backtrace:") != std::string::npos);
+    CHECK(rejected.find("code:") != std::string::npos);
+    // A different host thread and a different target must see the same record.
+    std::string second_rejected;
+    std::thread reader([&] {
+        try {
+            static_cast<void>(process->Invoke({memory::GuestAddress{0x10011000U}}));
+        } catch (const runtime::AndroidGuestProcessError& error) {
+            second_rejected = error.what();
+        }
+    });
+    reader.join();
+    CHECK(second_rejected == rejected);
+    const auto logs = logger.Snapshot(core::LogLevel::error, "runtime.native_fault");
+    if (selected_logger) {
+        REQUIRE(logs.size() == 1);
+        CHECK(logs.front().level == core::LogLevel::error);
+        CHECK(logs.front().guest_thread == 1);
+        REQUIRE(logs.front().fields.size() == 1);
+        const auto& record = std::get<std::string>(logs.front().fields.front().value);
+        constexpr std::string_view cause_header = "\n  cause:\n";
+        const auto cause = record.find(cause_header);
+        REQUIRE(cause != std::string::npos);
+        // The record nests every line of the original text below its label.
+        std::istringstream lines(record.substr(cause + cause_header.size()));
+        std::string original;
+        for (std::string line; std::getline(lines, line);) {
+            REQUIRE(line.starts_with("    "));
+            if (!original.empty()) original += '\n';
+            original += line.substr(4);
+        }
+        CHECK(failure.ends_with(original));
+    } else {
+        CHECK(logs.empty());
+    }
     process->BeginTeardown();
     CHECK_THROWS_WITH(process->RunTeardownCleanup([] {}), "guest cleanup unavailable after a CPU fault");
     CHECK_NOTHROW(process->Stop());
     CHECK_FALSE(process->Running());
     CHECK(process->AttachedJniThreadCount() == 0);
+    CHECK_NOTHROW(process->Stop());
+}
+
+TEST_CASE("native fault record retains Java identity across nested faults and rejected calls") {
+    using namespace ogplay;
+    using namespace runtime;
+    core::Logger logger;
+    auto libc = LibdlDefaultLibcElf();
+    Put32(libc, 0x1000, 0xe3a07014U);  // outer getpid reaches the observer
+    Put32(libc, 0x1004, 0xef000000U);
+    Put32(libc, 0x1008, 0xe12fff1eU);
+    Put32(libc, 0x1040, 0xe5901000U);  // inner native reads null
+    const loader::Elf32ModuleInput module{"libc.so", libc, memory::GuestAddress{0x10000000U}};
+    VirtualFileSystem filesystem;
+    AndroidGuestProcessRequest request{19, std::span{&module, 1}, {}, 64, 36, 100000, 1, &filesystem, {}};
+    request.boundary_options.logger = &logger;
+    std::unique_ptr<AndroidGuestProcess> process;
+    JniObjectIdentity java_class{};
+    bool wrap_rejection = false;
+    bool registered = false;
+    SUBCASE("outer host-call fault") {}
+    SUBCASE("rejected call wrapped in another fault") {
+        wrap_rejection = true;
+    }
+    SUBCASE("RegisterNatives target") {
+        registered = true;
+    }
+    request.guest_call_slice_observer = [&](std::uint64_t) {
+        A32GuestCallFrame inner{memory::GuestAddress{0x10011040U}};
+        inner.thread_id = 16388;
+        // Owned strings go out of scope before another thread reads the record.
+        const std::string native_class = "com/unity3d/player/UnityPlayer";
+        const std::string native_method = "nativeRender";
+        const std::string native_descriptor = "()Z";
+        inner.native_class = native_class;
+        inner.native_method = native_method;
+        inner.native_descriptor = native_descriptor;
+        try {
+            if (registered)
+                static_cast<void>(
+                    process->TryInvokeRegisteredNative(java_class, native_method, native_descriptor, inner));
+            else
+                static_cast<void>(process->Invoke(inner));
+        } catch (const AndroidGuestProcessError&) {
+            if (wrap_rejection) {
+                try {
+                    static_cast<void>(process->Invoke(inner));
+                } catch (const AndroidGuestProcessError& error) {
+                    throw A32GuestHostCallError("secondary rejected call: " + std::string(error.what()));
+                }
+            }
+            throw A32GuestHostCallError("secondary outer host-call fault");
+        }
+    };
+    process = AndroidGuestProcess::Start(request);
+    java_class = process->Classes().RegisterClass({"com/unity3d/player/UnityPlayer", {}, {}, {}});
+    const JniNativeMethod native{"nativeRender", "()Z", memory::GuestAddress{0x10011040U}};
+    process->Natives().RegisterNatives(java_class, std::span{&native, 1});
+    process->PrepareDexVmThread(16388, 0);
+    A32GuestCallFrame outer{memory::GuestAddress{0x10011000U}};
+    outer.thread_id = 16388;
+    outer.native_method = "outerNative";
+    CHECK_THROWS_AS(static_cast<void>(process->Invoke(outer)), A32GuestHostCallError);
+    std::string rejected;
+    std::thread reader([&] {
+        try {
+            static_cast<void>(process->Invoke({memory::GuestAddress{0x10011000U}}));
+        } catch (const AndroidGuestProcessError& error) {
+            rejected = error.what();
+        }
+    });
+    reader.join();
+    CHECK(rejected.find("guest_thread=16388") != std::string::npos);
+    CHECK(rejected.find("class=com/unity3d/player/UnityPlayer") != std::string::npos);
+    CHECK(rejected.find("method=nativeRender") != std::string::npos);
+    CHECK(rejected.find("descriptor=()Z") != std::string::npos);
+    CHECK(rejected.find("address=0x00000000") != std::string::npos);
+    CHECK(rejected.find("secondary") == std::string::npos);
+    CHECK(rejected.find("outerNative") == std::string::npos);
+    const auto logs = logger.Snapshot(core::LogLevel::error, "runtime.native_fault");
+    REQUIRE(logs.size() == 1);
+    CHECK(logs.front().guest_thread == 16388);
+    CHECK_NOTHROW(process->Stop());
+}
+
+TEST_CASE("native fault diagnostic text is bounded and explicitly truncated") {
+    using namespace ogplay;
+    using namespace runtime;
+    auto libc = LibdlDefaultLibcElf();
+    Put32(libc, 0x1000, 0xe3a07014U);  // getpid reaches the observer
+    Put32(libc, 0x1004, 0xef000000U);
+    const loader::Elf32ModuleInput module{"libc.so", libc, memory::GuestAddress{0x10000000U}};
+    VirtualFileSystem filesystem;
+    core::Logger logger;
+    AndroidGuestProcessRequest request{19, std::span{&module, 1}, {}, 64, 36, 100000, 1, &filesystem, {}};
+    request.boundary_options.logger = &logger;
+    request.guest_call_slice_observer = [](std::uint64_t) {
+        throw A32GuestCallFault("original fault: " + std::string(16384, 'x'));
+    };
+    auto process = AndroidGuestProcess::Start(request);
+    CHECK_THROWS_AS(static_cast<void>(process->Invoke({memory::GuestAddress{0x10011000U}})), AndroidGuestProcessError);
+    const auto logs = logger.Snapshot(core::LogLevel::error, "runtime.native_fault");
+    REQUIRE(logs.size() == 1);
+    const auto& record = std::get<std::string>(logs.front().fields.front().value);
+    CHECK(record.size() == 8192);
+    CHECK(record.find("original fault:") != std::string::npos);
+    CHECK(record.ends_with("\n[truncated]"));
+    try {
+        static_cast<void>(process->Invoke({memory::GuestAddress{0x10011000U}}));
+        FAIL("faulted process admitted another guest call");
+    } catch (const AndroidGuestProcessError& error) {
+        const std::string_view rejected{error.what()};
+        CHECK(rejected.find("original fault:") != std::string_view::npos);
+        CHECK(rejected.ends_with("\n  [truncated]"));
+    }
     CHECK_NOTHROW(process->Stop());
 }
 

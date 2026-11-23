@@ -63,7 +63,9 @@ std::optional<dexvm::IoFileInfo> DexVmIoVfsAdapter::Stat(const std::string_view 
                                  info.Mode(),
                                  info.uid,
                                  info.gid,
-                                 info.metadata.modified_millis};
+                                 info.metadata.modified_millis,
+                                 info.device,
+                                 info.inode};
     } catch (const VfsError&) {
         return std::nullopt;
     }
@@ -221,7 +223,9 @@ dexvm::IoFileInfo DexVmIoVfsAdapter::HandleInfo(const std::int32_t handle) const
                 info.Mode(),
                 info.uid,
                 info.gid,
-                info.metadata.modified_millis};
+                info.metadata.modified_millis,
+                info.device,
+                info.inode};
     } catch (const VfsError& error) {
         throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
     }

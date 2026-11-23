@@ -18,6 +18,21 @@ constexpr std::uint64_t kFilesystemBlockSize = 4096;
 constexpr std::uint32_t kExt4Magic = 0xEF53;
 constexpr std::uint64_t kReadOnlyFilesystem = 1;
 
+// Linux makedev(0, minor), with a distinct nonzero minor per guest volume.
+enum class Volume : std::uint32_t { rootfs = 1, data, sdcard, system, proc, dev, pipefs };
+
+[[nodiscard]] Volume PathVolume(std::string_view path) {
+    const auto under = [path](std::string_view root) {
+        return path == root || (path.starts_with(root) && path.size() > root.size() && path[root.size()] == '/');
+    };
+    if (under("/data")) return Volume::data;
+    if (under("/sdcard")) return Volume::sdcard;
+    if (under("/system")) return Volume::system;
+    if (under("/proc")) return Volume::proc;
+    if (under("/dev")) return Volume::dev;
+    return Volume::rootfs;
+}
+
 [[nodiscard]] constexpr std::uint64_t FilesystemId(std::string_view name) {
     std::uint64_t id = UINT64_C(14695981039346656037);
     for (const auto c : name) {
@@ -34,6 +49,11 @@ constexpr std::uint64_t kReadOnlyFilesystem = 1;
 }
 
 }  // namespace
+
+std::uint32_t VirtualFileSystem::Impl::AllocateNodeIdLocked() const {
+    if (next_node_id_ > UINT32_MAX) throw VfsError(75, "VFS guest inode space exhausted");
+    return static_cast<std::uint32_t>(next_node_id_++);
+}
 
 void VirtualFileSystem::Impl::SetApplicationOwner(std::string_view data_root, std::uint32_t uid) {
     std::scoped_lock lock(mutex_);
@@ -61,7 +81,9 @@ VfsFileInfo VirtualFileSystem::Impl::FileInfoLocked(const File& file, std::uint3
             file.character_device ? file.character_device->device_number : 0,
             owner,
             owner,
-            file.metadata};
+            file.metadata,
+            static_cast<std::uint32_t>(PathVolume(file.canonical_path)),
+            file.inode};
 }
 
 VfsFileMetadata& VirtualFileSystem::Impl::PathMetadataLocked(const std::string& path, const VfsFileInfo& info) {
@@ -155,14 +177,14 @@ GuestFileSystemStats VirtualFileSystem::Impl::StatVfs(std::int32_t descriptor) c
 }
 
 GuestFileSystemStats VirtualFileSystem::Impl::VolumeStatsLocked(std::string_view path) const {
-    const auto under = [path](std::string_view root) {
-        return path == root || (path.starts_with(root) && path[root.size()] == '/');
-    };
-    if (under("/data")) return SandboxStatsLocked(kExt4Magic);
-    if (under("/sdcard")) return SandboxStatsLocked(0x65735546);
-    if (under("/proc")) return SyntheticVolumeStats("proc", 0x9FA0);
-    if (under("/dev")) return SyntheticVolumeStats("dev", 0x01021994);
-    if (!under("/system")) return SyntheticVolumeStats("rootfs", 0x858458F6, kReadOnlyFilesystem);
+    switch (PathVolume(path)) {
+    case Volume::data: return SandboxStatsLocked(kExt4Magic);
+    case Volume::sdcard: return SandboxStatsLocked(0x65735546);
+    case Volume::proc: return SyntheticVolumeStats("proc", 0x9FA0);
+    case Volume::dev: return SyntheticVolumeStats("dev", 0x01021994);
+    case Volume::system: break;
+    default: return SyntheticVolumeStats("rootfs", 0x858458F6, kReadOnlyFilesystem);
+    }
 
     auto stats = SyntheticVolumeStats("system", kExt4Magic, kReadOnlyFilesystem);
     std::uint64_t bytes = 0;
@@ -251,6 +273,7 @@ std::vector<VfsDirectoryEntry> VirtualFileSystem::Impl::ListDirectory(const std:
     std::vector<VfsDirectoryEntry> entries;
     entries.reserve(children.size());
     for (auto& child : children) {
+        child.second.inode = EntryInodeLocked(prefix + child.first);
         entries.push_back(std::move(child.second));
     }
     return entries;
@@ -274,6 +297,27 @@ bool VirtualFileSystem::Impl::IsDirectoryLocked(const std::string& path) const {
     return directory != directories_.end() && directory->first.starts_with(prefix);
 }
 
+std::uint32_t VirtualFileSystem::Impl::DirectoryInodeLocked(const std::string& path) const {
+    auto inode = directory_inodes_.find(path);
+    if (inode == directory_inodes_.end()) inode = directory_inodes_.emplace(path, AllocateNodeIdLocked()).first;
+    return inode->second;
+}
+
+std::uint32_t VirtualFileSystem::Impl::EntryInodeLocked(const std::string& path) const {
+    // A child name can itself be an alias; identity follows the canonical
+    // lookup used by stat. The enumerated path is the fallback for an alias
+    // whose target is gone.
+    const auto canonical = ResolveDataPathLocked(path);
+    for (const auto& candidate : {canonical, path}) {
+        const auto found = files_.find(candidate);
+        if (found != files_.end() && (!found->second->generated || found->second->generated->active) &&
+            (!found->second->character_device || found->second->character_device->active))
+            return found->second->inode;
+        if (IsDirectoryLocked(candidate)) return DirectoryInodeLocked(candidate);
+    }
+    return DirectoryInodeLocked(path);
+}
+
 VfsFileInfo VirtualFileSystem::Impl::DirectoryInfoLocked(const std::string& path) const {
     const bool writable = !IsSystemPartitionPath(path) && (sandbox_ == nullptr || IsWritableNamespaceLocked(path));
     VfsSource source = VfsSource::runtime;
@@ -287,9 +331,18 @@ VfsFileInfo VirtualFileSystem::Impl::DirectoryInfoLocked(const std::string& path
     }
     const auto owner = OwnerLocked(path);
     const auto metadata = directory_metadata_.find(path);
-    return {
-        0,     writable, source, true,  0,
-        false, 0,        owner,  owner, metadata != directory_metadata_.end() ? metadata->second : VfsFileMetadata{}};
+    return {0,
+            writable,
+            source,
+            true,
+            0,
+            false,
+            0,
+            owner,
+            owner,
+            metadata != directory_metadata_.end() ? metadata->second : VfsFileMetadata{},
+            static_cast<std::uint32_t>(PathVolume(path)),
+            DirectoryInodeLocked(path)};
 }
 
 bool VirtualFileSystem::Impl::IsWritableNamespaceLocked(const std::string& path) const {
@@ -430,7 +483,9 @@ VfsFileInfo VirtualFileSystem::Impl::DescriptorInfo(const std::int32_t descripto
     }
     const auto& open = found->second;
     if (open->directory) return open->directory->info;
-    return FileInfoLocked(*open->file, open->owner_id);
+    auto info = FileInfoLocked(*open->file, open->owner_id);
+    if (open->pipe) info.device = static_cast<std::uint32_t>(Volume::pipefs);
+    return info;
 }
 
 void VirtualFileSystem::Impl::CreateDirectory(const std::string_view path) {
@@ -511,6 +566,7 @@ void VirtualFileSystem::Impl::RemoveDirectory(const std::string_view path) {
     PersistRemovalLocked(normalized);
     directories_.erase(normalized);
     directory_metadata_.erase(normalized);
+    directory_inodes_.erase(normalized);
     if (working_directory_ == normalized) {
         working_directory_unlinked_ = true;
         working_directory_.reset();
@@ -750,7 +806,7 @@ void VirtualFileSystem::Impl::AttachSandbox(SandboxStore& store, const std::span
         item.is_tombstone = entry.is_tombstone;
         if (!entry.is_directory && !entry.is_tombstone) {
             auto file = std::make_shared<File>();
-            file->node_id = next_node_id_++;
+            file->node_id = file->inode = AllocateNodeIdLocked();
             file->canonical_path = normalized;
             file->spelling = item.spelling;
             if (file->spelling == normalized) {

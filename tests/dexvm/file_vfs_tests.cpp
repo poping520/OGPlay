@@ -837,3 +837,49 @@ TEST_CASE("NIO ROM Posix bytes natives share direct payload and preserve positio
         f.CallOn(posix, "close", "(Ljava/io/FileDescriptor;)V", {VmValue::Ref(fd)});
     }
 }
+
+TEST_CASE("Java Posix stat lstat and fstat share VFS file identities") {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
+        FileVm vm(nullptr, true, {.backend = backend});
+        vm.vfs.PutFile("/sdcard/events/A", {}, true);
+        vm.vfs.PutFile("/sdcard/events/B", {}, true);
+        vm.vfs.AddPathAlias("/storage/emulated/0", "/sdcard");
+        const auto posix = vm.interpreter.NewIntrinsicInstance("Llibcore/io/Posix;");
+        const auto roots = vm.interpreter.ProtectReferences(std::array{posix});
+        const auto type = vm.linker.ResolveDescriptor("Llibcore/io/StructStat;");
+        const auto identity = [&](VmObjectRef stat) {
+            const auto root = vm.interpreter.ProtectReferences(std::array{stat});
+            const auto field = [&](const char* name) {
+                const auto id = vm.linker.FindFieldRecursive(type, name, "J");
+                REQUIRE(id.has_value());
+                return vm.model.InstanceSlots(stat)[vm.linker.Field(*id).slot].bits;
+            };
+            return std::pair{field("st_dev"), field("st_ino")};
+        };
+        std::array<std::pair<std::uint64_t, std::uint64_t>, 2> identities;
+        for (std::size_t i = 0; i < identities.size(); ++i) {
+            const auto path = i == 0 ? "/sdcard/events/A" : "/sdcard/events/B";
+            const auto native = vm.vfs.Open(path, {.read = true});
+            const auto fd = vm.interpreter.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
+            const auto fd_root = vm.interpreter.ProtectReferences(std::array{fd});
+            vm.CallOn(fd, "<init>", "()V");
+            vm.CallOn(fd, "setInt$", "(I)V", {VmValue::Int(native)});
+            const auto expected = vm.vfs.Stat(path);
+            identities[i] = identity(
+                vm.CallOn(posix, "fstat", "(Ljava/io/FileDescriptor;)Llibcore/io/StructStat;", {VmValue::Ref(fd)}).ref);
+            CHECK(identities[i].first == expected.device);
+            CHECK(identities[i].second == expected.inode);
+            CHECK(identities[i].first != 0);
+            CHECK(identities[i].second != 0);
+            for (const auto method : {"stat", "lstat"}) {
+                const auto spelling = i == 0 ? "/storage/emulated/0/EVENTS/a" : path;
+                const auto stat = vm.CallOn(posix, method, "(Ljava/lang/String;)Llibcore/io/StructStat;",
+                                            {VmValue::Ref(vm.interpreter.NewStringUtf8(spelling))})
+                                      .ref;
+                CHECK(identity(stat) == identities[i]);
+            }
+            vm.CallOn(posix, "close", "(Ljava/io/FileDescriptor;)V", {VmValue::Ref(fd)});
+        }
+        CHECK(identities[0] != identities[1]);
+    }
+}

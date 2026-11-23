@@ -192,7 +192,7 @@ void VirtualFileSystem::Impl::RegisterGeneratedReadOnly(const std::string_view p
         throw VfsError(kEexist, "VFS generated file path already exists");
     if (IsDirectoryLocked(normalized)) throw VfsError(kEisdir, "VFS generated file is a directory");
     auto file = std::make_shared<File>();
-    file->node_id = next_node_id_++;
+    file->node_id = file->inode = AllocateNodeIdLocked();
     file->canonical_path = normalized;
     file->spelling = PreserveSpelling(normalized, path);
     file->generated = std::move(state);
@@ -214,7 +214,7 @@ void VirtualFileSystem::Impl::PutFile(const std::string_view path, const std::sp
                                             VfsSource::runtime,
                                             false,
                                             {}});
-    file->node_id = next_node_id_++;
+    file->node_id = file->inode = AllocateNodeIdLocked();
     file->canonical_path = normalized;
     file->spelling = PreserveSpelling(normalized, path);
     files_.emplace(normalized, std::move(file));
@@ -238,7 +238,7 @@ void VirtualFileSystem::Impl::PutReadOnlyFile(const std::string_view path, const
     }
     auto file = std::make_shared<File>(
         File{{}, size, std::move(read_all), std::move(read_at), false, VfsSource::runtime, false, {}});
-    file->node_id = next_node_id_++;
+    file->node_id = file->inode = AllocateNodeIdLocked();
     file->canonical_path = normalized;
     file->spelling = PreserveSpelling(normalized, path);
     files_.emplace(normalized, std::move(file));
@@ -259,7 +259,7 @@ void VirtualFileSystem::Impl::RegisterReadOnlyCharacterDevice(const std::string_
         throw VfsError(kEexist, "VFS character device path already exists");
     if (IsDirectoryLocked(normalized)) throw VfsError(kEisdir, "VFS device path is a directory");
     auto file = std::make_shared<File>();
-    file->node_id = next_node_id_++;
+    file->node_id = file->inode = AllocateNodeIdLocked();
     file->canonical_path = normalized;
     file->spelling = NewPathSpellingLocked(normalized, path);
     file->character_device = std::move(state);
@@ -305,7 +305,7 @@ void VirtualFileSystem::Impl::Mount(const VfsSource source, const std::string_vi
     }
     mounts_.push_back({NormalizePath(root), source});
     for (auto& [path, file] : pending) {
-        file->node_id = next_node_id_++;
+        file->node_id = file->inode = AllocateNodeIdLocked();
         file->canonical_path = path;
         files_.emplace(std::move(path), std::move(file));
     }
@@ -357,7 +357,7 @@ void VirtualFileSystem::Impl::MountLazy(const VfsSource source, const std::strin
     }
     mounts_.push_back({NormalizePath(root), source});
     for (auto& [path, file] : pending) {
-        file->node_id = next_node_id_++;
+        file->node_id = file->inode = AllocateNodeIdLocked();
         file->canonical_path = path;
         files_.emplace(std::move(path), std::move(file));
     }
@@ -619,10 +619,11 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path, const Vf
             throw VfsError(kEacces, "VFS path is outside the writable namespace");
         }
         auto spelling = NewPathSpellingLocked(normalized, path);
+        const auto node_id = AllocateNodeIdLocked();
         found =
             files_.emplace(normalized, std::make_shared<File>(File{{}, 0, {}, {}, true, VfsSource::runtime, false, {}}))
                 .first;
-        found->second->node_id = next_node_id_++;
+        found->second->node_id = found->second->inode = node_id;
         found->second->canonical_path = normalized;
         found->second->spelling = std::move(spelling);
         // Creation makes the path visible immediately. The host-side
@@ -676,7 +677,8 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path, const Vf
         snapshot->materialized_reservations.push_back(reservation);
         snapshot->materialized_reserved_bytes = state->maximum_bytes;
         lock.lock();
-        snapshot->node_id = next_node_id_++;
+        snapshot->node_id = AllocateNodeIdLocked();
+        snapshot->inode = selected_file->inode;
         snapshot->canonical_path = normalized;
         selected_file = std::move(snapshot);
     }
@@ -764,7 +766,7 @@ void VirtualFileSystem::Impl::NotifyPipeReadiness() const {
 VfsPipeDescriptors VirtualFileSystem::Impl::CreatePipe(const bool non_blocking) {
     std::scoped_lock lock(mutex_);
     auto pipe = std::make_shared<File>(File{{}, 0, {}, {}, true, VfsSource::runtime, false, {}});
-    pipe->node_id = next_node_id_++;
+    pipe->node_id = pipe->inode = AllocateNodeIdLocked();
     auto state = std::make_shared<PipeState>();
     auto& table = CurrentTableLocked();
     const auto make_end = [&](const bool reader) {

@@ -167,6 +167,8 @@ struct VfsFileInfo final {
     std::uint64_t device_number{};
     std::uint32_t uid{}, gid{};
     VfsFileMetadata metadata{};
+    // Guest st_dev/st_ino, separate from character-device st_rdev above.
+    std::uint32_t device{}, inode{};
 
     [[nodiscard]] std::uint32_t Mode() const noexcept {
         const auto type = is_directory ? 0040000U : is_character_device ? 0020000U : 0100000U;
@@ -179,8 +181,14 @@ struct VfsDirectoryEntry final {
     std::string name;
     bool is_directory{};
     bool is_character_device{};
+    std::uint32_t inode{};
 
-    bool operator==(const VfsDirectoryEntry&) const = default;
+    // Enumeration comparisons describe names/types; snapshot identity is
+    // checked explicitly when needed, and is not part of listing equality.
+    bool operator==(const VfsDirectoryEntry& other) const {
+        return name == other.name && is_directory == other.is_directory &&
+               is_character_device == other.is_character_device;
+    }
 };
 
 // Descriptor table of one (virtual) process. Table 0 is the guest

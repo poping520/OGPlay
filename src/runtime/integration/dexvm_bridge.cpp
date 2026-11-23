@@ -1440,6 +1440,9 @@ public:
         frame.stack_words = stack;
         frame.thread_id = process_thread;
         frame.context_token = vm->CurrentContextToken();
+        frame.native_class = class_name;
+        frame.native_method = method.name;
+        frame.native_descriptor = method.descriptor;
         // JNI native frames participate in watchdog renewal, but only
         // boundaries reporting observable advancement earn a new budget.
         frame.renewable_native_frame = true;

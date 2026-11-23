@@ -67,6 +67,7 @@ void PutLittleEndian(const std::span<std::byte> out, const std::size_t offset, c
 
 [[nodiscard]] std::array<std::byte, kStat64Size> EncodeStat64(const VfsFileInfo& info) {
     std::array<std::byte, kStat64Size> bytes{};
+    PutLittleEndian(bytes, 0, info.device, 8);
     PutLittleEndian(bytes, kStat64ModeOffset, info.Mode(), 4);
     PutLittleEndian(bytes, 24, info.uid, 4);
     PutLittleEndian(bytes, 28, info.gid, 4);
@@ -77,10 +78,8 @@ void PutLittleEndian(const std::span<std::byte> out, const std::size_t offset, c
     PutLittleEndian(bytes, kStat64SizeOffset, info.size, 8);
     PutLittleEndian(bytes, kStat64BlockSizeOffset, 4096, 4);
     PutLittleEndian(bytes, kStat64BlocksOffset, (info.size + 511U) / 512U, 8);
-    // Inode numbers are not modelled; a stable non-zero value keeps callers
-    // that only test for "has an inode" honest without inventing identity.
-    PutLittleEndian(bytes, kStat64InoOffset, 1, 8);
-    PutLittleEndian(bytes, kStat64LegacyInoOffset, 1, 4);
+    PutLittleEndian(bytes, kStat64InoOffset, info.inode, 8);
+    PutLittleEndian(bytes, kStat64LegacyInoOffset, info.inode, 4);
     return bytes;
 }
 
@@ -314,7 +313,7 @@ void BindAndroidFileMetadataSyscalls(A32SyscallDispatcher& dispatcher, VirtualFi
                                  const auto base = out.size();
                                  out.resize(base + record);
                                  const std::span<std::byte> span(out);
-                                 PutLittleEndian(span, base + 0, 1, 8);              // d_ino
+                                 PutLittleEndian(span, base + 0, entry.inode, 8);    // d_ino
                                  PutLittleEndian(span, base + 8, base + record, 8);  // d_off
                                  PutLittleEndian(span, base + 16, record, 2);        // d_reclen
                                  span[base + 18] =

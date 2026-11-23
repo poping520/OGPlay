@@ -7,6 +7,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "ogplay/memory/address_space.h"
@@ -57,6 +58,11 @@ struct A32GuestCallFrame final {
     // DexVM execution identity when the call originates at a Java native
     // boundary. Zero means no managed execution context is attached.
     std::uint64_t context_token{};
+    // Diagnostic-only borrowed Java native identity. The caller keeps these
+    // strings alive for the entire synchronous call, including fault unwinding.
+    std::string_view native_class{};
+    std::string_view native_method{};
+    std::string_view native_descriptor{};
 };
 
 struct A32GuestCallResult final {

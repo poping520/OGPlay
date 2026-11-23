@@ -527,7 +527,7 @@ note = "poll/ppoll 覆盖 VFS pipe、其他 VFS fd（DEFAULT_POLLMASK）与 stdi
 [runtime.syscall_file_metadata]
 status = "partial"
 test = "tests/runtime/syscall_tests.cpp"
-note = "文件元数据、目录分页和 ARM open flags 接同一 VFS。stat64 家族与 Java Posix 报同源 uid/gid、mode、mtime；chmod/fchmod 仅修改 guest 元数据。chdir/fchdir/getcwd 共用 cwd；AT_FDCWD 相对路径可用，其他 dirfd 相对查找 ENOTSUP，flock/xattr/inotify ENOSYS。"
+note = "stat64 家族、getdents64 与 Java Posix 共用 VFS 会话内稳定身份：非零卷设备号、32 位 inode；普通文件随 rename，unlink 旧 fd 保留，生成快照共享 provider inode。uid/gid、mode、mtime 同源；chmod/fchmod 仅改 guest 元数据。chdir/fchdir/getcwd 共用 cwd；AT_FDCWD 相对路径可用，其他 dirfd 相对查找 ENOTSUP，flock/xattr/inotify ENOSYS。"
 
 [runtime.vfs_directory_ops]
 status = "complete"
@@ -542,7 +542,7 @@ note = "ADR-0071/：沙盒按安装层显式 installation id 隔离，schema 3 �
 [runtime.vfs]
 status = "complete"
 test = "tests/runtime/vfs_tests.cpp; tests/runtime/syscall_tests.cpp#VFS-06; tests/runtime/syscall_tests.cpp#VFS-08; tests/runtime/syscall_tests.cpp#VFS-09; tests/runtime/syscall_tests.cpp#VFS-11; tests/runtime/syscall_tests.cpp#ARM F_GETFL; tests/runtime/guest_cpu_environment_tests.cpp#VFS-06; tests/frontend/run_apk_vfs_tests.cpp; tests/loader/apk_tests.cpp; tests/dexvm/network_sqlite_tests.cpp"
-note = "ADR-0071/0074/0110/0129：节点/打开状态/backing 分离，ReadAt/WriteAt、lease 与统一资源预算；guest cwd 及普通路径逐目录解析 ..，根不越界；挂载条目与宿主 backing 仍拒绝 traversal。APK/OBB 严格 range、宿主惰性绑定/句柄 LRU、append、身份查询及 HAL 随机设备已实现；fcntl 状态改写、跨进程追加未实现，macOS 待原生验证。"
+note = "ADR-0071/0074/0110/0129：节点/打开状态/backing 分离，ReadAt/WriteAt、lease 与统一资源预算；非零 32 位 inode 共用节点分配序列，目录按规范路径惰性分配，生成快照 node_id 独立而 inode 同 provider；st_dev 与 StatVfs 共用卷分类，不依赖沙盒挂载。guest cwd/..、严格 range、宿主惰性绑定/句柄 LRU、append 与 HAL 随机设备已实现；fcntl 状态改写、跨进程追加与跨平台验收仍有缺口。"
 
 [runtime.vfs_filesystem_stats]
 status = "partial"

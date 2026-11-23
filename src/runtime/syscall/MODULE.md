@@ -142,6 +142,9 @@ mkdir/rmdir/unlink/rename 及其 `*at` 变体、stat64 家族、`statfs64`/`fsta
 `BindAndroidFileSyscalls` 同一个 VFS。`struct stat64` 按 Android ARM 自然对齐
 布局（104 字节，非 x86 的打包布局）编组：`st_mode` 在 16、`st_size` 在 48、
 `st_blksize` 在 56、`st_blocks` 在 64、`st_ino` 在 96，44 处的填充必须保持 0。
+stat64/lstat64/fstatat64/fstat64 统一报告 VFS 的设备与 inode：st_dev 位于偏移 0（8 字节），
+__st_ino 位于 12（4 字节）并与偏移 96 的 st_ino（8 字节）相同；getdents64 的 d_ino
+使用目录打开时冻结的 VFS 条目 inode，与对应 stat 身份一致。
 guest libc 的 `__swhatbuf` 就是从 104 字节栈帧的偏移 56 读 `st_blksize`；若按
 96 字节打包布局编组，guest 读到的 64 位 `st_size` 高位字会是我们的
 `st_blksize`，`fopen`+`fread` 会把每个文件都看成 TB 级并 malloc 失败。

@@ -152,7 +152,7 @@ void WaitForPipe(IntrinsicContext& call, const VmObjectRef descriptor, const boo
     constexpr std::int32_t kRegular = 0100000 | 0644;
     constexpr std::int32_t kDirectory = 0040000 | 0755;
     InvokeDirect(call.vm, "Llibcore/io/StructStat;", "<init>", "(JJIJIIJJJJJJJ)V",
-                 {VmValue::Ref(result), VmValue::Long(0), VmValue::Long(0),
+                 {VmValue::Ref(result), VmValue::Long(info.device), VmValue::Long(info.inode),
                   VmValue::Int(info.mode           ? static_cast<std::int32_t>(info.mode)
                                : info.is_directory ? kDirectory
                                                    : kRegular),

@@ -282,8 +282,12 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
     只在 BeginTeardown 后关闭新线程/模块准入；
     创建 owner 的 live root 同步 scope 与 RunTeardownCleanup 共用上述累计预算。
   nanosleep 在执行前校验剩余预算，根线程清理时 futex WAIT 同样受剩余时限约束；返回/SVC/slice 边界检查超时。
-  未处理 CPU stop 以 typed fault 标记 native 状态不安全，拒绝后续 guest 调用/清理并跳过
-  DSO fini；宿主线程回收、JNI detach 和 monitor shutdown 仍执行，原错由调用方保留。
+  未处理 CPU stop 以 typed fault 标记 native 状态不安全：首个 catch 独占保存不可变现场
+  （实际 guest TID、可选 Java native class/method/descriptor 与原异常文本，总计至多 8 KiB，
+  超限注明截断），写完后 release 发布标志；后续调用 acquire 观察后在原拒绝首行下附该记录。
+  嵌套/并发的后续 fault 或拒绝不得覆盖；有 logger 时仅尝试一次 `runtime.native_fault` error，
+  日志失败不改变原异常。拒绝后续 guest 调用/清理并跳过 DSO fini；宿主线程回收、JNI detach
+  和 monitor shutdown 仍执行，clone/OpenSL worker 的原异常重抛路径不变。
 - Runtime 的 hook 与 exit/halt 普通协议归 BootDex；平台只绑定 nativeExit，发布 session
   退出标记并调用 VM.Exit，保留退出码、非 Java 展开，不从 worker 同步 Stop/join。
   宿主 Stop 仍为取消，不自动运行 hook；详见 [相关说明](../../../docs/design/dexvm.md)。

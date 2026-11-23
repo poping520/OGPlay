@@ -912,10 +912,74 @@ public:
         }
     }
 
+    void RecordNativeFault(const A32GuestCallFrame& frame, const std::uint64_t guest_thread,
+                           const A32GuestCallFault& fault) noexcept {
+        // Only the first catch owns the buffer. Nested/parallel faults never
+        // write it; readers only access it after the separate release publish.
+        // A parallel loser waits for that publish so that no call is admitted
+        // after its own fault has unwound; the owner only copies memory here.
+        if (native_fault_claimed_.test_and_set(std::memory_order_relaxed)) {
+            while (!native_state_faulted_.load(std::memory_order_acquire))
+                std::this_thread::yield();
+            return;
+        }
+        constexpr std::string_view truncated = "\n[truncated]";
+        const auto limit = native_fault_record_.size() - truncated.size();
+        bool overflow = false;
+        const auto append = [&](const std::string_view text) {
+            const auto count = std::min(text.size(), limit - native_fault_record_size_);
+            std::copy_n(text.data(), count, native_fault_record_.data() + native_fault_record_size_);
+            native_fault_record_size_ += count;
+            overflow |= count != text.size();
+        };
+        std::array<char, 20> thread_text{};
+        const auto thread_end =
+            std::to_chars(thread_text.data(), thread_text.data() + thread_text.size(), guest_thread).ptr;
+        append("first native fault:\n  guest_thread=");
+        append({thread_text.data(), static_cast<std::size_t>(thread_end - thread_text.data())});
+        if (!frame.native_class.empty()) {
+            append("\n  class=");
+            append(frame.native_class);
+        }
+        if (!frame.native_method.empty()) {
+            append("\n  method=");
+            append(frame.native_method);
+        }
+        if (!frame.native_descriptor.empty()) {
+            append("\n  descriptor=");
+            append(frame.native_descriptor);
+        }
+        append("\n  cause:");
+        for (std::string_view cause{fault.what()};;) {
+            const auto end = cause.find('\n');
+            append("\n    ");
+            append(cause.substr(0, end));
+            if (end == std::string_view::npos) break;
+            cause.remove_prefix(end + 1U);
+        }
+        if (overflow) {
+            std::copy(truncated.begin(), truncated.end(), native_fault_record_.data() + native_fault_record_size_);
+            native_fault_record_size_ += truncated.size();
+        }
+        native_state_faulted_.store(true, std::memory_order_release);
+        // Logging may allocate or call a throwing sink; neither may replace the
+        // CPU fault or prevent publication of its immutable diagnostic record.
+        if (logger_) {
+            try {
+                logger_->Write(core::LogLevel::error, "runtime.native_fault", "first guest native CPU fault",
+                               {.guest_thread = guest_thread},
+                               {{"fault", std::string(native_fault_record_.data(), native_fault_record_size_)}});
+            } catch (...) {
+            }
+        }
+    }
+
     A32GuestCallResult Invoke(const A32GuestCallFrame& frame) {
         RethrowAsyncFailure();
         if (native_state_faulted_.load(std::memory_order_acquire))
-            throw AndroidGuestProcessError("guest native state is unsafe after a CPU fault");
+            throw AndroidGuestProcessError(
+                "guest native state is unsafe after a CPU fault\n" +
+                IndentDiagnostic({native_fault_record_.data(), native_fault_record_size_}, "  "));
         const bool cleanup = std::this_thread::get_id() == owner_thread_ && cleanup_depth_ != 0U;
         auto admitted_frame = frame;
         if (cleanup) {
@@ -931,12 +995,14 @@ public:
             throw AndroidGuestProcessError("Android guest call session has no root CPU");
         }
         cpu::Cpu* target{};
+        auto guest_thread = frame.thread_id;
         memory::GuestAddress stack_top;
         std::shared_ptr<DexVmThreadContext> dexvm_context;
         std::unique_lock<std::recursive_mutex> call_lock;
         const auto active = active_guest_calls.find(this);
         if (active != active_guest_calls.end()) {
             const auto caller = active->second.cpu->GetState();
+            guest_thread = caller.ThreadId();
             const auto caller_sp = caller.Register(cpu::CoreRegister::sp) & ~UINT32_C(7);
             if (caller_sp == 0U) {
                 throw AndroidGuestProcessError("nested Android guest call has no aligned caller stack");
@@ -1031,8 +1097,8 @@ public:
         } catch (...) {
             try {
                 throw;
-            } catch (const A32GuestCallFault&) {
-                native_state_faulted_.store(true, std::memory_order_release);
+            } catch (const A32GuestCallFault& fault) {
+                RecordNativeFault(frame, guest_thread, fault);
             } catch (...) {
             }
             if (frame.renewable_native_frame || cleanup) ConfigureFastHostCalls(*target);
@@ -2725,6 +2791,9 @@ private:
     std::atomic<bool> teardown_requested_{false};
     std::atomic<bool> cleanup_requested_{false};
     std::atomic<bool> native_state_faulted_{false};
+    std::atomic_flag native_fault_claimed_ = ATOMIC_FLAG_INIT;
+    std::array<char, 8192> native_fault_record_{};
+    std::size_t native_fault_record_size_{};
     const std::thread::id owner_thread_{std::this_thread::get_id()};
     std::size_t cleanup_depth_{};
     std::uint64_t cleanup_ticks_remaining_{maximum_ticks_};

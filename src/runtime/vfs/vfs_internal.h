@@ -85,6 +85,8 @@ struct File final {
     // Stable for the node lifetime. Paths may be removed or rebound; caches
     // and leases must never use a pathname as content identity.
     std::uint64_t node_id{};
+    // Generated snapshots have independent node IDs but share their provider's inode.
+    std::uint32_t inode{};
     // Guarded by the metadata lock. Retained after unlink for open descriptors.
     std::string canonical_path;
     std::string spelling;
@@ -299,6 +301,7 @@ public:
     void RejectMappedMutationLocked(File& file) const;
 
     // Callers hold mutex_ for every helper below.
+    [[nodiscard]] std::uint32_t AllocateNodeIdLocked() const;
     [[nodiscard]] bool IsDirectoryLocked(const std::string& path) const;
     [[nodiscard]] std::uint32_t OwnerLocked(std::string_view path) const;
     [[nodiscard]] VfsFileInfo FileInfoLocked(const File& file, std::uint32_t owner) const;
@@ -307,6 +310,12 @@ public:
     std::string application_data_root_;
     std::uint32_t application_uid_{};
     std::map<std::string, VfsFileMetadata, std::less<>> directory_metadata_;
+    // Identity alone never establishes directory existence; const stat/list
+    // allocate here only after namespace lookup, under mutex_.
+    mutable std::map<std::string, std::uint32_t, std::less<>> directory_inodes_;
+    [[nodiscard]] std::uint32_t DirectoryInodeLocked(const std::string& path) const;
+    // Never fails for an enumerated child: listing must survive names whose own Stat reports an error.
+    [[nodiscard]] std::uint32_t EntryInodeLocked(const std::string& path) const;
     [[nodiscard]] VfsFileInfo DirectoryInfoLocked(const std::string& path) const;
     // True when the path sits under a writable namespace root, which is the
     // only place the overlay accepts writes.
@@ -385,7 +394,7 @@ public:
     std::int64_t dirty_overlay_delta_{};
     std::shared_ptr<ResourceBudget> resource_budget_{std::make_shared<ResourceBudget>()};
     std::shared_ptr<HostFilePool> host_pool_;
-    std::uint64_t next_node_id_{1U};
+    mutable std::uint64_t next_node_id_{1U};
     std::atomic_uint64_t flushes_{};
     std::atomic_uint64_t backing_read_bytes_{};
     std::atomic_uint64_t full_materialized_bytes_{};

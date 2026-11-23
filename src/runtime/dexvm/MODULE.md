@@ -238,6 +238,8 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   OpenFileDescription 保存隔离的 VFS descriptor 与访问模式，同一逻辑 FileDescriptor 共享
   VFS offset；未登记的非负 guest fd 可按 HandleInfo/HandleFlags 惰性接管，不复制数据或移动 offset。
   DuplicateHandle 共享 VFS offset，关闭互不影响；GC sweep 只移除登记，不关闭 fd。
+  IoFileInfo 的 device/inode 由文件系统的路径与句柄查询同源提供，Posix.stat/lstat/fstat
+  通过原版 StructStat 构造器报告 st_dev/st_ino；VFS adapter 与 native stat/目录项共用身份。
   接口查询描述符不对应 VFS/host fd，只允许同拓扑表的地址 ioctl 与幂等 close；
   其他操作记账失败，不能惰性接管为普通文件。接口事实经 CoreIntrinsicServices 显式注入。
   FileChannel 的当前受检操作也只消费该状态，定位传输保持源 offset 且不伪造 mmap。

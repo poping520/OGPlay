@@ -62,6 +62,10 @@ TEST_CASE("VFS-06 character devices read fresh bytes and share descriptor lifeti
     CHECK(vfs.Stat("/dev/urandom").size == 0);
     const auto fd = vfs.Open("/dev/urandom", {.read = true});
     const auto dup = vfs.Duplicate(fd);
+    const auto identity = vfs.Stat("/dev/urandom");
+    CHECK(identity.inode != 0);
+    CHECK(vfs.DescriptorInfo(fd).inode == identity.inode);
+    CHECK(vfs.DescriptorInfo(dup).device == identity.device);
     std::array<std::byte, 8192> bytes{};
     for (unsigned i = 1; i <= 4; ++i) {
         CHECK(vfs.Read(i % 2 ? fd : dup, bytes) == bytes.size());
@@ -96,6 +100,9 @@ TEST_CASE("VFS-06 character devices read fresh bytes and share descriptor lifeti
     auto replacement = vfs.RegisterReadOnlyCharacterDevice("/dev/urandom", 0x109,
         [](auto output) { std::ranges::fill(output, std::byte{42}); return output.size(); });
     const auto new_fd = vfs.Open("/dev/urandom", {.read = true});
+    CHECK(vfs.DescriptorInfo(new_fd).inode != identity.inode);
+    CHECK(vfs.DescriptorInfo(dup).inode == identity.inode);
+    CHECK(vfs.DescriptorInfo(new_fd).device_number == identity.device_number);
     CHECK(vfs.Read(new_fd, bytes) == bytes.size());
     CHECK(bytes.front() == std::byte{42});
     fails([&] { static_cast<void>(vfs.Read(dup, bytes)); }, 5);
@@ -1187,6 +1194,16 @@ TEST_CASE("VFS host directory mount rejects unsafe and ambiguous trees transacti
 TEST_CASE("VFS pipe connects isolated read and write descriptors") {
     ogplay::runtime::VirtualFileSystem vfs;
     const auto pipe = vfs.CreatePipe();
+    const auto identity = vfs.DescriptorInfo(pipe.read_descriptor);
+    CHECK(identity.device != 0);
+    CHECK(identity.inode != 0);
+    CHECK(vfs.DescriptorInfo(pipe.write_descriptor).inode == identity.inode);
+    CHECK(vfs.DescriptorInfo(pipe.write_descriptor).device == identity.device);
+    const auto other_pipe = vfs.CreatePipe();
+    CHECK(vfs.DescriptorInfo(other_pipe.read_descriptor).inode != identity.inode);
+    CHECK(vfs.DescriptorInfo(other_pipe.read_descriptor).device == identity.device);
+    vfs.Close(other_pipe.read_descriptor);
+    vfs.Close(other_pipe.write_descriptor);
     CHECK(pipe.read_descriptor >= 3);
     CHECK(pipe.write_descriptor > pipe.read_descriptor);
     const std::array message{std::byte{0x41}, std::byte{0x42}};
@@ -1422,6 +1439,15 @@ TEST_CASE("VFS-05 generated files freeze each open and revoke safely") {
     const auto first = vfs.Open("/proc/self/maps", {.read = true});
     generation = 2;
     const auto second = vfs.Open("/proc/self/maps", {.read = true});
+    const auto identity = vfs.Stat("/proc/self/maps");
+    CHECK(identity.inode != 0);
+    CHECK(vfs.DescriptorInfo(first).inode == identity.inode);
+    CHECK(vfs.DescriptorInfo(second).inode == identity.inode);
+    CHECK(vfs.DescriptorInfo(second).device == identity.device);
+    CHECK(vfs.TryDescriptorNode(first) != vfs.TryDescriptorNode(second));
+    const auto entries = vfs.ListDirectory("/proc/self");
+    REQUIRE(entries.size() == 1);
+    CHECK(entries.front().inode == identity.inode);
     CHECK_THROWS_AS(static_cast<void>(vfs.Open("/proc/self/maps", {.read = true})), VfsError);
     std::array<std::byte, 2> bytes{};
     CHECK(vfs.Read(first, bytes) == 2);
@@ -1441,6 +1467,7 @@ TEST_CASE("VFS-05 generated files freeze each open and revoke safely") {
     vfs.Close(first); vfs.Close(second);
     CHECK(vfs.IoStatistics().resource_memory_bytes == 0);
     auto bad = vfs.RegisterGeneratedReadOnly("/proc/self/maps", 2, [] { return std::vector<std::byte>(3); });
+    CHECK(vfs.Stat("/proc/self/maps").inode != identity.inode);
     CHECK_THROWS_AS(static_cast<void>(vfs.Open("/proc/self/maps", {.read = true})), VfsError);
     CHECK(vfs.IoStatistics().resource_memory_bytes == 0);
 }
@@ -1600,4 +1627,98 @@ TEST_CASE("VFS file spelling resolves aliases case and parent components without
         }
     }
     CHECK_THROWS_AS(static_cast<void>(vfs.FileSpelling("/alias")), VfsError);
+}
+
+TEST_CASE("VFS file identity survives aliases mutations rename and unlink") {
+    using namespace ogplay::runtime;
+    VirtualFileSystem vfs;
+    vfs.PutFile("/sdcard/events/A", {}, true);
+    vfs.PutFile("/sdcard/events/B", {}, true);
+    vfs.AddPathAlias("/storage/emulated/0", "/sdcard");
+    const auto a = vfs.Open("/sdcard/events/A", {.read = true, .write = true});
+    const auto b = vfs.Open("/sdcard/events/B", {.read = true});
+    const auto duplicate = vfs.Duplicate(a);
+    const auto alias = vfs.Open("/STORAGE/EMULATED/0/EVENTS/a", {.read = true});
+    const auto identity = vfs.Stat("/sdcard/events/A");
+    REQUIRE(identity.inode != 0);
+    REQUIRE(identity.device != 0);
+    CHECK(vfs.DescriptorInfo(b).inode != identity.inode);  // two live empty files
+    CHECK(vfs.DescriptorInfo(b).device == identity.device);
+    for (const auto fd : {a, duplicate, alias}) {
+        CHECK(vfs.DescriptorInfo(fd).inode == identity.inode);
+        CHECK(vfs.DescriptorInfo(fd).device == identity.device);
+    }
+    CHECK(vfs.Stat("/storage/emulated/0/events/a").inode == identity.inode);
+    const std::array bytes{std::byte{42}};
+    CHECK(vfs.Write(a, bytes) == 1);
+    vfs.Truncate(a, 0);
+    vfs.Chmod("/sdcard/events/A", 0600);
+    vfs.Fchmod(duplicate, 0640);
+    vfs.SetLastModified("/sdcard/events/A", 1400000000123);
+    vfs.Flush(a);
+    const auto truncated = vfs.Open("/sdcard/events/A", {.write = true, .truncate = true});
+    CHECK(vfs.DescriptorInfo(truncated).inode == identity.inode);
+    vfs.Close(truncated);
+    CHECK(vfs.Stat("/sdcard/events/A").inode == identity.inode);
+    const auto replaced = vfs.DescriptorInfo(b);
+    vfs.Rename("/sdcard/events/A", "/sdcard/events/renamed");
+    CHECK(vfs.Stat("/sdcard/events/renamed").inode == identity.inode);
+    vfs.Rename("/sdcard/events/renamed", "/sdcard/events/B");
+    CHECK(vfs.Stat("/sdcard/events/B").inode == identity.inode);
+    CHECK(vfs.DescriptorInfo(a).inode == identity.inode);
+    CHECK(vfs.DescriptorInfo(b).inode == replaced.inode);
+    vfs.RemoveFile("/sdcard/events/B");
+    CHECK(vfs.DescriptorInfo(a).inode == identity.inode);
+    CHECK(vfs.DescriptorInfo(a).device == identity.device);
+    const auto recreated = vfs.Open("/sdcard/events/B", {.write = true, .create = true});
+    CHECK(vfs.DescriptorInfo(recreated).inode != identity.inode);
+    CHECK(vfs.DescriptorInfo(recreated).inode != replaced.inode);
+    for (const auto fd : {a, b, duplicate, alias, recreated})
+        vfs.Close(fd);
+}
+
+TEST_CASE("VFS directories allocate stable identity without establishing existence") {
+    using namespace ogplay::runtime;
+    VirtualFileSystem vfs;
+    vfs.PutFile("/sdcard/implicit/file", {}, true);
+    vfs.CreateDirectory("/sdcard/explicit");
+    vfs.CreateDirectory("/sdcard/target");
+    vfs.CreateDirectory("/sdcard/child-alias");
+    vfs.AddPathAlias("/sdcard/child-alias", "/sdcard/target");
+    vfs.AddPathAlias("/storage/emulated/0", "/sdcard");
+    const VirtualFileSystem& readonly = vfs;  // const stat still allocates under the index lock
+    std::set<std::uint32_t> inodes;
+    for (const auto path : {"/", "/sdcard", "/sdcard/implicit", "/sdcard/explicit", "/sdcard/target"}) {
+        const auto info = readonly.Stat(path);
+        CHECK(info.inode != 0);
+        CHECK(inodes.insert(info.inode).second);
+        CHECK(readonly.Stat(path).inode == info.inode);
+        const auto fd = vfs.OpenDirectory(path);
+        CHECK(vfs.DescriptorInfo(fd).inode == info.inode);
+        vfs.Close(fd);
+    }
+    CHECK(readonly.Stat("/STORAGE/EMULATED/0/EXPLICIT").inode == readonly.Stat("/sdcard/explicit").inode);
+    const auto directory = vfs.OpenDirectory("/sdcard");
+    const auto entries = readonly.ListDirectory("/sdcard");
+    for (const auto& entry : entries)
+        CHECK(entry.inode == readonly.Stat("/sdcard/" + entry.name).inode);
+    const auto frozen = vfs.ReadDirectory(directory, entries.size());
+    REQUIRE(frozen.size() == entries.size());
+    for (std::size_t i = 0; i < entries.size(); ++i)
+        CHECK(frozen[i].inode == entries[i].inode);
+    const auto old_directory = vfs.OpenDirectory("/sdcard/explicit");
+    const auto old = vfs.DescriptorInfo(old_directory);
+    vfs.RemoveDirectory("/sdcard/explicit");
+    CHECK_THROWS_AS(static_cast<void>(readonly.Stat("/sdcard/explicit")), VfsError);
+    vfs.CreateDirectory("/sdcard/explicit");
+    CHECK(readonly.Stat("/sdcard/explicit").inode != old.inode);
+    CHECK(vfs.DescriptorInfo(old_directory).inode == old.inode);
+    CHECK(vfs.DescriptorInfo(old_directory).device == old.device);
+    // Cached identity must not turn a vanished implicit directory into a real one.
+    vfs.RemoveFile("/sdcard/implicit/file");
+    CHECK_THROWS_AS(static_cast<void>(readonly.Stat("/sdcard/implicit")), VfsError);
+    vfs.PutFile("/sdcard/implicit/reappeared", {}, true);
+    CHECK(readonly.Stat("/sdcard/implicit").inode != 0);
+    vfs.Close(old_directory);
+    vfs.Close(directory);
 }

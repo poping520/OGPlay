@@ -1611,6 +1611,7 @@ TEST_CASE("Android getdents64 emits aligned records and pages") {
 
     // linux_dirent64: u64 ino, s64 off, u16 reclen, u8 type, char name[].
     const auto reclen = fixture.ReadField(0x20400, 16, 2);
+    CHECK(fixture.ReadField(0x20400, 0, 8) == fixture.vfs.Stat("/sdcard/dir/a.saV").inode);
     CHECK(reclen % 8 == 0);
     CHECK(fixture.ReadField(0x20400, 18, 1) == 8);  // DT_REG
     std::vector<std::byte> name(6);                 // "a.saV" plus its NUL
@@ -1622,6 +1623,7 @@ TEST_CASE("Android getdents64 emits aligned records and pages") {
 
     const auto second = fixture.Call(217, {static_cast<std::uint32_t>(directory), 0x20400, 32, 0, 0, 0});
     CHECK(second == 32);
+    CHECK(fixture.ReadField(0x20400, 0, 8) == fixture.vfs.Stat("/sdcard/dir/B.sav").inode);
     std::vector<std::byte> second_name(6);
     fixture.memory.Read(GuestAddress{0x20400 + 19}, second_name);
     CHECK(static_cast<char>(second_name[0]) == 'B');
@@ -1935,4 +1937,35 @@ TEST_CASE("VFS-06 ARM device transfers preserve completed bytes on later failure
     CHECK(fixture.memory.Read8(GuestAddress{0x3ffff}) == 0xa5);
     CHECK(fixture.memory.Read8(GuestAddress{0x40000}) == 0);
     CHECK(fixture.Call(6, {static_cast<std::uint32_t>(fd), 0, 0, 0, 0, 0}) == 0);
+}
+
+TEST_CASE("ARM stat64 identities distinguish Mono exclusive opens and agree across exits") {
+    MetadataSyscallFixture fixture;
+    std::array<std::pair<std::uint64_t, std::uint64_t>, 2> identities;
+    std::array<std::int32_t, 2> descriptors;
+    // Mono registers FileShare.None after each open/fstat; keep both empty files live.
+    for (std::size_t i = 0; i < descriptors.size(); ++i) {
+        const auto path = i == 0 ? "/sdcard/events/A" : "/sdcard/events/B";
+        fixture.WriteString(0x20000, path);
+        descriptors[i] = fixture.Call(5, {0x20000, 0x42});
+        REQUIRE(descriptors[i] >= 3);
+        const auto expected = fixture.vfs.Stat(path);
+        for (const auto syscall : {197U, 195U, 196U, 327U}) {
+            const auto result =
+                syscall == 197   ? fixture.Call(syscall, {static_cast<std::uint32_t>(descriptors[i]), 0x20200})
+                : syscall == 327 ? fixture.Call(syscall, {static_cast<std::uint32_t>(-100), 0x20000, 0x20200, 0})
+                                 : fixture.Call(syscall, {0x20000, 0x20200});
+            REQUIRE(result == 0);
+            CHECK(fixture.ReadField(0x20200, 0, 8) == expected.device);
+            CHECK(fixture.ReadField(0x20200, 12, 4) == expected.inode);
+            CHECK(fixture.ReadField(0x20200, 96, 8) == expected.inode);
+            CHECK(fixture.ReadField(0x20200, 44, 4) == 0);
+        }
+        identities[i] = {fixture.ReadField(0x20200, 0, 8), fixture.ReadField(0x20200, 96, 8)};
+        CHECK(identities[i].first != 0);
+        CHECK(identities[i].second != 0);
+    }
+    CHECK(identities[0] != identities[1]);
+    for (const auto fd : descriptors)
+        fixture.vfs.Close(fd);
 }

@@ -5,6 +5,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <functional>
@@ -663,4 +664,108 @@ TEST_CASE("VFS-08 append respects dirty quota and persists across reopen") {
         vfs.Close(writer);
         CHECK(ReadAll(vfs, "/sdcard/log") == "reset");
     }
+}
+
+TEST_CASE("VFS guest volume devices cover sandbox base nodes and unlinked descriptors") {
+    const TemporaryRoot root("file-identities");
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
+    store->WriteFileAtomic("/data/data/com.example.game/save", Bytes("disk"));
+    VirtualFileSystem vfs;
+    vfs.PutFile("/data/data/com.example.game/save", {}, true);
+    const auto base_fd = vfs.Open("/data/data/com.example.game/save", {.read = true});
+    const auto base = vfs.DescriptorInfo(base_fd);
+    bool attached = false;
+    SUBCASE("attached sandbox shadows a live base node") {
+        vfs.AttachSandbox(*store, kWritableRoots);
+        attached = true;
+        CHECK(vfs.Stat("/data/data/com.example.game/save").inode != base.inode);
+        CHECK(vfs.DescriptorInfo(base_fd).inode == base.inode);
+        CHECK(vfs.Stat("/data/data/com.example.game/save").source == VfsSource::sandbox);
+    }
+    SUBCASE("stat works without a sandbox") {}
+    vfs.PutFile("/data/app/base.apk", {}, false);
+    vfs.PutFile("/sdcard/base", {}, false);
+    vfs.PutFile("/system/base", {}, false);
+    vfs.PutFile("/proc/base", {}, false);
+    vfs.PutFile("/dev/base", {}, false);
+    vfs.PutFile("/data-not-a-volume/base", {}, false);
+    std::set<std::uint32_t> devices;
+    for (const auto path : {"/data", "/sdcard", "/system", "/proc", "/dev", "/data-not-a-volume"}) {
+        const auto info = vfs.Stat(path);
+        CHECK(info.device != 0);
+        CHECK(devices.insert(info.device).second);
+        CHECK(vfs.Stat(std::string(path) + (std::string_view(path) == "/data" ? "/app/base.apk" : "/base")).device ==
+              info.device);
+    }
+    const auto pipe = vfs.CreatePipe();
+    CHECK(devices.insert(vfs.DescriptorInfo(pipe.read_descriptor).device).second);
+    CHECK(devices.size() == 7);
+    CHECK(vfs.Stat("/data/app/base.apk").device == base.device);
+    vfs.AddPathAlias("/storage/emulated/0", "/sdcard");
+    CHECK(vfs.Stat("/storage/emulated/0/base").device == vfs.Stat("/sdcard/base").device);
+    const auto fd = vfs.Open("/data/data/com.example.game/save", {.read = true, .write = true});
+    const auto info = vfs.DescriptorInfo(fd);
+    const auto bytes = Bytes("changed");
+    REQUIRE(vfs.Write(fd, bytes) == bytes.size());
+    vfs.Flush(fd);
+    vfs.FlushAll();
+    CHECK(vfs.Stat("/data/data/com.example.game/save").inode == info.inode);
+    CHECK(vfs.DescriptorInfo(fd).device == info.device);
+    // Cross-volume rename retains inode; both path and live FD use the last canonical volume.
+    vfs.Rename("/data/data/com.example.game/save", "/sdcard/moved");
+    const auto moved = vfs.Stat("/sdcard/moved");
+    CHECK(moved.inode == info.inode);
+    CHECK(moved.device != info.device);
+    CHECK(vfs.DescriptorInfo(fd).device == moved.device);
+    vfs.RemoveFile("/sdcard/moved");
+    CHECK(vfs.DescriptorInfo(fd).inode == moved.inode);
+    CHECK(vfs.DescriptorInfo(fd).device == moved.device);
+    if (!attached) {
+        CHECK(ErrnoOf([&] { static_cast<void>(vfs.StatVfs("/data")); }) == 95);
+        CHECK(ErrnoOf([&] { static_cast<void>(vfs.StatVfs("/sdcard")); }) == 95);
+    }
+    vfs.Close(fd);
+    vfs.Close(base_fd);
+    vfs.Close(pipe.read_descriptor);
+    vfs.Close(pipe.write_descriptor);
+}
+
+TEST_CASE("VFS directory listing survives children whose own stat fails") {
+    const TemporaryRoot root("listing-identities");
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
+    VirtualFileSystem vfs;
+    vfs.AttachSandbox(*store, kWritableRoots);
+    std::string parent = "/sdcard";
+    const auto find_entry = [](const std::vector<VfsDirectoryEntry>& entries) {
+        const auto found = std::ranges::find(entries, "cache", &VfsDirectoryEntry::name);
+        REQUIRE(found != entries.end());
+        return *found;
+    };
+    SUBCASE("file created below a removed directory") {
+        vfs.CreateDirectory("/sdcard/cache");
+        const auto old = vfs.Stat("/sdcard/cache").inode;
+        vfs.RemoveDirectory("/sdcard/cache");
+        vfs.Close(vfs.Open("/sdcard/cache/file", {.write = true, .create = true}));
+        CHECK(find_entry(vfs.ListDirectory("/sdcard")).inode != old);
+    }
+    SUBCASE("alias without its target") {
+        vfs.CreateDirectory("/sdcard/cache");
+        vfs.AddPathAlias("/sdcard/cache", "/data/missing");
+    }
+    SUBCASE("retired provider path gains children") {
+        parent = "/proc/self";
+        auto registration =
+            vfs.RegisterGeneratedReadOnly("/proc/self/cache", 16, [] { return std::vector<std::byte>(1); });
+        registration.reset();
+        vfs.PutFile("/proc/self/cache/file", {}, false);
+    }
+    CHECK_THROWS_AS(static_cast<void>(vfs.Stat(parent + "/cache")), VfsError);
+    const auto entries = vfs.ListDirectory(parent);
+    const auto entry = find_entry(entries);
+    CHECK(entry.is_directory);
+    CHECK(entry.inode != 0);
+    CHECK(find_entry(vfs.ListDirectory(parent)).inode == entry.inode);
+    const auto fd = vfs.OpenDirectory(parent);
+    CHECK(vfs.ReadDirectory(fd, entries.size() + 1) == entries);
+    vfs.Close(fd);
 }

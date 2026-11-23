@@ -22,11 +22,14 @@ execution 或 integration。
   CLOCK_MONOTONIC、CLOCK_BOOTTIME 与 System.nanoTime 同源，CLOCK_REALTIME、
   gettimeofday 与 System.currentTimeMillis 共用固定纪元。独立 native 入口读取注入的 Clock。
 - 非固定匿名私有 `mmap2` 在 `[0x60000000,4 GiB)` 调用 memory 的原子 first-fit
-  映射，依据真实账本避开已占区（包括 TLS/栈/PROT_NONE）；无单调游标或独立空闲表，
+  映射，依据真实账本避开已占区（包括 TLS/栈/PROT_NONE）及 owner 注入的保留窗口；无单调游标或独立空闲表，
   munmap 后空洞自动可复用，失败不消耗地址。brk 状态用独立锁串行化。
   非固定 hint 仍为可忽略建议；匿名私有 MAP_FIXED 调用 `ReplaceAnonymous` 原子替换，
   长度向上对齐到 4 KiB，成功返回请求地址；未对齐/非法参数返回 EINVAL，低地址 guard
   返回 EPERM，范围溢出或 backing 失败返回 ENOMEM。文件映射沿用相同选址/替换原语。
+  guest MAP_FIXED 与任意保留窗口相交时，整次返回 ENOMEM 并以
+  `memory.map_fixed_reserved_window` 记账，不提交或修改任何页；优先于文件快照读取。未注入窗口的独立 runner 保持原行为。
+  brk 的宿主显式 Map 仍可在其保留窗口中扩展；munmap/mprotect/madvise 的语义不变。
 - 文件 mmap2 的 pgoff 单位为 4096 字节；支持 PRIVATE 的 R/RW 与只读 fd 的 SHARED R。
   读取 VFS 节点快照后一次发布内存，尾页补零；失败不消耗地址或破坏固定目标。
   文件执行映射、整页超 EOF、共享回写与其他未支持组合返回 ENOSYS，由 dispatcher 记账；

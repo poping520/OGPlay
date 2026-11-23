@@ -859,11 +859,19 @@ TEST_CASE("BND-40 linker metadata rejects invalid projections before mapping") {
 }
 
 TEST_CASE("Android guest process owns reusable DexVM native thread contexts") {
-    auto libc = MinimalLibcElf();
+    auto libc = LibdlDefaultLibcElf();
+    // mmap2(r0-r3), with anonymous fd=-1 and offset=0.
+    const std::array code{0xe3e04000U, 0xe3a05000U, 0xe3a070c0U, 0xef000000U, 0xe12fff1eU};
+    for (std::size_t i = 0; i < code.size(); ++i)
+        Put32(libc, 0x1000 + 4 * i, code[i]);
     const ogplay::loader::Elf32ModuleInput module{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
     ogplay::runtime::VirtualFileSystem filesystem;
     auto process =
         ogplay::runtime::AndroidGuestProcess::Start({19, std::span{&module, 1}, {}, 64, 36, 1000, 1, &filesystem, {}});
+
+    const ogplay::memory::GuestAddress mmap_entry{0x10011000U};
+    CHECK(process->Invoke({mmap_entry, {0, 0x0a000000U, 0, 0x22}, {}}).return_value == 0x60000000U);
+    CHECK(process->Invoke({mmap_entry, {0, 4096, 0, 0x22}, {}}).return_value == 0x7f000000U);
 
     CHECK_THROWS(process->PrepareDexVmThread(UINT64_C(0x40000004), 0U));
     CHECK_THROWS(process->PrepareDexVmThread(UINT64_C(0x4004), 31U));
@@ -872,12 +880,29 @@ TEST_CASE("Android guest process owns reusable DexVM native thread contexts") {
     constexpr std::uint64_t second = UINT64_C(0x4001);
     process->PrepareDexVmThread(first, 0);
     CHECK(process->AttachedJniThreadCount() == 2U);
+    try {
+        process->PrepareDexVmThread(second, 0);
+        FAIL("occupied thread slot was accepted");
+    } catch (const ogplay::runtime::AndroidGuestProcessError& error) {
+        const std::string message{error.what()};
+        CHECK(message.find("guest_thread=16385 slot=0 range=[0x6a101000, 0x6a102000)") != std::string::npos);
+        CHECK(message.find("guest memory range overlaps an existing mapping") != std::string::npos);
+    }
     process->ReleaseDexVmThread(first);
     CHECK(process->AttachedJniThreadCount() == 1U);
     process->PrepareDexVmThread(second, 0);
     CHECK(process->AttachedJniThreadCount() == 2U);
     process->ReleaseDexVmThread(second);
     CHECK(process->AttachedJniThreadCount() == 1U);
+    for (std::uint32_t slot = 0; slot < 31; ++slot)
+        process->PrepareDexVmThread(0x4100U + slot, slot);
+    CHECK(process->AttachedJniThreadCount() == 32U);
+    for (std::uint32_t slot = 0; slot < 31; ++slot)
+        process->ReleaseDexVmThread(0x4100U + slot);
+    for (std::uint32_t slot = 0; slot < 31; ++slot) {
+        CHECK_NOTHROW(process->PrepareDexVmThread(0x4200U + slot, slot));
+        process->ReleaseDexVmThread(0x4200U + slot);
+    }
     process->Stop();
 }
 

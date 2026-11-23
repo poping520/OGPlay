@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ogplay/runtime/common/guest_address_layout.h"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -135,9 +137,6 @@ struct JniThunkBinding final {
     std::uint16_t slot{};
     bool java_vm{};
 };
-
-inline constexpr std::uint32_t kJniThunkBegin = 0x71000000U;
-inline constexpr std::uint32_t kJniInvokeThunkBegin = 0x71100000U;
 
 class JniCommonSlotDirectory final {
 public:

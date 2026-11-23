@@ -1,3 +1,4 @@
+#include "ogplay/runtime/common/guest_address_layout.h"
 #include "ogplay/runtime/syscall/syscall.h"
 
 #include <array>
@@ -598,7 +599,7 @@ void GuestSignalRuntime::Impl::DeliverHandler(cpu::Cpu& cpu, const cpu::A32State
     for (std::uint32_t i = 0; i < 64; ++i) word(prefix + 240 + i * 4, saved.ExtendedRegisters()[i]);
     word(prefix + 496, saved.Fpscr()); word(prefix + 504, saved.Fpexc());
     if (trampoline.IsNull()) {
-        trampoline = memory.MapAnywhere({memory::GuestAddress{0x7e000000}, 0x01000000}, memory.PageSize(),
+        trampoline = memory.MapAnywhere(guest_layout::kSignalTrampolines, memory.PageSize(),
                                         memory::PageProtection::read | memory::PageProtection::write);
         memory.Write32(trampoline, 0xe3a07077);  // mov r7, #119
         memory.Write32(trampoline.Add(4), 0xef000000);

@@ -118,6 +118,25 @@ public:
         return result;
     }
 
+    void ReserveWindow(const GuestRange& range) {
+        ValidatePageRange(range);
+        std::scoped_lock lock(mutex_);
+        for (const auto& window : reserved_windows_)
+            if (window.Overlaps(range)) throw std::invalid_argument("guest reserved windows overlap");
+        reserved_windows_.push_back(range);
+        std::ranges::sort(reserved_windows_, {}, [](const GuestRange& window) { return window.Start().Value(); });
+    }
+
+    std::vector<GuestRange> ReservedWindows() const {
+        std::scoped_lock lock(mutex_);
+        return reserved_windows_;
+    }
+
+    bool OverlapsReservedWindow(const GuestRange& range) const {
+        std::scoped_lock lock(mutex_);
+        return std::ranges::any_of(reserved_windows_, [&](const GuestRange& window) { return window.Overlaps(range); });
+    }
+
     void Map(const GuestRange& range, const PageProtection protection) {
         ValidateProtection(protection);
         ValidatePageRange(range);
@@ -162,7 +181,30 @@ public:
         const auto [first, last] = PageIndexes(bounds);
         const auto needed = size / page_size_;
         std::uint64_t run{};
+        // Windows are sorted and disjoint, so one cursor keeps the per-page scan
+        // down to a single comparison against the next excluded start.
+        auto window = reserved_windows_.begin();
+        auto excluded_begin = last;
+        auto excluded_end = last;
+        const auto next_window = [&] {
+            excluded_begin = last;
+            for (; window != reserved_windows_.end(); ++window) {
+                const auto [begin, end] = PageIndexes(*window);
+                if (end <= first || window->Contains(bounds)) continue;
+                excluded_begin = begin;
+                excluded_end = end;
+                ++window;
+                return;
+            }
+        };
+        next_window();
         for (auto page = first; page < last; ++page) {
+            if (page >= excluded_begin) {
+                page = excluded_end - 1;
+                run = 0;
+                next_window();
+                continue;
+            }
             if (mapped_[static_cast<std::size_t>(page)] ||
                 static_cast<std::uint64_t>(page) * page_size_ < kGuestLowGuardSize)
                 run = 0;
@@ -692,6 +734,7 @@ private:
     std::vector<PageProtection> pages_;
     std::vector<bool> mapped_;
     std::vector<bool> host_committed_;
+    std::vector<GuestRange> reserved_windows_;
     std::unique_ptr<DirectMemoryPageTable> direct_page_table_;
     std::unique_ptr<DirectMemoryPageTable> direct_read_page_table_;
     mutable std::mutex mutex_;
@@ -704,6 +747,18 @@ AddressSpace::AddressSpace() : impl_(std::make_unique<Impl>()) {}
 AddressSpace::~AddressSpace() = default;
 AddressSpace::AddressSpace(AddressSpace&&) noexcept = default;
 AddressSpace& AddressSpace::operator=(AddressSpace&&) noexcept = default;
+
+void AddressSpace::ReserveWindow(const GuestRange& range) {
+    impl_->ReserveWindow(range);
+}
+
+std::vector<GuestRange> AddressSpace::ReservedWindows() const {
+    return impl_->ReservedWindows();
+}
+
+bool AddressSpace::OverlapsReservedWindow(const GuestRange& range) const {
+    return impl_->OverlapsReservedWindow(range);
+}
 
 std::uint64_t AddressSpace::ReservedSize() const noexcept {
     return impl_->ReservedSize();

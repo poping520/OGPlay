@@ -1,3 +1,4 @@
+#include "ogplay/runtime/common/guest_address_layout.h"
 #include "runtime/boundary/modules/android/android_module.h"
 
 #include <bit>
@@ -102,7 +103,8 @@ BoundaryResult AndroidModule::AInputQueue_getEvent(const A32CallFrame& call) {
     auto& queue = InputQueue(args[0]);
     if (call.Pointer<void>(1).IsNull()) throw std::invalid_argument("AInputQueue_getEvent requires an output pointer");
     if (queue.pending.empty()) return std::bit_cast<std::uint32_t>(std::int32_t{-11});  // EAGAIN
-    if (next_input_.Value() >= 0x6e400000U) throw std::runtime_error("input event identity budget exhausted");
+    if (next_input_.Value() >= kNativeActivityWindowHandleBegin.Value())
+        throw std::runtime_error("input event identity budget exhausted");
     const auto handle = next_input_;
     // Publish only after the guest destination and host allocation succeed.
     queue.inflight.emplace(handle.Value(), queue.pending.front());

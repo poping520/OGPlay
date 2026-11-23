@@ -1,3 +1,4 @@
+#include "ogplay/runtime/common/guest_address_layout.h"
 #include "runtime/boundary/modules/android/android_module.h"
 
 #include <algorithm>
@@ -61,7 +62,7 @@ BoundaryResult AndroidModule::AObbScanner_getObbInfo(const A32CallFrame& call) {
     std::vector<std::byte> name(package.begin(), package.end());
     name.push_back(std::byte{});
     std::scoped_lock lock(mutex_);
-    if (obb_info_.size() >= 1024 || next_obb_info_.Value() >= 0x6ec00000U)
+    if (obb_info_.size() >= 1024 || next_obb_info_.Value() >= guest_layout::kStorageManagerHandleBegin)
         throw std::length_error("AObbInfo handle budget exhausted");
     info.package = ReadOnlyBuffer(name, call.ThreadId());
     const auto handle = next_obb_info_;
@@ -102,7 +103,7 @@ BoundaryResult AndroidModule::AObbInfo_getFlags(const A32CallFrame& call) {
 BoundaryResult AndroidModule::AStorageManager_new(const A32CallFrame&) {
     std::scoped_lock lock(mutex_);
     // The process has an IMountService even though device storage has no mounted OBBs.
-    if (storage_managers_.size() >= 1024 || next_storage_manager_.Value() >= 0x6ed00000U)
+    if (storage_managers_.size() >= 1024 || next_storage_manager_.Value() >= guest_layout::kStorageManagerHandleEnd)
         throw std::length_error("AStorageManager handle budget exhausted");
     const auto handle = next_storage_manager_;
     storage_managers_.insert(handle.Value());

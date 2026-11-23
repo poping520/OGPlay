@@ -18,6 +18,11 @@
   `MapAnywhere(bounds,size,protection)` 在同一账本锁内 first-fit 选址并 Map，
   跳过低地址 guard 和全部已映射页（包括 PROT_NONE），无连续空间抛 bad_alloc。
   复用 Map 的清零、宿主 backing、direct-page-table 与映射世代发布；失败不占 guest 页。
+  `ReserveWindow` 登记页对齐、互不重叠的保留窗口，仅为选址策略：bounds 未完全包含于某个
+  窗口时，MapAnywhere/MapProtectedAnywhere 跳过该窗口全部页；bounds 完全在窗口内时
+  照常分配。显式 Map 的重叠检查不变。登记不提交 backing、不发布映射世代，不进入
+  DescribeMappings、统计或快照内容；RestoreSnapshot 保留窗口配置。ReservedWindows 与
+  OverlapsReservedWindow 提供受同一锁保护的显式策略查询，memory 不定义业务地址。
   `ValidateMapped` 只检查映射存在性，映射账本与页权限独立，因此 `PROT_NONE` guard page
   不会被误判为未映射；固定宽度标量访问在一次锁内完成验证与小端搬运；
   `CStringLength` 在一次锁内逐 guest 页验证并对连续宿主字节使用 `memchr`，越界页仍发布

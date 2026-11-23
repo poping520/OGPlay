@@ -1,3 +1,4 @@
+#include "ogplay/runtime/common/guest_address_layout.h"
 #include "ogplay/runtime/syscall/syscall.h"
 
 #include "guest_path_reader.h"
@@ -206,6 +207,10 @@ void A32SyscallDispatcher::Implement(const std::uint32_t number, Handler handler
 
 std::function<void()> A32SyscallDispatcher::MappingMutationRecorder() const {
     return [ledger = &ledger_] { ledger->RecordUnimplemented("vfs.shared_mapping_mutation", 0); };
+}
+
+std::function<void()> A32SyscallDispatcher::ReservedWindowRecorder() const {
+    return [ledger = &ledger_] { ledger->RecordUnimplemented("memory.map_fixed_reserved_window", 0); };
 }
 
 void A32SyscallDispatcher::Decorate(const std::uint32_t number, Decorator decorator) {
@@ -491,7 +496,7 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
         }
 
         std::mutex break_mutex;
-        std::uint32_t current_break{0x50000000};
+        std::uint32_t current_break{guest_layout::kBrkWindow.Start().Value()};
     };
 
     const auto state = std::make_shared<State>();
@@ -523,7 +528,8 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
 
     auto& mappings = dispatcher.memory_mappings;
     mappings.map = [&address_space, state, binding = dispatcher.filesystem_binding,
-                    rejected = dispatcher.MappingMutationRecorder(), page_size, aligned_size,
+                    rejected = dispatcher.MappingMutationRecorder(),
+                    window_rejected = dispatcher.ReservedWindowRecorder(), page_size, aligned_size,
                     protection](const GuestMmapRequest& request) -> std::int64_t {
         std::scoped_lock lock(state->mapping_mutex);
         try {
@@ -540,6 +546,10 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
                 if (address % page_size != 0) return -kEinval;
                 if (address < memory::kGuestLowGuardSize) return -kEperm;
                 if (std::uint64_t{address} + size > UINT64_C(0x100000000)) return -kEnomem;
+                if (address_space.OverlapsReservedWindow({memory::GuestAddress{address}, size})) {
+                    window_rejected();
+                    return -kEnomem;
+                }
             }
             std::shared_ptr<const void> guard;
             std::shared_ptr<const VfsResourceReservation> reservation;
@@ -730,7 +740,8 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
         if (requested == 0) {
             return std::bit_cast<std::int32_t>(state->current_break);
         }
-        if (requested < 0x50000000 || requested >= 0x58000000) {
+        if (requested < guest_layout::kBrkWindow.Start().Value() ||
+            requested >= guest_layout::kBrkWindow.EndExclusive()) {
             return std::bit_cast<std::int32_t>(state->current_break);
         }
         const auto old_page = (static_cast<std::uint64_t>(state->current_break) + page_size - 1U) & ~(page_size - 1U);

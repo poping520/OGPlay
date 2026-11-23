@@ -1,3 +1,4 @@
+#include "ogplay/runtime/common/guest_address_layout.h"
 #include "runtime/boundary/modules/android/android_module.h"
 
 #include <algorithm>
@@ -13,7 +14,8 @@ BoundaryResult AndroidModule::AConfiguration_new(const A32CallFrame&) {
         std::copy_n(locale.region.begin(), 2, config.country);
     }
     std::scoped_lock lock(mutex_);
-    if (next_configuration_.Value() >= 0x6e100000U) throw std::runtime_error("AConfiguration handle budget exhausted");
+    if (next_configuration_.Value() >= guest_layout::kAssetHandleBegin)
+        throw std::runtime_error("AConfiguration handle budget exhausted");
     const auto token = next_configuration_;
     configurations_.emplace(token.Value(), config);
     next_configuration_ = token.Add(1);

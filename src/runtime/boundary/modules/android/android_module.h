@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ogplay/runtime/common/guest_address_layout.h"
+
 #include <array>
 #include <condition_variable>
 #include <cstdint>
@@ -101,7 +103,7 @@ private:
     void SweepLoopers();
     std::map<std::uint32_t, Looper> loopers_;
     std::map<std::uint64_t, memory::GuestAddress> thread_loopers_;
-    memory::GuestAddress next_looper_{0x6e010000U};
+    memory::GuestAddress next_looper_{guest_layout::kLooperHandleBegin};
     AndroidLooperHooks looper_hooks_;
     hal::RealtimeClock looper_clock_;
     bool loopers_shutdown_{};
@@ -183,8 +185,8 @@ private:
     AndroidObbHooks obb_hooks_;
     std::map<std::uint32_t, ObbInfo> obb_info_;
     std::set<std::uint32_t> storage_managers_;
-    memory::GuestAddress next_obb_info_{0x6eb00000U};
-    memory::GuestAddress next_storage_manager_{0x6ec00000U};
+    memory::GuestAddress next_obb_info_{guest_layout::kObbInfoHandleBegin};
+    memory::GuestAddress next_storage_manager_{guest_layout::kStorageManagerHandleBegin};
 
     struct AssetDirectory {
         memory::GuestAddress manager;
@@ -195,7 +197,7 @@ private:
 
     AssetDirectory& RequireAssetDirectoryLocked(memory::GuestAddress handle);
     std::map<std::uint32_t, AssetDirectory> asset_directories_;
-    memory::GuestAddress next_asset_directory_{0x6ea00000U};
+    memory::GuestAddress next_asset_directory_{guest_layout::kAssetDirectoryHandleBegin};
 
     struct Asset {
         std::shared_ptr<const AndroidAssetSource> source;
@@ -213,15 +215,15 @@ private:
     resources::ResTable_config& RequireConfiguration(GuestPtr<void> handle);
     BoundaryResult WriteConfigurationLocale(const A32CallFrame& call, char (resources::ResTable_config::*field)[2]);
     std::map<std::uint32_t, resources::ResTable_config> configurations_;
-    memory::GuestAddress next_configuration_{0x6e003000U};
-    memory::GuestAddress next_asset_manager_{0x6e300000U};
+    memory::GuestAddress next_configuration_{guest_layout::kConfigurationHandleBegin};
+    memory::GuestAddress next_asset_manager_{guest_layout::kAssetManagerHandleBegin};
     std::recursive_mutex asset_hook_mutex_;
     AndroidAssetManagerHooks asset_hooks_;
     AndroidSurfaceHooks surface_hooks_;
     std::recursive_mutex surface_hook_mutex_;
     std::mutex surface_publish_mutex_;
     // Asset handles are opaque tokens, never dereferenced as guest structures.
-    std::uint32_t next_asset_{0x6e100000U};
+    std::uint32_t next_asset_{guest_layout::kAssetHandleBegin};
     Resource& Queue(std::uint32_t handle);
     WindowResource& Window(std::uint32_t handle);
 
@@ -234,7 +236,7 @@ private:
     };
 
     std::map<std::uint32_t, SensorQueue> sensor_queues_;
-    memory::GuestAddress next_sensor_queue_{0x6e900000U};
+    memory::GuestAddress next_sensor_queue_{guest_layout::kSensorQueueHandleBegin};
     std::unique_ptr<GuestBuffer> sensor_list_;
     std::vector<std::array<memory::GuestAddress, 2>> sensor_strings_;
     std::shared_ptr<AndroidSensorSource> sensor_source_;
@@ -257,7 +259,7 @@ private:
     std::mutex mutex_;
     std::condition_variable ready_;
     InputQueueState standalone_input_;
-    memory::GuestAddress next_input_{0x6e200000U};
+    memory::GuestAddress next_input_{guest_layout::kInputHandleBegin};
 };
 
 }  // namespace ogplay::runtime

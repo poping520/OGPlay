@@ -14,6 +14,7 @@
 
 #include "ogplay/cpu/cpu.h"
 #include "ogplay/runtime/syscall/syscall.h"
+#include "ogplay/runtime/common/guest_address_layout.h"
 
 TEST_CASE("Android ARM syscall baseline exposes identity and coverage") {
     ogplay::core::CapabilityLedger ledger;
@@ -1968,4 +1969,45 @@ TEST_CASE("ARM stat64 identities distinguish Mono exclusive opens and agree acro
     CHECK(identities[0] != identities[1]);
     for (const auto fd : descriptors)
         fixture.vfs.Close(fd);
+}
+
+TEST_CASE("Android mmap placement skips host windows and fixed rejection preserves every page") {
+    using namespace ogplay;
+    core::CapabilityLedger ledger;
+    auto dispatcher = runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    memory::AddressSpace space;
+    for (const auto& window : runtime::guest_layout::kReservedWindows)
+        space.ReserveWindow(window);
+    runtime::BindAndroidMemorySyscalls(dispatcher, space);
+    runtime::A32SyscallFrame frame;
+    frame.number = 192;
+    frame.arguments = {0, 0x01000000U, 0, 0x22, 0xffffffffU, 0};
+    for (std::uint32_t i = 0; i < 10; ++i)
+        REQUIRE(dispatcher.Dispatch(frame) == 0x60000000U + i * 0x01000000U);
+    frame.arguments[1] = 4096;
+    CHECK(dispatcher.Dispatch(frame) == 0x7f000000U);
+    const auto rw = memory::PageProtection::read | memory::PageProtection::write;
+    const memory::GuestAddress edge{0x6a000000U};
+    space.Map({edge, 4096}, rw);
+    space.Write32(edge, 0x12345678);
+    space.Protect({edge.Subtract(4096), 4096}, rw);
+    space.Write32(edge.Subtract(4096), 0x87654321);
+    const auto before = space.TrySnapshot()->generation;
+    frame.arguments = {edge.Value() - 4096U, 8192, 3, 0x32, 0xffffffffU, 0};
+    CHECK(dispatcher.Dispatch(frame) == -12);  // even a partial intersection rejects the whole request
+    CHECK(space.TrySnapshot()->generation == before);
+    CHECK(space.Read32(edge) == 0x12345678);
+    CHECK(space.Read32(edge.Subtract(4096)) == 0x87654321);
+    frame.arguments = {0x6a10d000U, 4096, 3, 0x32, 0xffffffffU, 0};
+    CHECK(dispatcher.Dispatch(frame) == -12);
+    frame.arguments[3] = 0x12;  // file-backed MAP_FIXED also rejects before resolving its fd
+    CHECK(dispatcher.Dispatch(frame) == -12);
+    CHECK_THROWS_AS(space.ValidateMapped({memory::GuestAddress{0x6a10d000U}, 4096}), memory::MemoryFault);
+    CHECK(std::ranges::any_of(ledger.Unimplemented(),
+                              [](const auto& hit) { return hit.id == "memory.map_fixed_reserved_window"; }));
+    frame.number = 45;  // brk owns its explicit Map inside the separate reserved window
+    frame.arguments = {0x50001000U};
+    CHECK(dispatcher.Dispatch(frame) == 0x50001000U);
+    space.Write32(memory::GuestAddress{0x50000000}, 42);
+    CHECK(space.Read32(memory::GuestAddress{0x50000000}) == 42);
 }

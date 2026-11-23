@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ogplay/runtime/common/guest_address_layout.h"
+
 #include <cstdint>
 #include <optional>
 
@@ -10,13 +12,6 @@ class AddressSpace;
 }
 
 namespace ogplay::runtime {
-
-inline constexpr memory::GuestAddress kJniGuestAbiDataBegin{0x71200000U};
-inline constexpr memory::GuestAddress kJniGuestEnvironmentTable{
-    kJniGuestAbiDataBegin};
-inline constexpr memory::GuestAddress kJniGuestInvokeTable{0x71200400U};
-inline constexpr memory::GuestAddress kJniGuestEnvironment{0x71200420U};
-inline constexpr memory::GuestAddress kJniGuestJavaVm{0x71200424U};
 
 struct JniGuestThunk final {
     bool java_vm{};

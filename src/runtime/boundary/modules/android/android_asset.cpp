@@ -1,3 +1,4 @@
+#include "ogplay/runtime/common/guest_address_layout.h"
 #include "runtime/boundary/modules/android/android_module.h"
 #include <algorithm>
 #include <bit>
@@ -69,7 +70,7 @@ BoundaryResult AndroidModule::AAssetManager_open(const A32CallFrame& call) {
     if (!source) return 0;
     std::scoped_lock lock(mutex_);
     if (!asset_managers_.contains(args[0])) throw std::invalid_argument("AAssetManager retired during open");
-    if (assets_.size() >= 4096 || next_asset_ == 0x6e200000U)
+    if (assets_.size() >= 4096 || next_asset_ == guest_layout::kInputHandleBegin)
         throw std::runtime_error("NDK asset handle budget exhausted");
     const auto handle = next_asset_++;
     auto asset = std::make_shared<Asset>();
@@ -99,7 +100,7 @@ BoundaryResult AndroidModule::AAssetManager_openDir(const A32CallFrame& call) {
         throw std::length_error("asset directory listing exceeds budget");
     std::scoped_lock lock(mutex_);
     if (!asset_managers_.contains(handle.Value())) throw std::invalid_argument("AAssetManager retired during openDir");
-    if (asset_directories_.size() >= 4096 || next_asset_directory_.Value() >= 0x6eb00000U)
+    if (asset_directories_.size() >= 4096 || next_asset_directory_.Value() >= guest_layout::kObbInfoHandleBegin)
         throw std::length_error("asset directory handle budget exhausted");
     const auto directory = next_asset_directory_;
     asset_directories_.emplace(directory.Value(), AssetDirectory{handle, std::move(entries), 0, {}});

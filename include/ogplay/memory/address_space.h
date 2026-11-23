@@ -146,6 +146,12 @@ public:
     [[nodiscard]] std::uint64_t PageSize() const noexcept;
     [[nodiscard]] std::uint64_t BackingPageSize() const noexcept;
     [[nodiscard]] MappingChangeSubscription ObserveMappingChanges(MappingChangeHandler handler);
+    // Placement policy only: no backing, mapping, generation or snapshot entry.
+    // Broad first-fit searches skip windows; bounds contained by one window
+    // may allocate within it. Explicit Map retains its normal overlap checks.
+    void ReserveWindow(const GuestRange& range);
+    [[nodiscard]] std::vector<GuestRange> ReservedWindows() const;
+    [[nodiscard]] bool OverlapsReservedWindow(const GuestRange& range) const;
     void Map(const GuestRange& range, PageProtection protection);
     // Atomically replace guest pages (including holes) with zeroed anonymous
     // memory. Optional initial bytes are copied before final protection publishes;

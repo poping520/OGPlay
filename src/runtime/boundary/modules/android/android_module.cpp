@@ -1,3 +1,4 @@
+#include "ogplay/runtime/common/guest_address_layout.h"
 #include "runtime/boundary/modules/android/android_module.h"
 
 #include <stdexcept>
@@ -35,7 +36,7 @@ void AndroidModule::SetAssetManagerHooks(AndroidAssetManagerHooks hooks) {
 memory::GuestAddress AndroidModule::RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source) {
     if (!source) throw std::invalid_argument("AssetManager source is missing");
     std::scoped_lock guard(mutex_);
-    if (asset_managers_.size() >= 1024 || next_asset_manager_.Value() == 0x6e400000U)
+    if (asset_managers_.size() >= 1024 || next_asset_manager_.Value() == kNativeActivityWindowHandleBegin.Value())
         throw std::runtime_error("AssetManager handle budget exhausted");
     const auto handle = next_asset_manager_;
     asset_managers_.emplace(handle.Value(), std::move(source));

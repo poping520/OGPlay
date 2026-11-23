@@ -1,3 +1,4 @@
+#include "ogplay/runtime/common/guest_address_layout.h"
 #include "guest_cpu_environment.h"
 #include "ogplay/cpu/execution_budget.h"
 
@@ -113,7 +114,7 @@ void GuestCpuEnvironment::BindSysconf(loader::Elf32LinkNamespace& symbols, memor
             constexpr std::uint16_t absolute = 0xfff1;
             const auto original =
                 symbol.section_index == absolute ? symbol.value : module.load_bias.Add(symbol.value.Value());
-            const auto code = memory.MapAnywhere({memory::GuestAddress{0x7d000000}, 0x01000000}, memory.PageSize(),
+            const auto code = memory.MapAnywhere(guest_layout::kCpuEnvironment, memory.PageSize(),
                                                  memory::PageProtection::read | memory::PageProtection::write);
             // API 19 Bionic selectors 96/97. Preserve LR/stack/arguments on the
             // fallback; BX supports either ARM or Thumb original libc exports.

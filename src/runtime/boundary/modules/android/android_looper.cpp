@@ -1,3 +1,4 @@
+#include "ogplay/runtime/common/guest_address_layout.h"
 #include "runtime/boundary/modules/android/android_module.h"
 
 #include <algorithm>
@@ -73,7 +74,8 @@ memory::GuestAddress AndroidModule::PrepareThreadLooper(std::uint64_t tid, std::
     if (loopers_shutdown_ || (looper_hooks_.thread_running && !looper_hooks_.thread_running(tid)))
         throw std::runtime_error("ALooper_prepare on a retired thread");
     if (const auto found = thread_loopers_.find(tid); found != thread_loopers_.end()) return found->second;
-    if (next_looper_.Value() >= 0x6e100000U) throw std::runtime_error("ALooper handle budget exhausted");
+    if (next_looper_.Value() >= guest_layout::kAssetHandleBegin)
+        throw std::runtime_error("ALooper handle budget exhausted");
     const auto handle = next_looper_;
     next_looper_ = next_looper_.Add(4);
     Looper looper;

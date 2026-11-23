@@ -176,6 +176,8 @@ public:
     std::shared_ptr<DescriptorTableResolver> descriptor_table_binding{std::make_shared<DescriptorTableResolver>()};
     GuestMemoryMappings memory_mappings;
     [[nodiscard]] std::function<void()> MappingMutationRecorder() const;
+    // A guest MAP_FIXED request that intersects an owner's reserved window.
+    [[nodiscard]] std::function<void()> ReservedWindowRecorder() const;
 
 private:
     struct Entry final {

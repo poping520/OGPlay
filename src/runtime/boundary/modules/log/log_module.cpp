@@ -1,3 +1,4 @@
+#include "ogplay/runtime/common/guest_address_layout.h"
 #include "log_module.h"
 #include "ogplay/runtime/boundary/boundary_symbol.h"
 
@@ -33,7 +34,7 @@ namespace {
 constexpr std::size_t kMaximumLogBytes = 4096U;
 constexpr std::size_t kMaximumLogArgumentWords = 1024U;
 constexpr std::size_t kMaximumBinaryLogBytes = 64U * 1024U;
-constexpr std::uint32_t kFirstFormatHandle = 0x6e004000U;
+constexpr std::uint32_t kFirstFormatHandle = guest_layout::kLogFormatHandleBegin;
 constexpr std::uint32_t kHandleStride = 4U;
 constexpr auto kEventTagPoolBegin = kBoundaryEventTags.Start().Value();
 constexpr auto kEventTagPoolEnd = static_cast<std::uint32_t>(kBoundaryEventTags.EndExclusive());

@@ -1,4 +1,6 @@
 #pragma once
+
+#include "ogplay/runtime/common/guest_address_layout.h"
 #include "ogplay/runtime/boundary/device_locale.h"
 
 #include <cstdint>
@@ -106,9 +108,6 @@ struct BionicDynamicLinkHooks final {
     ArmExidx (*find_exidx)(void*, std::uint32_t, std::uint64_t){};
     std::uint32_t (*address)(void*, memory::GuestAddress, memory::GuestAddress, std::uint64_t){};
 };
-
-inline constexpr memory::GuestAddress kNativeActivityWindowHandleBegin{0x6e400000U};
-inline constexpr memory::GuestAddress kNativeActivityWindowHandleEnd{0x6e800000U};
 
 enum class NativeActivityCommandType { finish, set_window_format, set_window_flags, show_ime, hide_ime };
 

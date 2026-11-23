@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ogplay/runtime/common/guest_address_layout.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -133,10 +135,11 @@ private:
         errors_.insert_or_assign(thread_id, error);
     }
 
-    static constexpr memory::GuestAddress kErrorArenaBegin{0x71d00000U};
+    static constexpr memory::GuestAddress kErrorArenaBegin{guest_layout::kLibdlErrorBegin.Value()};
     static constexpr std::size_t kErrorSlotBytes = 4096U;
     static constexpr std::size_t kMaximumErrorThreads = 256U;
-    static constexpr std::size_t kErrorArenaBytes = kErrorSlotBytes * kMaximumErrorThreads;
+    static constexpr std::size_t kErrorArenaBytes = guest_layout::kLibdlErrorBytes;
+    static_assert(kErrorArenaBytes == kErrorSlotBytes * kMaximumErrorThreads);
     static constexpr std::size_t kMaximumInputBytes = 4096U;
 
     BoundaryCallServices& calls_;

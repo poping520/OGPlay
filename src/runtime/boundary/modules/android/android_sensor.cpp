@@ -1,3 +1,4 @@
+#include "ogplay/runtime/common/guest_address_layout.h"
 #include "runtime/boundary/modules/android/android_module.h"
 
 #include <algorithm>
@@ -9,7 +10,7 @@
 
 namespace ogplay::runtime {
 namespace {
-constexpr memory::GuestAddress kSensorManager{0x6e008000U};
+constexpr memory::GuestAddress kSensorManager{guest_layout::kSensorManagerHandle};
 constexpr std::int32_t kBadValue = -22;
 constexpr std::size_t kEventBatch = 256;
 }  // namespace
@@ -74,7 +75,7 @@ std::uint32_t AndroidModule::OpenSensorQueueLocked(std::uint64_t thread, memory:
         SensorFailure("sensor queue owner thread is retired", thread);
     if (!looper_hooks_.create_pipe || !looper_hooks_.close_fd || (sensor_source_ && !looper_hooks_.signal_pipe))
         SensorFailure("sensor queue VFS pipe backend is unavailable", thread);
-    if (sensor_queues_.size() >= 1024 || next_sensor_queue_.Value() >= 0x6ea00000U)
+    if (sensor_queues_.size() >= 1024 || next_sensor_queue_.Value() >= guest_layout::kAssetDirectoryHandleBegin)
         SensorFailure("sensor queue handle budget exhausted", thread);
     if (RequireLooper(looper).references == UINT32_MAX) SensorFailure("sensor queue Looper reference overflow", thread);
 

@@ -71,6 +71,15 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 
 ## 进程与库加载
 
+- AndroidGuestProcess 在任何成员创建 guest 映射之前，将 `[0x50000000,0x58000000)` 与
+  `[0x6a000000,0x7f000000)` 登记为 AddressSpace 保留窗口，避免宽域 first-fit 占用尚未
+  映射的固定区及不映射的指针句柄。固定布局来自 runtime/common/guest_address_layout.h，
+  编译期验证各区域互不重叠且位于窗口内；既有 typed opaque handle registry 共用一个排除区。
+  动态 ELF load-bias 选址同样排除窗口，起点与对齐不变。窗口内有界 arena 的 first-fit
+  仍可使用；无窗口装配的 headless 等独立 runner 保留自有布局与行为。
+  PrepareDexVmThread 映射失败先按既有流程回滚，再报告 guest TID、槽位、失败目标区间与
+  原因，槽位可重试；线程上限、栈大小、CPU fault 隔离与文件身份不变。
+
 - FindLibraryExport 按库身份查询完整的已加载命名空间；缺库或导出返回 optional，
   不隐式加载。创建 VM 前经现有加载入口准备随附 JNI 库的 ICU 依赖闭包；版本查询遵循 VM 锁释放/恢复协议。
 

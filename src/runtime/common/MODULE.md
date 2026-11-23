@@ -7,6 +7,9 @@
 
 ## 不变量
 
+- guest_address_layout.h 集中保存生产 guest 固定地址、保留窗口及不重叠的布局断言，
+  只含值与低层 GuestRange；窗口登记及生命周期由 integration 拥有，不向 memory 注入业务含义。
+
 - GuestNetworkInterface 只表达 guest 接口索引、flags、MTU、链路及 IP 地址值；
   拓扑派生、发布与生命周期归 integration，不含宿主网络资源。
 

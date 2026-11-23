@@ -407,3 +407,93 @@ TEST_CASE("Java payload protected ownership preserves adjacent 4 KiB pages on ho
     CHECK(space.DirectPageTable()->at(neighbor.Start().Value() >> kGuestPageBits) != nullptr);
     CHECK(denied.size() == 3);
 }
+
+TEST_CASE("guest reserved windows exclude broad first fit without mapping or snapshot state") {
+    using namespace ogplay::memory;
+    AddressSpace space;
+    const auto rw = PageProtection::read | PageProtection::write;
+    const GuestRange first{GuestAddress{0x14000}, 0x4000};
+    const GuestRange second{GuestAddress{0x20000}, 0x4000};
+    const auto before = space.TrySnapshot();
+    REQUIRE(before.has_value());
+    space.ReserveWindow(second);
+    space.ReserveWindow(first);
+    CHECK(space.ReservedWindows() == std::vector<GuestRange>{first, second});
+    CHECK(space.TrySnapshot()->pages_by_protection == before->pages_by_protection);
+    CHECK(space.TrySnapshot()->generation == before->generation);
+    CHECK(space.DescribeMappings(16).empty());
+    const auto empty = space.CaptureSnapshot();
+    CHECK(empty.mappings.empty());
+    CHECK_THROWS_AS(space.ReserveWindow(first), std::invalid_argument);
+    CHECK_THROWS_AS(space.ReserveWindow({GuestAddress{0x30001}, 4096}), std::invalid_argument);
+    // Neither window is mapped. A large allocation cannot straddle either one.
+    CHECK(space.MapAnywhere({GuestAddress{0x10000}, 0x30000}, 0x9000, rw).Value() == 0x24000);
+    CHECK(space.MapAnywhere({GuestAddress{0x13000}, 0x8000}, 8192, rw).Value() == 0x18000);
+    const GuestRange interior{GuestAddress{0x15000}, 8192};
+    CHECK(space.MapAnywhere(interior, 4096, rw).Value() == 0x15000);
+    space.Map({first.Start(), 4096}, rw);
+    CHECK_THROWS_AS(space.Map({first.Start(), 4096}, rw), std::logic_error);
+    space.Write32(first.Start(), 123);
+    space.Protect({first.Start(), 4096}, PageProtection::read);
+    CHECK(space.Read32(first.Start()) == 123);
+    space.RestoreSnapshot(empty);
+    CHECK(space.DescribeMappings(16).empty());
+    CHECK(space.OverlapsReservedWindow(first));
+    CHECK(space.MapAnywhere({first.Start(), 0xc000}, 4096, rw).Value() == 0x18000);
+    space.Map({first.Start(), 4096}, rw);
+    space.Unmap({first.Start(), 4096});
+    CHECK(space.MapAnywhere(first, 4096, rw) == first.Start());
+}
+
+TEST_CASE("guest first fit crosses adjacent and partially overlapped reserved windows") {
+    using namespace ogplay::memory;
+    AddressSpace space;
+    space.ReserveWindow({GuestAddress{0x30000}, 0x2000});
+    space.ReserveWindow({GuestAddress{0x10000}, 0x4000});
+    space.ReserveWindow({GuestAddress{0x14000}, 0x2000});
+    const auto none = PageProtection::none;
+    // Bounds start inside the first window and end inside the last one.
+    const GuestRange bounds{GuestAddress{0x12000}, 0x1f000};
+    CHECK(space.MapAnywhere(bounds, 4096, none).Value() == 0x16000);
+    CHECK(space.MapAnywhere(bounds, 0x19000, none).Value() == 0x17000);
+    CHECK_THROWS_AS(static_cast<void>(space.MapAnywhere(bounds, 4096, none)), std::bad_alloc);
+    // Adjacent windows stay separate: bounds spanning both contain neither.
+    CHECK_THROWS_AS(static_cast<void>(space.MapAnywhere({GuestAddress{0x10000}, 0x6000}, 4096, none)), std::bad_alloc);
+    CHECK(space.MapAnywhere({GuestAddress{0x14000}, 0x2000}, 4096, none).Value() == 0x14000);
+}
+
+TEST_CASE("protected payload placement honors reserved windows and contained bounds") {
+    using namespace ogplay::memory;
+    AddressSpace space;
+    const GuestRange window{GuestAddress{0x20000}, 0x10000};
+    space.ReserveWindow(window);
+    auto owner = space.RegisterProtectedOwner([](std::string_view) {});
+    const GuestRange bounds{GuestAddress{0x10000}, 0x40000};
+    const auto first = space.MapProtectedAnywhere(owner, bounds, 0x10000);
+    const auto second = space.MapProtectedAnywhere(owner, bounds, 0x10000);
+    CHECK(first.Value() == 0x10000);
+    CHECK(second.Value() == 0x30000);
+    const auto inside = space.MapProtectedAnywhere(owner, window, 4096);
+    CHECK(inside == window.Start());
+    space.UnmapProtected(owner, {first, 0x10000});
+    space.UnmapProtected(owner, {second, 0x10000});
+    space.UnmapProtected(owner, {inside, 4096});
+}
+
+TEST_CASE("concurrent first fit skips every unmapped page of a reserved window") {
+    using namespace ogplay::memory;
+    AddressSpace space;
+    space.ReserveWindow({GuestAddress{0x10000}, 16 * 4096});
+    std::array<GuestAddress, 16> addresses;
+    std::array<std::thread, 16> threads;
+    for (std::size_t i = 0; i < threads.size(); ++i) {
+        threads[i] = std::thread([&, i] {
+            addresses[i] = space.MapAnywhere({GuestAddress{0x10000}, 32 * 4096}, 4096, PageProtection::none);
+        });
+    }
+    for (auto& thread : threads)
+        thread.join();
+    CHECK(std::set<GuestAddress>(addresses.begin(), addresses.end()).size() == addresses.size());
+    for (const auto address : addresses)
+        CHECK(address.Value() >= 0x20000);
+}

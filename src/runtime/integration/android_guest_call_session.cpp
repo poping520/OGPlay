@@ -1,3 +1,4 @@
+#include "ogplay/runtime/common/guest_address_layout.h"
 #include "ogplay/runtime/integration/java_payload_provider.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 
@@ -62,17 +63,15 @@
 namespace ogplay::runtime {
 namespace {
 
-constexpr std::uint32_t kDexVmThreadMaximum = 32;
 constexpr std::uint64_t kOpenSlesCallbackThreadId = UINT64_C(0x4f50);
 constexpr std::uint32_t kOpenSlesCallbackAllocationSlot = kDexVmThreadMaximum - 1U;
-constexpr std::uint32_t kDexVmTlsBase = 0x6a100000U;
-constexpr std::uint32_t kDexVmStackBase = 0x6c000000U;
-constexpr std::uint32_t kDexVmStackSize = 1024U * 1024U;
-constexpr std::uint32_t kOpenSlesCallbackTls = 0x71a00000U;
-constexpr std::uint32_t kOpenSlesCallbackThreadInfo = 0x71a01000U;
-constexpr std::uint32_t kOpenSlesCallbackStack = 0x71b00000U;
-constexpr std::uint32_t kTemporaryArenaBegin = 0x74000000U;
-constexpr std::uint32_t kTemporaryArenaEnd = 0x78000000U;
+
+[[nodiscard]] memory::AddressSpace MakeProcessAddressSpace() {
+    memory::AddressSpace space;
+    for (const auto& window : guest_layout::kReservedWindows)
+        space.ReserveWindow(window);
+    return space;
+}
 
 [[nodiscard]] std::string IndentDiagnostic(const std::string_view text, const std::string_view indent) {
     std::string result{indent};
@@ -691,7 +690,7 @@ public:
     };
 
     explicit Impl(const AndroidGuestProcessStartup& request)
-        : cpu_environment_(request.proc_facts.cpu),
+        : address_space_(MakeProcessAddressSpace()), cpu_environment_(request.proc_facts.cpu),
           boundary_(address_space_, request.backend, request.width, request.height, request.supersample_factor,
                     BindProcessCallbacks(request.boundary_options, this)),
           guest_jni_(address_space_), dispatcher_(CreateAndroidArmSyscallDispatcher(ledger_)), jni_dispatcher_(ledger_),
@@ -1144,14 +1143,19 @@ public:
         bool stack_mapped{};
         bool lifecycle_registered{};
         bool jni_attached{};
+        std::optional<memory::GuestRange> mapping;
         try {
             const auto rw = memory::PageProtection::read | memory::PageProtection::write;
+            mapping = context->thread_info;
             address_space_.Map(context->thread_info, rw);
             info_mapped = true;
+            mapping = memory::GuestRange{tls_address, page_size};
             context->tls =
                 CreateBionicTlsBlock(address_space_, tls_address, thread_info_address, kApi19GuestPreinitAddress);
+            mapping = context->stack;
             address_space_.Map(context->stack, rw);
             stack_mapped = true;
+            mapping.reset();
             context->stack_top = stack_address.Add(kDexVmStackSize - 64U);
 
             const auto tid32 = static_cast<std::uint32_t>(thread_id);
@@ -1192,6 +1196,21 @@ public:
                 DestroyBionicTlsBlock(address_space_, *context->tls);
             }
             if (info_mapped) address_space_.Unmap(context->thread_info);
+            if (mapping) {
+                try {
+                    throw;
+                } catch (const std::exception& error) {
+                    const auto hex = [](std::uint64_t value) {
+                        std::array<char, 16> bytes{};
+                        const auto end = std::to_chars(bytes.data(), bytes.data() + bytes.size(), value, 16).ptr;
+                        return "0x" + std::string(bytes.data(), end);
+                    };
+                    throw AndroidGuestProcessError(
+                        "DexVM guest thread mapping failed: guest_thread=" + std::to_string(thread_id) +
+                        " slot=" + std::to_string(allocation_slot) + " range=[" + hex(mapping->Start().Value()) + ", " +
+                        hex(mapping->EndExclusive()) + ") cause: " + error.what());
+                }
+            }
             throw;
         }
     }
@@ -1469,7 +1488,7 @@ public:
             }
         }
         dynamic_link_handles_.reserve(dynamic_link_handles_.size() + 1U);
-        constexpr std::uint64_t kViewArenaEnd = 0x7a000000U;
+        constexpr std::uint64_t kViewArenaEnd = guest_layout::kLinkerViews.EndExclusive();
         if (next_dynamic_link_view_.Value() >= kViewArenaEnd)
             throw loader::LinkError("API19 linker view arena exhausted");
         state.view = detail::CreateApi19LinkerView(
@@ -1562,7 +1581,7 @@ public:
 
     memory::GuestAddress InternLinkerName(const std::string& name) {
         if (const auto found = linker_names_.find(name); found != linker_names_.end()) return found->second;
-        constexpr std::uint64_t kArenaEnd = 0x7a000000U;
+        constexpr std::uint64_t kArenaEnd = guest_layout::kLinkerViews.EndExclusive();
         const auto page = address_space_.PageSize();
         const auto size = (name.size() + page) / page * page;
         if (next_dynamic_link_view_.Value() + size > kArenaEnd)
@@ -2638,7 +2657,7 @@ private:
             return (value + kLoadAlignment - 1U) & ~(kLoadAlignment - 1U);
         };
         const auto snapshot = address_space_.CaptureSnapshot();
-        std::vector<memory::GuestRange> occupied;
+        auto occupied = address_space_.ReservedWindows();
         occupied.reserve(snapshot.mappings.size() + sources.size() * 2U);
         for (const auto& mapping : snapshot.mappings) {
             occupied.push_back(mapping.range);
@@ -2781,7 +2800,7 @@ private:
     std::vector<DynamicLinkHandle> dynamic_link_handles_;
     std::map<std::string, std::string, std::less<>> module_paths_;
     std::map<std::string, memory::GuestAddress, std::less<>> linker_names_;
-    memory::GuestAddress next_dynamic_link_view_{0x79000000U};
+    memory::GuestAddress next_dynamic_link_view_{guest_layout::kLinkerViews.Start().Value()};
     std::vector<loader::Elf32LoadedModule> dynamic_modules_;
     std::string root_module_;
     Api19GuestProcessMemory process_memory_;

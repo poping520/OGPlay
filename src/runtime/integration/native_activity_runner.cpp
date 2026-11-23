@@ -1,3 +1,4 @@
+#include "ogplay/runtime/common/guest_address_layout.h"
 #include "ogplay/runtime/integration/native_activity_runner.h"
 
 #include <algorithm>
@@ -29,13 +30,13 @@ namespace ogplay::runtime {
 namespace {
 
 constexpr std::uint64_t kRootThreadId = 1;
-constexpr memory::GuestAddress kActivityAddress{0x6f000000U};
-constexpr memory::GuestAddress kCallbacksAddress{0x6f000100U};
-constexpr memory::GuestAddress kInternalPathAddress{0x6f000200U};
-constexpr memory::GuestAddress kExternalPathAddress{0x6f000240U};
-constexpr memory::GuestAddress kObbPathAddress{0x6f000280U};
-constexpr std::uint32_t kFakeNativeWindow = 0x6e010000U;
-constexpr std::uint32_t kFakeInputQueue = 0x6e020000U;
+constexpr memory::GuestAddress kActivityAddress{guest_layout::kNativeActivityPage.Value()};
+constexpr memory::GuestAddress kCallbacksAddress{guest_layout::kNativeActivityPage.Add(0x100U).Value()};
+constexpr memory::GuestAddress kInternalPathAddress{guest_layout::kNativeActivityPage.Add(0x200U).Value()};
+constexpr memory::GuestAddress kExternalPathAddress{guest_layout::kNativeActivityPage.Add(0x240U).Value()};
+constexpr memory::GuestAddress kObbPathAddress{guest_layout::kNativeActivityPage.Add(0x280U).Value()};
+constexpr std::uint32_t kFakeNativeWindow = guest_layout::kLooperHandleBegin;
+constexpr std::uint32_t kFakeInputQueue = guest_layout::kStandaloneInputQueue;
 
 enum CallbackIndex : std::size_t {
     start = 0,
@@ -281,7 +282,7 @@ private:
         Write32(memory_bus_, kActivityAddress.Add(16), kInternalPathAddress.Value());
         Write32(memory_bus_, kActivityAddress.Add(20), kExternalPathAddress.Value());
         Write32(memory_bus_, kActivityAddress.Add(24), api);
-        Write32(memory_bus_, kActivityAddress.Add(32), 0x6e030000U);
+        Write32(memory_bus_, kActivityAddress.Add(32), guest_layout::kStandaloneAssetManager);
         Write32(memory_bus_, kActivityAddress.Add(36), kObbPathAddress.Value());
         WriteString(address_space_, kInternalPathAddress, "/data/data/org.ogplay.minimal/files");
         WriteString(address_space_, kExternalPathAddress, "/sdcard/Android/data/org.ogplay.minimal/files");

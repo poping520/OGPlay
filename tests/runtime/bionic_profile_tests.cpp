@@ -487,3 +487,32 @@ TEST_CASE("DVM271 oversized thunk arenas and catalogs fail before mapping or add
     const std::array definitions{BoundaryModuleDefinition{"overflow.so", {}, exports}};
     CHECK_THROWS_AS(BoundaryCatalog(AndroidApi::api19, definitions), std::length_error);
 }
+
+TEST_CASE("Bionic namespace extension accepts a virtual root and reuses existing modules") {
+    using namespace ogplay;
+    const auto& profile = runtime::SelectBionicProfile(19);
+    const auto symbols = runtime::detail::BuildAndroidBoundarySymbols();
+    const runtime::BionicHleSymbolProvider provider(symbols);
+    const std::vector initial{Module("libc.so", 0x10000000U, {}, {})};
+    const auto base = runtime::BuildBionicLinkNamespace(profile, "libc.so", initial, provider);
+    const auto first = runtime::ExtendBionicLinkNamespace(profile, base, "libOpenSLES.so", {}, provider);
+    REQUIRE(first.link_namespace.modules.size() == base.modules.size() + 1U);
+    const auto index = first.scope.root_module;
+    CHECK(first.link_namespace.modules[index].name == "libOpenSLES.so");
+    CHECK(first.link_namespace.modules[index].load_ranges.empty());
+    CHECK(loader::LookupElf32Symbol(first.link_namespace, first.scope, "slCreateEngine").address ==
+          *provider.Lookup("libOpenSLES.so", "slCreateEngine"));
+    const auto repeated =
+        runtime::ExtendBionicLinkNamespace(profile, first.link_namespace, "libOpenSLES.so", {}, provider);
+    CHECK(repeated.scope.root_module == index);
+    CHECK(repeated.link_namespace.modules.size() == first.link_namespace.modules.size());
+    const std::vector consumer{Module("libuse.so", 0x11000000U, {"libOpenSLES.so"}, {})};
+    const auto dependency =
+        runtime::ExtendBionicLinkNamespace(profile, first.link_namespace, "libuse.so", consumer, provider);
+    CHECK(dependency.link_namespace.modules.size() == first.link_namespace.modules.size() + 1U);
+    CHECK(std::ranges::count(dependency.link_namespace.modules, "libOpenSLES.so", &loader::Elf32LinkModule::name) == 1);
+    const auto reverse = runtime::ExtendBionicLinkNamespace(profile, base, "libuse.so", consumer, provider);
+    const auto explicit_root =
+        runtime::ExtendBionicLinkNamespace(profile, reverse.link_namespace, "libOpenSLES.so", {}, provider);
+    CHECK(explicit_root.link_namespace.modules.size() == reverse.link_namespace.modules.size());
+}

@@ -582,6 +582,13 @@ std::string VirtualFileSystem::Impl::CanonicalPath(const std::string_view path) 
     return ResolveDataPathLocked(path);
 }
 
+std::string VirtualFileSystem::Impl::FileSpelling(const std::string_view path) const {
+    std::scoped_lock lock(mutex_);
+    const auto canonical = ResolveDataPathLocked(path);
+    if (StatLocked(canonical).is_directory) throw VfsError(kEisdir, "VFS path is not a file");
+    return files_.at(canonical)->spelling;
+}
+
 std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path, const VfsOpenOptions options) {
     if (!options.read && !options.write) {
         throw VfsError(kEinval, "VFS open has no access mode");
@@ -1562,6 +1569,10 @@ auto ObserveLookup(const Impl& impl, const std::string_view path, Call&& call, c
     }
 }
 }  // namespace
+
+std::string VirtualFileSystem::FileSpelling(const std::string_view path) const {
+    return impl_->FileSpelling(path);
+}
 
 void VirtualFileSystem::SetApplicationOwner(std::string_view data_root, std::uint32_t uid) {
     impl_->SetApplicationOwner(data_root, uid);

@@ -383,6 +383,9 @@ loader::Elf32LinkNamespaceExtension ExtendBionicLinkNamespace(
     }
 
     std::set<std::string, std::less<>> required_boundaries;
+    if (!present_names.contains(root_name) && IsAndroidBoundaryLibrary(profile.api, root_name)) {
+        required_boundaries.insert(std::string(root_name));
+    }
     for (auto& module : modules) {
         if (profile.api == AndroidApi::api19) {
             ReuseLoadedDependencyNames(module, link_namespace.modules, present_names);

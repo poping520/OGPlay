@@ -151,6 +151,9 @@ mkdir/unlink/rmdir/rename 立即落元数据。unlink/覆盖后的存活句柄�
 
 ## 不变量
 
+- `FileSpelling(path)` 在索引锁内按 `CanonicalPath` 同一规则解析 cwd、别名与 `..`，返回已存在
+  文件节点的发布/创建/改名拼写；缺失返回 ENOENT，目录返回 EISDIR。只读查询不读取 backing，
+  不改变 `CanonicalPath` 的折叠身份语义。
 - 路径索引按 ASCII 大小写不敏感；guest 查找中的 `..` 逐目录解析并停在虚拟根，
   挂载条目、沙盒编码与宿主 backing 仍拒绝 traversal、别名歧义和事务挂载的部分发布。
 - `generation` 只随内容写入/截断变化；路径替换创建不同节点身份。alias 与 canonical

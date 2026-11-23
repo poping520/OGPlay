@@ -55,6 +55,7 @@
 #include "ogplay/video/ffmpeg_video_player.h"
 #include "runtime/integration/nested_guest_cpu_pool.h"
 #include "runtime/integration/api19_linker_view.h"
+#include "runtime/boundary/modules/module_catalog.h"
 #include "runtime/integration/guest_cpu_environment.h"
 #include "runtime/syscall/guest_path_reader.h"
 
@@ -1314,13 +1315,16 @@ public:
         bool needs_load{};
         {
             std::scoped_lock lock(dynamic_link_mutex_);
-            needs_load = !HasLoadedModuleLocked(library) && boundary_.Symbols().Exports(library).empty();
+            needs_load = !HasLoadedModuleLocked(library);
         }
         if (needs_load && native_library_load_) {
-            const auto loaded = native_library_load_(path, thread_id);
+            const auto loaded = native_library_load_(library == DynamicLibraryName(path) ? path : library, thread_id);
             std::scoped_lock lock(dynamic_link_mutex_);
             const auto& root = loaded_.link_namespace.modules.at(loaded.root_module_index);
             library = root.dynamic.soname.value_or(root.name);
+        }
+        if (needs_load && !native_library_load_ && IsAndroidBoundaryLibrary(SelectBionicProfile(api_).api, library)) {
+            static_cast<void>(LoadApplicationModules(library, {}, thread_id));
         }
         std::vector<std::string> initialized;
         std::optional<std::size_t> root_index;
@@ -2475,6 +2479,13 @@ public:
                                       source.guest_path.empty() ? "/data/app-lib/" + source.name : source.guest_path);
                 lifecycle_modules_.push_back(
                     {namespace_index, inputs[index].load_bias, extension.modules[index].lifecycle});
+            }
+            for (std::size_t index = old_namespace_size; index < extension.link_extension.link_namespace.modules.size();
+                 ++index) {
+                const auto& module = extension.link_extension.link_namespace.modules[index];
+                if (IsAndroidBoundaryLibrary(profile.api, module.name)) {
+                    module_paths_.emplace(module.name, "/system/lib/" + module.name);
+                }
             }
             loaded_.link_namespace = extension.link_extension.link_namespace;
             dynamic_modules_.insert(dynamic_modules_.end(), std::make_move_iterator(extension.modules.begin()),

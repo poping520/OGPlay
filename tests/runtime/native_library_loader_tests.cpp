@@ -53,6 +53,7 @@
 #include "ogplay/video/fake_video_player.h"
 
 #include "native_library_fixture.h"
+#include "../interpreter_backends.h"
 
 using namespace ogplay::test::native_library;
 
@@ -284,12 +285,12 @@ TEST_CASE("native library loader keeps malformed unresolved and bad JNI failures
 
 TEST_CASE("DexVM System load APIs support nested JNI OnLoad Java reentry") {
     using namespace ogplay;
-    auto backend = runtime::dexvm::InterpreterBackend::switch_dispatch;
-    SUBCASE("switch interpreter") {
-        backend = runtime::dexvm::InterpreterBackend::switch_dispatch;
-    }
-    SUBCASE("threaded interpreter") {
-        backend = runtime::dexvm::InterpreterBackend::threaded;
+    auto backend = runtime::dexvm::InterpreterBackend::threaded;
+    for (const auto selected_backend : test::InterpreterBackends()) {
+        SUBCASE(selected_backend == runtime::dexvm::InterpreterBackend::threaded ? "threaded interpreter"
+                                                                                 : "switch interpreter") {
+            backend = selected_backend;
+        }
     }
     auto libc = LibcElf();
     auto a = AppElf({"liba.so", "libc.so", runtime::kJniVersion1_6, true, true});
@@ -665,4 +666,133 @@ TEST_CASE("DexVM preserves failure from a resolved RegisterNatives target") {
 
     bridge.reset();
     session->Stop();
+}
+
+TEST_CASE("native library explicit virtual SO loads share canonical identity and loader ownership") {
+    using namespace ogplay;
+    FixtureProcess fixture;
+    loader::ApkNativeLibraryInventory inventory{std::vector<loader::ApkNativeLibrary>{}};
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
+    runtime::NativeLibraryLoader libraries(*fixture.process, selected, runtime::SelectBionicProfile(19), {});
+    CHECK(libraries.FindLibraryPath("OpenSLES") == "/system/lib/libOpenSLES.so");
+    runtime::NativeLibraryLoadResult first;
+    SUBCASE("explicit path is first") {
+        first = libraries.LoadPath("/system/lib/libopensles.so", 7U);
+    }
+    SUBCASE("logical name is first") {
+        first = libraries.LoadLibrary("OpenSLES", 7U);
+    }
+    CHECK(first.canonical_path == "/system/lib/libOpenSLES.so");
+    CHECK_FALSE(first.jni_version);
+    CHECK(first.initialized_modules.empty());
+    CHECK(fixture.process->HasLoadedModule("libOpenSLES.so"));
+    CHECK(fixture.process->ApplicationModuleCount() == 0U);
+    for (const auto path : {"/system/lib/libOpenSLES.so", "/SYSTEM/LIB/LIBOPENSLES.SO"}) {
+        const auto repeated = libraries.LoadPath(path, 7U);
+        CHECK(repeated.already_loaded);
+        CHECK(repeated.handle == first.handle);
+        CHECK(repeated.module_index == first.module_index);
+        CHECK(repeated.canonical_path == first.canonical_path);
+    }
+    CHECK(libraries.LoadLibrary("OpenSLES", 7U).handle == first.handle);
+    const auto records = libraries.Records();
+    REQUIRE(records.size() == 1U);
+    CHECK(records[0].canonical_path == first.canonical_path);
+    CHECK(records[0].soname == "libOpenSLES.so");
+    CHECK(records[0].jni_on_load_calls == 0U);
+    CHECK(records[0].state == runtime::NativeLibraryLoadState::loaded);
+    try {
+        static_cast<void>(libraries.LoadPath("/SYSTEM/LIB/LIBOPENSLES.SO", 8U));
+        FAIL("another ClassLoader must be rejected");
+    } catch (const runtime::NativeLibraryLoadError& error) {
+        CHECK(error.Reason() == runtime::NativeLibraryLoadErrorReason::cross_loader_conflict);
+    }
+    try {
+        static_cast<void>(libraries.LoadPath("/system/lib/libAbsent.so", 7U));
+        FAIL("absent library must be rejected");
+    } catch (const runtime::NativeLibraryLoadError& error) {
+        CHECK(error.Reason() == runtime::NativeLibraryLoadErrorReason::library_not_found);
+        CHECK(std::string(error.what()).find("libAbsent.so") != std::string::npos);
+    }
+}
+
+TEST_CASE("native library virtual roots and ELF dependencies reuse the same namespace module") {
+    using namespace ogplay;
+    FixtureProcess fixture;
+    loader::ApkNativeLibraryInventory inventory{
+        {Library("libuse.so", AppElf({"libuse.so", "libOpenSLES.so", std::nullopt}))}};
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
+    runtime::NativeLibraryLoader libraries(*fixture.process, selected, runtime::SelectBionicProfile(19), {});
+    runtime::NativeLibraryLoadResult virtual_load;
+    SUBCASE("Java virtual root before DT_NEEDED") {
+        virtual_load = libraries.LoadLibrary("OpenSLES", 7U);
+        CHECK(libraries.LoadLibrary("use", 7U).initialized_modules == std::vector<std::string>{"libuse.so"});
+    }
+    SUBCASE("DT_NEEDED before Java virtual root") {
+        CHECK(libraries.LoadLibrary("use", 7U).initialized_modules == std::vector<std::string>{"libuse.so"});
+        virtual_load = libraries.LoadLibrary("OpenSLES", 7U);
+        CHECK(virtual_load.initialized_modules.empty());
+    }
+    CHECK(fixture.process->LoadApplicationModules("libOpenSLES.so", {}).root_module_index == virtual_load.module_index);
+    CHECK(fixture.process->ApplicationModuleCount() == 1U);
+    const auto symbols = runtime::detail::BuildAndroidBoundarySymbols();
+    const runtime::BionicHleSymbolProvider provider(symbols);
+    CHECK(fixture.process->FindModuleExport(virtual_load.module_index, "slCreateEngine") ==
+          *provider.Lookup("libOpenSLES.so", "slCreateEngine"));
+}
+
+TEST_CASE("native library APK ELF cannot replace a virtual SO") {
+    using namespace ogplay;
+    FixtureProcess fixture;
+    loader::ApkNativeLibraryInventory inventory{
+        {Library("libOpenSLES.so", AppElf({"libOpenSLES.so", "", std::nullopt}))}};
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
+    runtime::NativeLibraryLoader libraries(*fixture.process, selected, runtime::SelectBionicProfile(19), {});
+    SUBCASE("virtual SO is already present") {
+        static_cast<void>(libraries.LoadPath("/system/lib/libOpenSLES.so", 7U));
+    }
+    SUBCASE("virtual SO is absent") {}
+    CHECK_THROWS_WITH_AS(static_cast<void>(libraries.LoadLibrary("OpenSLES", 7U)),
+                         "HLE boundary library must not be supplied as a guest ELF: libOpenSLES.so",
+                         runtime::NativeLibraryLoadError);
+    CHECK(fixture.process->ApplicationModuleCount() == 0U);
+}
+
+TEST_CASE("native library VFS filenames without SONAME preserve spelling for DT_NEEDED") {
+    using namespace ogplay;
+    FixtureProcess fixture;
+    auto image = AppElf({"libMiXeD.so", "", std::nullopt});
+    Put32(image, 0x110U, 30U);  // Replace DT_SONAME with DT_FLAGS=0.
+    Put32(image, 0x114U, 0U);
+    REQUIRE_FALSE(loader::ReadElf32DynamicInfo(image, loader::ParseElf32Arm(image)).soname);
+    fixture.filesystem.PutFile("/data/Files/libMiXeD.so", image, false);
+    fixture.filesystem.AddPathAlias("/alias", "/data/Files");
+    loader::ApkNativeLibraryInventory inventory{
+        {Library("libuse.so", AppElf({"libuse.so", "libMiXeD.so", std::nullopt}))}};
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
+    runtime::NativeLibraryLoader libraries(*fixture.process, selected);
+    const auto first = libraries.LoadPath("/ALIAS/LIBMIXED.SO", 7U);
+    CHECK(first.canonical_path == "/data/Files/libMiXeD.so");
+    CHECK(first.initialized_modules == std::vector<std::string>{"libMiXeD.so"});
+    CHECK(libraries.LoadPath("/data/files/libmixed.so", 7U).handle == first.handle);
+    REQUIRE(libraries.Records().size() == 1U);
+    CHECK(libraries.Records()[0].soname == "libMiXeD.so");
+    CHECK(libraries.LoadLibrary("use", 7U).initialized_modules == std::vector<std::string>{"libuse.so"});
+    CHECK(fixture.process->ApplicationModuleCount() == 2U);
+}
+
+TEST_CASE("native library system lookup precedes VFS and keeps the system filename spelling") {
+    using namespace ogplay;
+    FixtureProcess fixture;
+    const auto image = AppElf({"libBuNdLeD.so", "", std::nullopt});
+    const runtime::BionicModuleSource system[]{{"libBuNdLeD.so", image}};
+    fixture.filesystem.PutFile("/system/lib/libbundled.so", std::vector<std::byte>(4U), false);
+    fixture.filesystem.PutFile("/system/lib/libOpenSLES.so", std::vector<std::byte>(4U), false);
+    loader::ApkNativeLibraryInventory inventory{std::vector<loader::ApkNativeLibrary>{}};
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
+    runtime::NativeLibraryLoader libraries(*fixture.process, selected, runtime::SelectBionicProfile(19), system);
+    const auto loaded = libraries.LoadPath("/SYSTEM/LIB/LIBBUNDLED.SO", 7U);
+    CHECK(loaded.canonical_path == "/system/lib/libBuNdLeD.so");
+    CHECK(libraries.LoadLibrary("bundled", 7U).handle == loaded.handle);
+    CHECK(libraries.LoadPath("/system/lib/libopensles.so", 7U).canonical_path == "/system/lib/libOpenSLES.so");
 }

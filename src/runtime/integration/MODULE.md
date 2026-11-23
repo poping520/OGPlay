@@ -124,8 +124,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   ActivityManager 共用同一快照；不读取宿主内存或动态刷新，不改变 DexVM 堆配额。
 - `dl_unwind_find_exidx` 按 PC 查询 process-owned namespace 的实际 load range，返回所属模块
   经 load bias 重定位的 `PT_ARM_EXIDX` 地址与 8-byte 表项数；初始和动态模块共用 linker 锁。
-- libdl handle 表归 process。dlopen 复用已装载 basename/SONAME 身份；首次装载保留请求路径，
-  `/data/app-lib/` 使用所选 ABI APK，`/system/lib/` 使用 bundled 源，其他路径只走 guest VFS。
+- libdl handle 表归 process。dlopen 复用已装载 basename/SONAME 身份；首次装载保留来源拼写的 guest 路径，
+  `/data/app-lib/` 使用所选 ABI APK，`/system/lib/` 使用系统来源（bundled ELF 或 Virtual SO），其他路径只走 guest VFS。
   `/data/data/<包名>/lib` 是 `/data/app-lib` 的 VFS 别名（无 APK 原生库时也建立）；
   显式绝对路径先校验并解析 VFS 别名，再判定来源，别名与 APK 库共用模块身份及一次 JNI 初始化。
   普通库名查显式 APK/系统来源及 guest `/data/app-lib/`、`/vendor/lib/`、`/system/lib/`；不读宿主
@@ -142,8 +142,10 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   时临时切换记录页权限；Virtual SO 的 base/size/load_bias 为 0，符号指向真实 thunk/data。
   不提供完整私有 linker 状态或其他 API/ABI 布局，不接管模块、构造器或 JNI 初始化。
 - soinfo 仅投影名称、base/size/flags、符号/字符串/SysV hash、引用数及 link_map 地址/名称、load_bias（≤65536 导出、≤4 MiB）；不提供 phdr/dynamic/链表遍历、linker 写入或 debugger 协议，因为它只是当前进程的只读元数据视图。
-- NativeLibraryLoader 以 canonical path + ClassLoader token 维护唯一 Loading/Loaded/Failed
-  registry：同 loader 幂等、同线程递归返回现有 handle、跨 loader 拒绝、Failed 重试稳定失败。
+- NativeLibraryLoader 以 ASCII 折叠后的 canonical path 为登记键，ClassLoader token 管理归属，
+  维护唯一 Loading/Loaded/Failed registry：同 loader 幂等、同线程递归返回现有 handle、跨 loader 拒绝、Failed 重试稳定失败。
+  record/result 的 canonical_path、soname、模块名与 dladdr/proc maps 的路径保留来源拼写：
+  APK 使用 inventory，系统库使用目录规范名，VFS 文件使用节点 spelling；不存在时诊断保留请求拼写。
   app resolver 只用 selected-ABI inventory，basename 为身份，DT_SONAME 为受检别名；
   DT_NEEDED 可用二者，别名歧义、ET_DYN、依赖/重定位、constructor/JNI version 均受检。
   API 19 动态装载时，带路径的 DT_NEEDED 在精确查询未命中后可按文件名复用进程命名空间中已装载的库。
@@ -172,7 +174,12 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   的实例；Release 幂等并报告失败，析构兜底记录失败，不能掩盖原始启动异常。
   NativeActivity 的 LoadPath entry mode 不执行 JNI_OnLoad；随后 Java load 复用同一 registry
   和映射，并执行一次 OnLoad。不得启动 standalone NativeActivitySession 代替这个桥。
-- APK 未命中时仅查注入 bundled 系统库；未映射 Bionic source 持有副本，按 DT_NEEDED
+- Java 显式路径、逻辑库名与 native dlopen 共用系统库查询，按 ASCII 大小写不敏感匹配 bundled ELF
+  与当前 API 的 BoundaryCatalog，并返回来源的规范文件名。普通库名依次查 APK、系统来源、guest VFS；
+  解析别名后的直接 `/system/lib/` 路径先查系统来源再查 VFS，不以路径发布为虚拟库加载前提。
+  显式 Virtual SO 不解析 ELF/依赖闭包，以空 sources 扩展进程 namespace；Java、DT_NEEDED 与 dlopen
+  共用同一模块，既有 ClassLoader 规则不变，无 JNI_OnLoad 即成功，不增加 ApplicationModuleCount。
+  同名 APK ELF 仍拒绝。未映射 Bionic source 持有副本，按 DT_NEEDED
   可达性加入同一 namespace。map 事务完成后执行 constructor；registry mutex 不跨 guest
   call。只有显式 root 执行 JNI_OnLoad，不把 dependency 算作 Java load；module 持有至 Stop，
   按实际完成 constructor 的逆序 finalize，成功 load 记录 sequence/soname。

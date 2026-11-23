@@ -290,3 +290,81 @@ TEST_CASE("APS-10 native sources stay in selected ABI and retain constructor fau
     CHECK_THROWS(static_cast<void>(fixture.process->LoadApplicationModules("libfault.so", {})));
     CHECK(java.Records().empty());
 }
+
+TEST_CASE("native dlopen and Java virtual SO loads share a module in either order") {
+    using namespace ogplay;
+    FixtureProcess fixture;
+    loader::ApkNativeLibraryInventory inventory{std::vector<loader::ApkNativeLibrary>{}};
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
+    runtime::NativeLibraryLoader java(*fixture.process, selected, runtime::SelectBionicProfile(19), {});
+    runtime::NativeLibraryLoadResult loaded;
+    std::uint32_t handle{};
+    SUBCASE("Java first") {
+        loaded = java.LoadPath("/system/lib/libOpenSLES.so", 7U);
+        handle = NativeOpen(*fixture.process, "libOpenSLES.so");
+    }
+    SUBCASE("dlopen first") {
+        handle = NativeOpen(*fixture.process, "libOpenSLES.so");
+        CHECK(fixture.process->HasLoadedModule("libOpenSLES.so"));
+        CHECK(java.Records().empty());
+        loaded = java.LoadPath("/system/lib/libOpenSLES.so", 7U);
+    }
+    SUBCASE("mixed case dlopen first") {
+        handle = NativeOpen(*fixture.process, "/SYSTEM/LIB/LIBOPENSLES.SO");
+        loaded = java.LoadLibrary("OpenSLES", 7U);
+    }
+    REQUIRE(handle != 0U);
+    CHECK(NativeOpen(*fixture.process, "libOpenSLES.so") == handle);
+    CHECK(loaded.canonical_path == "/system/lib/libOpenSLES.so");
+    CHECK(fixture.process->LoadApplicationModules("libOpenSLES.so", {}).root_module_index == loaded.module_index);
+    CHECK(fixture.process->ApplicationModuleCount() == 0U);
+    CHECK(java.LoadPath("/SYSTEM/LIB/LIBOPENSLES.SO", 7U).handle == loaded.handle);
+    REQUIRE(java.Records().size() == 1U);
+    CHECK(java.Records()[0].jni_on_load_calls == 0U);
+    const auto access = fixture.process->GuestMemoryAccess();
+    constexpr char symbol[] = "slCreateEngine";
+    const auto name = access.allocate(sizeof(symbol));
+    access.write(name, std::as_bytes(std::span{symbol}));
+    const auto symbols = runtime::detail::BuildAndroidBoundarySymbols();
+    const runtime::BionicHleSymbolProvider provider(symbols);
+    CHECK(NativeDlCall(*fixture.process, "dlsym", {handle, name.Value(), 0U, 0U}) ==
+          provider.Lookup("libOpenSLES.so", symbol)->Value());
+    access.release(name, sizeof(symbol));
+}
+
+TEST_CASE("native VFS dladdr and proc maps retain file spelling without SONAME") {
+    using namespace ogplay;
+    FixtureProcess fixture;
+    auto image = AppElf({"libMiXeD.so", "", runtime::kJniVersion1_6});
+    Put32(image, 0x110U, 30U);  // Replace DT_SONAME with DT_FLAGS=0.
+    Put32(image, 0x114U, 0U);
+    fixture.filesystem.PutFile("/data/Files/libMiXeD.so", image, false);
+    loader::ApkNativeLibraryInventory inventory{std::vector<loader::ApkNativeLibrary>{}};
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
+    runtime::NativeLibraryLoader java(*fixture.process, selected);
+    REQUIRE(NativeOpen(*fixture.process, "/DATA/FILES/LIBMIXED.SO") != 0U);
+    const auto loaded = java.LoadPath("/data/files/libmixed.so", 7U);
+    CHECK(loaded.canonical_path == "/data/Files/libMiXeD.so");
+    CHECK(java.Records()[0].soname == "libMiXeD.so");
+    const auto access = fixture.process->GuestMemoryAccess();
+    const auto info = access.allocate(16U);
+    const auto address = fixture.process->FindModuleExport(loaded.module_index, "JNI_OnLoad");
+    REQUIRE(NativeDlCall(*fixture.process, "dladdr", {address.Value(), info.Value(), 0U, 0U}) == 1U);
+    const auto path = memory::GuestAddress{ReadNativeWord(*fixture.process, info)};
+    constexpr std::string_view expected = "/data/Files/libMiXeD.so";
+    std::vector<std::byte> bytes(expected.size() + 1U);
+    access.read(path, bytes);
+    CHECK(std::string(reinterpret_cast<const char*>(bytes.data())) == expected);
+    access.release(info, 16U);
+    const auto fd = fixture.filesystem.Open("/proc/self/maps", {.read = true});
+    std::string maps;
+    std::array<std::byte, 4096> chunk{};
+    for (;;) {
+        const auto count = fixture.filesystem.Read(fd, chunk);
+        if (!count) break;
+        maps.append(reinterpret_cast<const char*>(chunk.data()), count);
+    }
+    fixture.filesystem.Close(fd);
+    CHECK(maps.find(expected) != std::string::npos);
+    CHECK(maps.find("/data/files/libmixed.so") == std::string::npos);
+}

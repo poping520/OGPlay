@@ -313,6 +313,9 @@ public:
     // Returns the normalized node identity used internally by all VFS file
     // operations, including path aliases.
     [[nodiscard]] std::string CanonicalPath(std::string_view path) const;
+    // Returns an existing file node's published spelling after normal path
+    // resolution. Missing files throw ENOENT; directories throw EISDIR.
+    [[nodiscard]] std::string FileSpelling(std::string_view path) const;
     void SetApplicationOwner(std::string_view data_root, std::uint32_t uid);
     void SetLastModified(std::string_view path, std::int64_t millis);
     void Chmod(std::string_view path, std::uint32_t mode);

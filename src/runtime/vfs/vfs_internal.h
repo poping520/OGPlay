@@ -244,6 +244,9 @@ public:
     void SetWorkingDirectory(std::int32_t descriptor);
     [[nodiscard]] std::optional<std::string> WorkingDirectory() const;
     [[nodiscard]] std::string CanonicalPath(std::string_view path) const;
+    // Returns an existing file node's published spelling after normal path
+    // resolution. Missing files throw ENOENT; directories throw EISDIR.
+    [[nodiscard]] std::string FileSpelling(std::string_view path) const;
     [[nodiscard]] std::int32_t Open(std::string_view path, VfsOpenOptions options);
     [[nodiscard]] std::int32_t OpenDirectory(std::string_view path, bool large_file = false, bool no_follow = false);
     [[nodiscard]] std::vector<VfsDirectoryEntry> ReadDirectory(std::int32_t descriptor, std::size_t maximum);

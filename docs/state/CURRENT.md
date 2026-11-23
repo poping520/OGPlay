@@ -51,6 +51,7 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
 | Anomaly HD 1.18 | macOS | 越过 GCM 的设备检查、清单检查和注册调用，读取主 OBB，进入 GameActivity 的原生初始化，呈现 8,883 帧 | 90 秒库诊断 SIGINT 退出 0，未见新的阻断错误；GCM 后首条错误日志为 Bionic 缺 tzdata，运行继续；菜单 AudioTrack 周期欠载爆音已修；画面与交互待验 | — |
 | Horn 1.3.2.7 | macOS | Play 授权弹框消失，启动阶段持续呈现；60 秒 2,921 帧，SIGINT 退出 0 | 后续画面/交互未验；该 APK 的首次授权检查已恒允许，弹框来自 ShowSplash 的诱饵公钥二次校验 | — |
 | Mass Effect Infiltrator 1.0.58（mod） | macOS | 原 APK 用既有数据越过路径型 `DT_NEEDED`、FreeType 和 EA Text 字体选择，Release 呈现 180 帧并按上限退出 0 | 180 帧后的进度与交互待验证 | — |
+| N.O.V.A. 3 | macOS | 原 `libOpenSLES.so` 显式加载错误消失，`libNOVA3_neon.so` 已加载并完成 JNI_OnLoad；日志到达 GameInstaller，60 秒 7 帧，SIGINT 退出 0 | 下一阻断首错未触发；加载后首个能力缺口为 `exec("ls")` 未注册命令（警告后继续）；安装器后续与游戏内未验 | — |
 
 ## 未闭合问题
 

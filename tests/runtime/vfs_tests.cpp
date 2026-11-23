@@ -1576,3 +1576,28 @@ TEST_CASE("ADR-0146 VFS reports read lookups that find or miss, never creates") 
     CHECK(seen == std::vector<std::string>{"-/sdcard/a.bin", "-/sdcard/b.bin", "-/sdcard/dir", "+/sdcard/present.bin",
                                            "+/sdcard/present.bin"});
 }
+
+TEST_CASE("VFS file spelling resolves aliases case and parent components without changing identity") {
+    using namespace ogplay::runtime;
+    VirtualFileSystem vfs;
+    const std::array contents{std::byte{0x41}};
+    vfs.PutFile("/data/Files/libMiXeD.so", contents, false);
+    vfs.PutFile("/data/Files/Sub/marker", contents, false);
+    vfs.AddPathAlias("/alias", "/data/Files");
+    for (const auto path :
+         {"/data/Files/libMiXeD.so", "/DATA/FILES/LIBMIXED.SO", "/ALIAS/libmixed.so", "/alias/Sub/../libmixed.so"}) {
+        CHECK(vfs.FileSpelling(path) == "/data/Files/libMiXeD.so");
+        CHECK(vfs.CanonicalPath(path) == "/data/files/libmixed.so");
+    }
+    vfs.SetWorkingDirectory("/alias/Sub");
+    CHECK(vfs.FileSpelling("../libmixed.so") == "/data/Files/libMiXeD.so");
+    for (const auto path : {"/alias/libAbsent.so", "/alias/Missing/../libmixed.so"}) {
+        try {
+            static_cast<void>(vfs.FileSpelling(path));
+            FAIL("missing file or parent must fail");
+        } catch (const VfsError& error) {
+            CHECK(error.ErrorNumber() == 2);
+        }
+    }
+    CHECK_THROWS_AS(static_cast<void>(vfs.FileSpelling("/alias")), VfsError);
+}

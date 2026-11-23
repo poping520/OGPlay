@@ -251,6 +251,58 @@ TEST_CASE("conditional swap pacing waits for frame when driver is runnable") {
     DetachEglSwapPacer(context, vm.interpreter.ExecutionLock());
 }
 
+TEST_CASE("native swap of a Java window producer completes its display frame") {
+    MonitorVm vm;
+    DexVmAndroidContext context;
+    auto& lock = vm.interpreter.ExecutionLock();
+    AttachEglSwapPacer(context, lock);
+    constexpr std::uint32_t kSurface = 3;
+    std::atomic<bool> rendering{}, may_swap{}, swapped{}, may_swap_again{};
+    std::atomic<bool> stranger_paced{true}, other_paced{true}, paced{}, blocked_paced{true};
+
+    std::thread worker([&] {
+        // Native-only EGL threads keep their own frame cap.
+        stranger_paced = PaceNativeEglSwap(context, lock, kSurface);
+        {
+            std::scoped_lock guard(context.egl.pace_mutex);
+            context.egl.producers[std::this_thread::get_id()] = {false, false, 7, 9, kSurface};
+        }
+        other_paced = PaceNativeEglSwap(context, lock, kSurface + 1);
+        rendering = true;
+        while (!may_swap)
+            std::this_thread::yield();
+        paced = PaceNativeEglSwap(context, lock, kSurface);
+        swapped = true;
+        while (!may_swap_again)
+            std::this_thread::yield();
+        blocked_paced = PaceNativeEglSwap(context, lock, kSurface);
+    });
+    CHECK(WaitFor([&] { return rendering.load(); }));
+    CHECK_FALSE(stranger_paced.load());
+    CHECK_FALSE(other_paced.load());
+    // Still producing: the display frame has to wait for the swap.
+    CHECK_FALSE(EglProducersSettled(context, false));
+    may_swap = true;
+    CHECK(WaitFor([&] { return EglProducersSettled(context, false); }));
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    CHECK_FALSE(swapped.load());
+    AdvanceEglSwapPacer(context);
+    CHECK(WaitFor([&] { return swapped.load(); }));
+    CHECK(paced.load());
+    CHECK_FALSE(EglProducersSettled(context, false));
+    {
+        // A blocked driver cannot advance the frame, so the swap must not depend on it.
+        std::scoped_lock guard(context.egl.pace_mutex);
+        context.egl.pace_driver_blocked = true;
+    }
+    may_swap_again = true;
+    const bool exited = WaitFor([&] { return !blocked_paced.load(); });
+    CHECK(exited);
+    if (!exited) ShutdownEglSwapPacer(context);
+    worker.join();
+    DetachEglSwapPacer(context, lock);
+}
+
 TEST_CASE("dexvm wait restores the full recursion depth before returning") {
     MonitorVm vm;
     vm.UseTestClock();

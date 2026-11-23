@@ -146,6 +146,9 @@ struct AndroidSurfaceHooks final {
     void (*publish)(void*, memory::GuestAddress, std::shared_ptr<video::VideoFrame>){};
     // Successful window swap only. Carries holder identity; must not acquire the VM lock.
     void (*buffer_queued)(void*, memory::GuestAddress){};
+    // Successful guest-code window swap on the calling host thread. May block until the next
+    // display frame, so it runs with no boundary lock held. False leaves pacing to the frame cap.
+    bool (*pace_swap)(void*, std::uint32_t surface){};
 };
 
 struct AndroidLooperHooks final {

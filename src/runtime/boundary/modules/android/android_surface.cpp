@@ -258,6 +258,16 @@ void AndroidModule::NotifySurfaceBufferQueued(memory::GuestAddress window, const
         surface_hooks_.buffer_queued(surface_hooks_.owner, expected.identity);
 }
 
+bool AndroidModule::PaceWindowSwap(std::uint32_t surface) {
+    AndroidSurfaceHooks hooks;
+    {
+        std::scoped_lock publish(surface_publish_mutex_);
+        hooks = surface_hooks_;
+    }
+    // The wait must not hold back window retirement or another producer's pixels.
+    return hooks.pace_swap && hooks.pace_swap(hooks.owner, surface);
+}
+
 bool AndroidModule::PublishSurfacePixels(memory::GuestAddress window, const AndroidSurfaceWindow& expected,
                                          std::shared_ptr<video::VideoFrame> pixels) {
     std::scoped_lock publish(surface_publish_mutex_);

@@ -46,6 +46,7 @@ struct EglBoundaryContext final {
                                    std::shared_ptr<video::VideoFrame>){};
     bool (*connect_window)(void*, memory::GuestAddress, const AndroidSurfaceWindow&){};
     void (*disconnect_window)(void*, memory::GuestAddress, const AndroidSurfaceWindow&){};
+    bool (*pace_window_swap)(void*, std::uint32_t surface){};
     std::uint64_t frame_period_ns{};
     // Realtime sessions may publish window swaps from fenced PBO readback; manual stepping keeps
     // the synchronous readback so each step composes the frame it produced.

@@ -48,8 +48,9 @@ EGL window surface 通过同源窗口 hook 持有 holder 代际的生产者连�
 发布及 queue 通知复核 swap 捕获的窗口代次，尺寸变化不使已出队的旧尺寸 buffer 失效。
 普通 standalone/NativeActivity 无 holder 时继续使用 FrameService。
 
-`AndroidBoundaryOptions::frame_period_ns` 非零时，guest 代码发起且成功的 window swap 在帧发布并释放模块锁后，
-按该 surface 自己的 `hal::FramePacer` 等到槽位再返回，相当于真机等下一空闲 buffer；pbuffer、失败 swap 与
+guest 代码发起且成功的 window swap 在帧发布并释放全部模块锁后，先询问显式 `AndroidSurfaceHooks::pace_swap`：
+上层把该 swap 计入登记生产者的显示帧时由它等待，不再套用帧率上限。未处理时，
+`AndroidBoundaryOptions::frame_period_ns` 非零则按该 surface 自己的 `hal::FramePacer` 等到槽位再返回，相当于真机等下一空闲 buffer；pbuffer、失败 swap 与
 宿主构造的调用帧（`A32CallFrame::HostInvoked`，即 Java EGL 外观，已由生命周期帧节拍）不等待。
 
 window swap 成功后经显式 native-window 身份回调通知 buffer queued；创建 surface、

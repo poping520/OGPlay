@@ -1659,15 +1659,26 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
     throw std::logic_error("unbound concrete libEGL export");
 }
 
-// The frame-rate cap waits after a successful swap has published its frame and released every
-// module lock, like a real swap blocking for the next free buffer.
+// Pacing waits after a successful swap has published its frame and released every module lock,
+// like a real swap blocking for the next free buffer.
 void EglModule::PaceWindowSwap(const A32CallFrame& call) {
     // Managed (Java) facades already swap once per lifecycle frame, which the host loop paces.
-    if (context_.frame_period_ns == 0 || call.HostInvoked()) return;
+    if (call.HostInvoked()) return;
+    const auto surface = call.Argument(1);
+    if (context_.pace_window_swap) {
+        {
+            std::scoped_lock lock(mutex_);
+            const auto found = surfaces_.find(surface);
+            if (found == surfaces_.end() || found->second.kind != SurfaceKind::window) return;
+        }
+        // A Java producer that swaps natively completes the same lifecycle frame.
+        if (context_.pace_window_swap(context_.native_window_owner, surface)) return;
+    }
+    if (context_.frame_period_ns == 0) return;
     std::uint64_t wait{};
     {
         std::scoped_lock lock(mutex_);
-        const auto found = surfaces_.find(call.Argument(1));
+        const auto found = surfaces_.find(surface);
         if (found == surfaces_.end() || found->second.kind != SurfaceKind::window) return;
         auto& pacer = found->second.pacer;
         if (pacer.PeriodNs() == 0) pacer = hal::FramePacer{context_.frame_period_ns};

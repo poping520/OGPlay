@@ -134,6 +134,9 @@ public:
                        +[](void* owner, memory::GuestAddress window, const AndroidSurfaceWindow& geometry) {
                            static_cast<Impl*>(owner)->android_module_.DisconnectEglWindow(window, geometry);
                        },
+                       +[](void* owner, std::uint32_t surface) {
+                           return static_cast<Impl*>(owner)->android_module_.PaceWindowSwap(surface);
+                       },
                        options.frame_period_ns,
                        options.async_present_readback},
           android_module_(call_services_, android_services_, options.loopers, options.logger, options.ledger,

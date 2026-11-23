@@ -958,8 +958,13 @@ struct EglSwapPacerSnapshot final {
 // Permanently invalidates the Java EGL facade and releases any guest swap
 // pacer wait. Used only when process teardown begins.
 void RetireGuestEglSurface(DexVmAndroidContext& context);
-void PaceEglSwap(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock, std::uint64_t native_thread = 0,
+// Waits for the next display frame. False when pacing is off or the driver itself is blocked.
+bool PaceEglSwap(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock, std::uint64_t native_thread = 0,
                  std::uint32_t window_surface = 0, std::uint64_t context_token = 0);
+// A swap made by guest code on the calling thread. Waits like the Java swap when the thread is
+// the registered Java producer of this window surface; any other swap returns false at once.
+bool PaceNativeEglSwap(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock,
+                       std::uint32_t window_surface);
 
 // Owner-thread helpers; video state is shared with the existing video/PCM pump.
 [[nodiscard]] bool PrepareAndroidMediaVideo(DexVmAndroidContext& context, std::uint32_t owner);

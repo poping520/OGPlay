@@ -251,6 +251,61 @@ TEST_CASE("frame-rate cap holds guest window swaps to the period but not managed
     CHECK(now() - managed < kPeriodNs);
 }
 
+TEST_CASE("guest window swaps offer pacing to the session before the frame-rate cap") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    constexpr std::uint64_t kPeriodNs = 40'000'000U;
+    BoundaryFixture fixture(1, nullptr, {}, true, {}, false, ogplay::gles::CompressedTextureFamily::all, kPeriodNs);
+
+    struct Pacing {
+        BoundaryFixture& fixture;
+        std::vector<std::uint32_t> surfaces;
+        std::vector<std::future<void>> others{};
+        bool handled{true};
+        bool unlocked{true};
+    } pacing{fixture, {}};
+
+    fixture.boundary.SetSurfaceHooks(
+        {.owner = &pacing, .pace_swap = +[](void* owner, const std::uint32_t surface) {
+             auto& state = *static_cast<Pacing*>(owner);
+             state.surfaces.push_back(surface);
+             // Another thread must be able to use EGL and the window while this swap waits.
+             state.others.push_back(std::async(std::launch::async, [&state] {
+                 static_cast<void>(
+                     state.fixture.boundary.InvokeManagedEgl("eglDestroyContext", std::array{0U, 0U}, 2U));
+                 state.fixture.boundary.UpdateSurfaceWindow({ogplay::memory::GuestAddress{0x1234}, 2, 2});
+             }));
+             state.unlocked =
+                 state.unlocked && state.others.back().wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+             return state.handled;
+         }});
+    PrepareNativeEgl(fixture);
+    REQUIRE(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 3, 3, 4}) == 1U);
+    const auto now = [] { return ogplay::hal::Clock::SteadyTimestampNs(); };
+    const auto swap = [&](unsigned count) {
+        const auto begin = now();
+        for (unsigned i = 0; i < count; ++i)
+            REQUIRE(fixture.Call("libEGL.so", "eglSwapBuffers", {1, 3}) == 1U);
+        return now() - begin;
+    };
+    swap(4);
+    CHECK(pacing.surfaces == std::vector<std::uint32_t>(4, 3U));
+    CHECK(pacing.unlocked);
+    // A handled swap is not held a second time, so the cap has not started counting yet.
+    pacing.handled = false;
+    swap(1);
+    CHECK(swap(2) >= 2U * kPeriodNs - 2'000'000U);
+    CHECK(pacing.surfaces.size() == 7U);
+    // Managed facades pace themselves, and a failed swap publishes no frame to pace.
+    REQUIRE(fixture.boundary.InvokeManagedEgl("eglSwapBuffers", std::array{1U, 3U}, 1U) == 1U);
+    CHECK(fixture.Call("libEGL.so", "eglSwapBuffers", {1, 99}) == 0U);
+    const auto pbuffer = fixture.Call("libEGL.so", "eglCreatePbufferSurface", {1, 2, 0});
+    if (pbuffer != 0U && fixture.Call("libEGL.so", "eglMakeCurrent", {1, pbuffer, pbuffer, 4}) == 1U)
+        CHECK(fixture.Call("libEGL.so", "eglSwapBuffers", {1, pbuffer}) == 1U);
+    CHECK(pacing.surfaces.size() == 7U);
+    fixture.boundary.SetSurfaceHooks({});
+    CHECK(fixture.Call("libEGL.so", "eglMakeCurrent", {1, 0, 0, 0}) == 1U);
+}
+
 TEST_CASE("API19 NDK window CPU lock publishes packed pixels and excludes EGL") {
     using namespace ogplay;
     BoundaryFixture f;

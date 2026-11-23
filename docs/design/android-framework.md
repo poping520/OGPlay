@@ -228,7 +228,7 @@ Handler、MessageQueue 与 Choreographer 保留消息排序、同步屏障和动
 其时间戳与 System.nanoTime 使用同一 Clock。
 理由见[帧源决定](../adr/session.md#adr-0165)：独立宿主定时线程会引入第二个动画时间基。
 
-session 在推进下一步前等待登记的 Java EGL 生产者完成 swap、进入可观测阻塞或解绑退出；
+session 在推进下一步前等待登记的 Java EGL 生产者完成 swap（Java 调用或其 native 方法里的直接调用）、进入可观测阻塞或解绑退出；
 手动步进期间 Clock 停住，实时步进期间 uptime 仍跟随宿主时间，以免生产者在 native 里轮询时间时与步进互等。
 等待不持 VM 锁，主线程生命周期阻塞时允许 GL 完成必要握手，
 避免双方互相等帧。双向同步的具体边界见

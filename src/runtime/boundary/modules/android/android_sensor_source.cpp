@@ -38,7 +38,10 @@ public:
         const auto sensor = std::ranges::find(sensors, handle, &AndroidSensor::handle);
         if (sensor == sensors.end() || period_us < 0) return false;
         if (active_.contains(handle)) return SetPeriod(handle, period_us);
-        active_.emplace(handle, Subscription{&*sensor, clock_(), Period(*sensor, period_us)});
+        // Activation never yields a sample by itself: a continuous sensor
+        // reports first at its next sampling point, one period later.
+        const auto period = Period(*sensor, period_us);
+        active_.emplace(handle, Subscription{&*sensor, clock_() + period, period});
         return true;
     }
 
@@ -54,8 +57,9 @@ public:
         const auto found = active_.find(handle);
         if (found == active_.end() || period_us < 0) return false;
         auto& entry = found->second;
-        if (entry.emitted) entry.next = entry.next - entry.period + Period(*entry.sensor, period_us);
-        entry.period = Period(*entry.sensor, period_us);
+        const auto period = Period(*entry.sensor, period_us);
+        entry.next += period - entry.period;
+        entry.period = period;
         return true;
     }
 
@@ -89,7 +93,6 @@ private:
     struct Subscription {
         const AndroidSensor* sensor;
         std::int64_t next, period;
-        bool emitted{};
     };
 
     static std::int64_t Period(const AndroidSensor& sensor, std::int32_t period_us) {
@@ -101,7 +104,7 @@ private:
         const auto now = clock_();
         for (auto& [_, entry] : active_) {
             // Drop old samples after a long idle period, preserving phase.
-            if (entry.emitted && now > entry.next && (now - entry.next) / entry.period >= kBacklog)
+            if (now > entry.next && (now - entry.next) / entry.period >= kBacklog)
                 entry.next += ((now - entry.next) / entry.period - (kBacklog - 1)) * entry.period;
         }
         while (pending_.size() < kBacklog && !active_.empty()) {
@@ -111,7 +114,6 @@ private:
             if (timestamp > now) break;
             pending_.push_back(StaticSample(*entry.sensor, timestamp));
             last_timestamp_ = timestamp;
-            entry.emitted = true;
             entry.next += entry.period;
         }
     }

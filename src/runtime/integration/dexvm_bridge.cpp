@@ -1995,7 +1995,12 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
                  const bool opaque = context->rom_windows->system.OpaqueFormat(id);
                  context->rom_windows->system.Post(id, std::move(pixels), false, opaque, false, true);
              },
-             {}});
+             {},
+             +[](void* owner, std::uint32_t surface) {
+                 auto& impl = *static_cast<Impl*>(owner);
+                 return impl.android_context &&
+                        PaceNativeEglSwap(*impl.android_context, impl.vm->ExecutionLock(), surface);
+             }});
         session.Process().SetAssetManagerHooks(
             {bridge_state,
              +[](void* owner, std::uint64_t thread, memory::GuestAddress env, AssetManagerJavaReference ref) {

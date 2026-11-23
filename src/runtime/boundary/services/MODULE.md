@@ -19,6 +19,8 @@ GLES2/3 浮点纹理扩展按当前 ANGLE 上下文的完整扩展 token 条件�
 浮点颜色附件支持；GLES1 保持独立固定管线扩展范围。
 `GL_OES_packed_depth_stencil` 也按当前原生完整 token 发布，D24S8 storage/双附件
 与 framebuffer status 仍直接使用 ANGLE 的真实结果。
+`GL_OES_depth_texture` 同样按当前原生完整 token 发布，深度纹理的 storage、附件与采样
+直接使用 ANGLE 的真实结果，GLES1 不发布该扩展。
 
 GLES2 混合 client 属性与 element Buffer 绘制按实际 Buffer 的索引区间回读并计算最大索引，
 再预检/暂存 guest 属性；索引 offset 不解释为 guest 地址。临时 array binding 在成功与

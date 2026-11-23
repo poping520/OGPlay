@@ -152,6 +152,8 @@ TEST_CASE("Static motion sensor events follow the supplied Clock and wake the ND
     const auto queue = s.queue(manager, s.call("ALooper_prepare", {1}), false);
     CHECK(s.call("ASensorEventQueue_enableSensor", {queue, sensor}) == 0);
     CHECK(s.call("ASensorEventQueue_setEventRate", {queue, sensor, 100}) == 0);
+    CHECK(std::bit_cast<std::int32_t>(s.call("ALooper_pollOnce")) == -3);  // activation alone yields no sample
+    now += 5'000'000;
     CHECK(s.call("ALooper_pollOnce") == 2);
     CHECK(s.call("ASensorEventQueue_getEvents", {queue, s.f.output.Value(), 4}) == 1);
     now += 15'000'000;
@@ -166,4 +168,48 @@ TEST_CASE("Static motion sensor events follow the supplied Clock and wake the ND
     CHECK(s.call("ASensorEventQueue_disableSensor", {queue, sensor}) == 0);
     now += 1'000'000'000;
     CHECK(std::bit_cast<std::int32_t>(s.call("ALooper_pollOnce")) == -3);
+}
+
+TEST_CASE("Static sensor streams report first one sampling period after activation") {
+    const auto directory = runtime::StaticAndroidSensorDirectory();
+    std::int64_t now = 60'000'000'000;
+    const auto source = runtime::MakeStaticAndroidSensorSource(directory, [&] { return now; });
+    const auto stream = source->OpenStream();
+    std::array<runtime::AndroidSensorSample, 8> samples;
+    const auto first_timestamp = [&](std::int64_t at) {
+        now = at - 1;
+        CHECK_FALSE(stream->HasEvents());
+        CHECK(stream->Read(samples) == 0);
+        now = at;
+        REQUIRE(stream->Read(samples) == 1);
+        return samples[0].timestamp;
+    };
+    const auto enabled = now;
+    REQUIRE(stream->Enable(1, 20'000));
+    CHECK_FALSE(stream->HasEvents());
+    SUBCASE("requested period") {
+        CHECK(first_timestamp(enabled + 20'000'000) == enabled + 20'000'000);
+    }
+    SUBCASE("period shortened before the first sample") {
+        now += 2'000'000;
+        REQUIRE(stream->SetPeriod(1, 10'000));
+        CHECK(first_timestamp(enabled + 10'000'000) == enabled + 10'000'000);
+    }
+    SUBCASE("period lengthened through a repeated enable") {
+        now += 2'000'000;
+        REQUIRE(stream->Enable(1, 40'000));
+        CHECK(first_timestamp(enabled + 40'000'000) == enabled + 40'000'000);
+    }
+    SUBCASE("reactivation starts a new period") {
+        now += 19'000'000;
+        REQUIRE(stream->Disable(1));
+        now += 100'000'000;
+        const auto again = now;
+        REQUIRE(stream->Enable(1, 20'000));
+        CHECK(first_timestamp(again + 20'000'000) == again + 20'000'000);
+    }
+    SUBCASE("sampling continues in phase after the first sample") {
+        CHECK(first_timestamp(enabled + 20'000'000) == enabled + 20'000'000);
+        CHECK(first_timestamp(enabled + 40'000'000) == enabled + 40'000'000);
+    }
 }

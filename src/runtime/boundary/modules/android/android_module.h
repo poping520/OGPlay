@@ -26,6 +26,7 @@ public:
                   core::Logger* logger = nullptr, core::CapabilityLedger* ledger = nullptr, AndroidObbHooks obb = {});
     ~AndroidModule();
     void SetSurfaceHooks(AndroidSurfaceHooks hooks);
+    bool PaceWindowSwap(std::uint32_t surface);
     void NotifySurfaceBufferQueued(memory::GuestAddress window, const AndroidSurfaceWindow& expected);
     void RetireSurfaceWindow(memory::GuestAddress identity);
     memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface);

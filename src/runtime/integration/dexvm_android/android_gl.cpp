@@ -1160,7 +1160,7 @@ void RetireGuestEglSurface(DexVmAndroidContext& context) {
     ShutdownEglSwapPacer(context);
 }
 
-void PaceEglSwap(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock, std::uint64_t native_thread,
+bool PaceEglSwap(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock, std::uint64_t native_thread,
                  std::uint32_t window_surface, std::uint64_t context_token) {
     auto& egl = context.egl;
     const auto thread = std::this_thread::get_id();
@@ -1170,7 +1170,7 @@ void PaceEglSwap(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution
         if (const auto it = egl.producers.find(thread); it != egl.producers.end()) it->second.wait_timed_out = false;
         if (!egl.pace_driver.has_value() || *egl.pace_driver == thread || egl.pace_driver_blocked ||
             egl.pace_shutdown) {
-            return;
+            return false;
         }
         observed = egl.pace_generation;
         if (native_thread) {
@@ -1193,6 +1193,20 @@ void PaceEglSwap(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution
         throw;
     }
     execution_lock.ReacquireAfterBlocking(depth, false);
+    return true;
+}
+
+bool PaceNativeEglSwap(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock,
+                       std::uint32_t window_surface) {
+    std::uint64_t native_thread{}, context_token{};
+    {
+        std::scoped_lock lock(context.egl.pace_mutex);
+        const auto it = context.egl.producers.find(std::this_thread::get_id());
+        if (it == context.egl.producers.end() || it->second.window_surface != window_surface) return false;
+        native_thread = it->second.native_thread;
+        context_token = it->second.context_token;
+    }
+    return PaceEglSwap(context, execution_lock, native_thread, window_surface, context_token);
 }
 
 }  // namespace ogplay::runtime

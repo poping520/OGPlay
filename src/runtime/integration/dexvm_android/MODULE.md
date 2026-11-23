@@ -303,7 +303,9 @@ SurfaceTexture 继续使用 SurfaceStream。底层保留独立的 EGL 错误和 
 或进入执行锁观察到的真实阻塞、解绑、退役或退出。线程运行时等待状态补齐解除阻塞通知到重新取得 VM 锁之间的窗口，不能将排队取得锁误认为仍在渲染。JNI 渲染与 swap 的图形读回虽释放 VM 锁，仍算生产中；JNI 内的 futex waiter 为明确阻塞。Java 线程退出即退役其生产者；
 pacer 自身的等待也不作为普通 guest 阻塞。主线程进入 guest 等待时解除 swap 节流，避免
 生命周期等待 GLThread 的反向依赖；队列正常空闲不解除节流。WHEN_DIRTY 的 monitor.wait
-允许继续步进。原生 EGL 边界线程沿自身 FramePacer；原生拥有的 JNI 附着线程调用 EGL 时保留原有单向 pacer，均不纳入 Java 线程的双向同步，避免其进程级循环反向依赖 Clock。只有活的 EGL window surface 登记生产者，pbuffer 不参与帧等待。
+允许继续步进。登记的 Java 生产者也可在 native 方法中直接调用 `eglSwapBuffers`（游戏常跳过 Java swap）：
+同一宿主线程对登记 surface 的成功原生 swap 与 Java swap 等价，计为该帧完成并等待下一次放行；节流未生效时改用帧率上限。
+未登记的原生 EGL 边界线程沿自身 FramePacer；原生拥有的 JNI 附着线程调用 EGL 时保留原有单向 pacer，均不纳入 Java 线程的双向同步，避免其进程级循环反向依赖 Clock。只有活的 EGL window surface 登记生产者，pbuffer 不参与帧等待。
 等待生产者时不持 VM 锁。到达等待预算后，按生产者记录一次等待时长并放行 Clock，
 该生产者在下一次 swap 或可观测阻塞后重新参与双向同步。
 

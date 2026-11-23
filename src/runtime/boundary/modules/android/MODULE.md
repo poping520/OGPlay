@@ -58,7 +58,8 @@ memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，
 
 - Java/NDK 共享会话注入的不可变 AndroidSensorDirectory 和 AndroidSensorSource。目录发布 API19
   传感器描述，数据源为每个客户端创建按 handle 启停和设定采样周期的订阅。桌面数据源使用统一 Clock，
-  以固定朝北平放姿态产出时间有序的运动样本。
+  以固定朝北平放姿态产出时间有序的运动样本。启用本身不产出样本，首个样本在满一个采样周期后
+  到达，首样本前改周期按启用时刻重算（API 19 SensorService 不为连续传感器补发最近值）。
 - ASensorManager 是进程 opaque token。列表、ASensor token 与字符串在 guest 只读内存中稳定，
   缺席类型返回 null，非法句柄和无效输出地址明确失败。
 - Java 和 NDK 队列使用可读 VFS pipe 唤醒 Looper。NDK 可用 ident 或 guest callback，Java fd

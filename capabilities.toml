@@ -1971,8 +1971,8 @@ note = "Manifest service 保存名称、启用、exported、process、permission
 
 [dexvm.google_play_environment]
 status = "complete"
-test = "tests/dexvm/android_component_services_tests.cpp#Play licensing bind answers an invalid license response; tests/dexvm/android_component_services_tests.cpp#Google Play billing services resolve bind and return unavailable through Parcel; tests/dexvm/android_package_metadata_tests.cpp#PackageManager exposes user-disabled system package metadata through ROM; tests/dexvm/rom_activity_service_tests.cpp#Google Play market links resolve and launch without changing the Activity stack; tests/frontend/gui_launch_tests.cpp#GUI passes the Google Play switch only when the game turns it off"
-note = "google_play 默认开启：发布启用的 vending 与用户停用的 gsf，GMS 始终缺席；LVL 异步固定失败 999，IAB v3 事务 1–5/v2 sendBillingRequest 同步返回计费不可用 3。查询与显式/隐式绑定共用组件表，连接按组件共享并在最后解绑释放。market 链接可解析且静默启动；关闭后包/服务/商店链接缺席。无 Google 账户、真实授权、购买、推送或证书。"
+test = "tests/dexvm/android_component_services_tests.cpp#Play licensing bind answers SDK server contact failure; tests/dexvm/android_component_services_tests.cpp#Google Play billing services resolve bind and return unavailable through Parcel; tests/dexvm/android_package_metadata_tests.cpp#PackageManager exposes user-disabled system package metadata through ROM; tests/dexvm/rom_activity_service_tests.cpp#Google Play market links resolve and launch without changing the Activity stack; tests/frontend/gui_launch_tests.cpp#GUI passes the Google Play switch only when the game turns it off"
+note = "google_play 默认开启：发布启用的 vending 与用户停用的 gsf，GMS 始终缺席；LVL 异步固定返回标准 ERROR_CONTACTING_SERVER（257），客户端进入 RETRY 策略，IAB v3 事务 1–5/v2 sendBillingRequest 同步返回计费不可用 3。查询与显式/隐式绑定共用组件表，连接按组件共享并在最后解绑释放。market 链接可解析且静默启动；关闭后包/服务/商店链接缺席。无 Google 账户、真实授权、购买、推送或证书。"
 
 [dexvm.permission_info]
 status = "partial"

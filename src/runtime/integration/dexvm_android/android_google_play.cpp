@@ -29,9 +29,15 @@ constexpr GooglePlayService kServices[]{
 constexpr auto kPlayLicensingAction = "com.android.vending.licensing.ILicensingService";
 constexpr auto kPlayLicensingListener = "com.android.vending.licensing.ILicenseResultListener";
 constexpr auto kBinderTransactSignature = "(ILandroid/os/Parcel;Landroid/os/Parcel;I)Z";
-// Not a Play response code: the client's validator treats it as an invalid
-// response and takes its normal dontAllow path without a signature check.
-constexpr std::int32_t kPlayLicensingInvalidResponse = 999;
+// LVL SDK LicenseValidator.java server response codes (distinct from Policy.*):
+//   0x000 (0): LICENSED; 0x001 (1): NOT_LICENSED; 0x002 (2): LICENSED_OLD_KEY.
+//   0x003 (3): ERROR_NOT_MARKET_MANAGED; 0x004 (4): ERROR_SERVER_FAILURE.
+//   0x005 (5): ERROR_OVER_QUOTA; 0x101 (257): ERROR_CONTACTING_SERVER.
+//   0x102 (258): ERROR_INVALID_PACKAGE_NAME; 0x103 (259): ERROR_NON_MATCHING_UID.
+// The offline service cannot contact the licensing server. The SDK skips
+// signature verification for this error and passes Policy.RETRY to its policy.
+// Responses 0, 1 and 2 require signed data, including NOT_LICENSED.
+constexpr std::int32_t kPlayLicensingErrorContactingServer = 0x101;
 
 dx::VmValue CallBinderOnTransact(dx::IntrinsicContext& call) {
     auto& vm = call.vm;
@@ -185,8 +191,8 @@ Decl Declare_local_PlayLicensingResponse_Class(const Context&) {
             const auto token = vm.NewStringUtf8(kPlayLicensingListener);
             static_cast<void>(CallAndroidMethod(vm, parcel, "writeInterfaceToken", "(Ljava/lang/String;)V",
                                                 {dx::VmValue::Ref(token)}));
-            static_cast<void>(
-                CallAndroidMethod(vm, parcel, "writeInt", "(I)V", {dx::VmValue::Int(kPlayLicensingInvalidResponse)}));
+            static_cast<void>(CallAndroidMethod(vm, parcel, "writeInt", "(I)V",
+                                                {dx::VmValue::Int(kPlayLicensingErrorContactingServer)}));
             const auto empty = vm.NewStringUtf8("");
             const auto empty_root = vm.ProtectReferences(std::array{empty});
             static_cast<void>(
@@ -200,7 +206,7 @@ Decl Declare_local_PlayLicensingResponse_Class(const Context&) {
                 logger->Write(
                     delivered.AsInt() ? core::LogLevel::info : core::LogLevel::warn, "runtime.android.play_licensing",
                     delivered.AsInt() ? "delivered fixed LVL failure response" : "LVL listener declined response", {},
-                    {{"response_code", std::to_string(kPlayLicensingInvalidResponse)}},
+                    {{"response_code", std::to_string(kPlayLicensingErrorContactingServer)}},
                     {.mode = core::RateLimitMode::first_and_count});
             }
         } catch (const dx::VmJavaThrow& error) {

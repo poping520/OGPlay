@@ -297,6 +297,7 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
     loader::ApkNativeLibraryInventory inventory(std::move(application_libraries));
     loader::ApkSelectedNativeLibraries selected(inventory, loader::AndroidArmAbi::armeabi_v7a);
     runtime::NativeLibraryLoader native_libraries(session->Process(), selected, bionic, system_sources, &logger);
+    native_libraries.PublishSystemLibraries();
     context->session = session.get();
     context->vfs = &vfs;
     context->native_libraries = &native_libraries;

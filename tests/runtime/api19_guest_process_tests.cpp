@@ -135,12 +135,9 @@ TEST_CASE("API 19 guest process serializes one validated OGPlay environment") {
         entries.push_back(ReadCString(
             address_space, ogplay::memory::GuestAddress{pointer}));
     }
-    CHECK(entries == std::vector<std::string>{
-                         "PATH=/sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin",
-                         "ANDROID_ROOT=/system",
-                         "ANDROID_DATA=/data",
-                         "TZ=UTC",
-                         "EXTERNAL_STORAGE=/storage/emulated/0"});
+    CHECK(entries == std::vector<std::string>{"PATH=/sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin",
+                                              "LD_LIBRARY_PATH=/vendor/lib:/system/lib", "ANDROID_ROOT=/system",
+                                              "ANDROID_DATA=/data", "TZ=UTC", "EXTERNAL_STORAGE=/storage/emulated/0"});
     CHECK_FALSE(environment.Find("HOME").has_value());
     REQUIRE(environment.Find("EXTERNAL_STORAGE").has_value());
     CHECK(*environment.Find("EXTERNAL_STORAGE") == "/storage/emulated/0");

@@ -180,6 +180,11 @@ global reference、local reference 和直接数据借用因此各自表达寿命
 ## native 库的生命周期
 
 Java loadLibrary 经应用 ClassLoader 和唯一 NativeLibraryLoader 加载。
+进程的默认 LD_LIBRARY_PATH 使 ROM System 将 java.library.path 初始化为 `/vendor/lib:/system/lib`。
+AndroidAppProcess 与 dex_run 在 bridge 构造前通过加载器将随包系统 ELF 和当前 API 的 Virtual SO
+发布到 VFS `/system/lib`，内部 JNI 桥库除外。ROM DexPathList 先查应用目录，再查存在的系统目录。
+系统 ELF 的只读节点共享加载来源字节；Virtual SO 文件只含 ELF/SONAME 身份与空符号表，
+加载仍由目录解析为既有虚拟模块，不映射身份文件。
 同一 canonical path 与 loader 的重复加载幂等，跨 loader 冲突明确失败。
 映射与重定位完成后，依赖构造器先于本库执行；JNI_OnLoad 只在显式 root 自身查找，
 避免误把依赖库的同名入口当作目标库初始化。

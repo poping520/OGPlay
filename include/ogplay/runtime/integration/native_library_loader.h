@@ -101,6 +101,10 @@ public:
     NativeLibraryLoader(const NativeLibraryLoader&) = delete;
     NativeLibraryLoader& operator=(const NativeLibraryLoader&) = delete;
 
+    // Publish system ELF and virtual SO identity files before constructing the
+    // Java bridge. Existing VFS paths are conflicts; nodes retain their bytes.
+    void PublishSystemLibraries();
+
     // Resolve a logical name without mapping, constructors or JNI execution.
     // Invalid or unavailable names have no path.
     [[nodiscard]] std::optional<std::string> FindLibraryPath(

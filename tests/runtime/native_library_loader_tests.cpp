@@ -53,6 +53,8 @@
 #include "ogplay/video/fake_video_player.h"
 
 #include "native_library_fixture.h"
+#include "resources_test_support.h"
+#include "runtime/boundary/modules/module_catalog.h"
 #include "../interpreter_backends.h"
 
 using namespace ogplay::test::native_library;
@@ -795,4 +797,220 @@ TEST_CASE("native library system lookup precedes VFS and keeps the system filena
     CHECK(loaded.canonical_path == "/system/lib/libBuNdLeD.so");
     CHECK(libraries.LoadLibrary("bundled", 7U).handle == loaded.handle);
     CHECK(libraries.LoadPath("/system/lib/libopensles.so", 7U).canonical_path == "/system/lib/libOpenSLES.so");
+}
+
+TEST_CASE("ROM application ClassLoader finds published system libraries through the production environment") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    using runtime::android_intrinsics::CallAndroidMethod;
+    bool apk_z = false;
+    SUBCASE("system library search") {}
+    SUBCASE("APK native directory has priority") {
+        apk_z = true;
+    }
+
+    runtime::VirtualFileSystem filesystem;
+    MountTestSystemPayload(filesystem);
+    core::CapabilityLedger ledger;
+    core::Logger logger;
+    std::vector<std::vector<std::byte>> images;
+    std::vector<runtime::BionicModuleSource> system;
+    for (const auto name : runtime::SelectBionicProfile(19).guest_libraries) {
+        images.push_back(ReadPayloadBytes("lib/" + std::string(name)));
+        system.push_back({std::string(name), images.back()});
+    }
+    session::AndroidAppProcessRequest request;
+    request.manifest = AppManifest("fixture.LauncherActivity");
+    request.dex_bytes = ReadDexFixture("application.dex");
+    request.boot_dex_files = test::ReadBootDex();
+    request.system_libraries = system;
+    if (apk_z) {
+        const auto z = std::ranges::find(system, "libz.so", &runtime::BionicModuleSource::name);
+        REQUIRE(z != system.end());
+        request.native_libraries.push_back(Library("libz.so", {z->image.begin(), z->image.end()}));
+    }
+    request.context = std::make_shared<runtime::DexVmAndroidContext>();
+    test::BindBootDexArchive(*request.context);
+    const std::array entries{std::pair{std::string("fixture"), std::vector<std::byte>{}}};
+    request.context->apk_bytes = test::resources::Zip(entries);
+    request.filesystem = &filesystem;
+    request.ledger = &ledger;
+    request.logger = &logger;
+    request.surface_width = 64U;
+    request.surface_height = 36U;
+    // Keep configure_core_services empty: getenv must read guest Bionic's
+    // GuestProcessEnvironment::Api19, not CoreBootFixtureServices' fallback.
+    MainThreadActions main_thread;
+    main_thread.Install(request);
+    auto app = session::AndroidAppProcess::Create(std::move(request));
+    app->StartApplication();
+    main_thread.Run(*app, [&] {
+        auto& vm = app->DexVm().Vm();
+        auto& linker = vm.Linker();
+        auto& libraries = *app->NativeLibraries();
+        auto& process = app->NativeProcess();
+        const auto system_class = linker.ResolveDescriptor("Ljava/lang/System;");
+        const auto property =
+            linker.FindDirectMethod(system_class, "getProperty", "(Ljava/lang/String;)Ljava/lang/String;");
+        REQUIRE(property);
+        const auto path = vm.Call(*property, std::array{VmValue::Ref(vm.NewStringUtf8("java.library.path"))});
+        REQUIRE_MESSAGE(!path.exception.IsValid(), path.exception_message);
+        CHECK(vm.StringUtf8(path.value.ref) == "/vendor/lib:/system/lib");
+        const auto loader = vm.ClassLoaders().ApplicationLoader();
+        REQUIRE(vm.ClassLoaders().IsRomApplicationLoader(loader));
+        const auto find_slot = linker.FindVtableIndex(vm.Model().ObjectClass(loader), "findLibrary",
+                                                      "(Ljava/lang/String;)Ljava/lang/String;");
+        REQUIRE(find_slot);
+        CHECK(linker.Method(linker.Class(vm.Model().ObjectClass(loader)).vtable[*find_slot]).kind ==
+              MethodKind::interpreted);
+        const auto find = [&](const char* name) {
+            return CallAndroidMethod(vm, loader, "findLibrary", "(Ljava/lang/String;)Ljava/lang/String;",
+                                     {VmValue::Ref(vm.NewStringUtf8(name))})
+                .ref;
+        };
+        CHECK(vm.StringUtf8(find("OpenSLES")) == "/system/lib/libOpenSLES.so");
+        CHECK(vm.StringUtf8(find("z")) == (apk_z ? "/data/app-lib/libz.so" : "/system/lib/libz.so"));
+        CHECK_FALSE(find("Absent").IsValid());
+        CHECK_FALSE(find("media").IsValid());
+        CHECK_FALSE(find("ogplay_jni").IsValid());
+        try {
+            static_cast<void>(filesystem.Stat("/vendor/lib"));
+            FAIL("publishing system libraries must not create vendor/lib");
+        } catch (const runtime::VfsError& error) {
+            CHECK(error.ErrorNumber() == 2);
+        }
+        const auto call_system = [&](const char* method, const char* argument) {
+            const auto target = linker.FindDirectMethod(system_class, method, "(Ljava/lang/String;)V");
+            REQUIRE(target);
+            CHECK(linker.Method(*target).kind == MethodKind::interpreted);
+            const auto outcome = vm.Call(*target, std::array{VmValue::Ref(vm.NewStringUtf8(argument))});
+            REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+        };
+        const auto native = [&](auto&& action) {
+            const auto depth = vm.ExecutionLock().ReleaseForBlocking();
+            try {
+                auto result = action();
+                vm.ExecutionLock().ReacquireAfterBlocking(depth);
+                return result;
+            } catch (...) {
+                vm.ExecutionLock().ReacquireAfterBlocking(depth);
+                throw;
+            }
+        };
+        const auto count = process.ApplicationModuleCount();
+        call_system("loadLibrary", "OpenSLES");
+        call_system("load", "/system/lib/libOpenSLES.so");
+        call_system("loadLibrary", "OpenSLES");
+        const auto records = libraries.Records();
+        CHECK(std::ranges::count(records, "libOpenSLES.so", &runtime::NativeLibraryRecord::soname) == 1);
+        const auto found = std::ranges::find(records, "libOpenSLES.so", &runtime::NativeLibraryRecord::soname);
+        REQUIRE(found != records.end());
+        CHECK(found->state == runtime::NativeLibraryLoadState::loaded);
+        CHECK(found->class_loader == app->Context()->application_class_loader_token);
+        CHECK(found->jni_on_load_calls == 0U);
+        CHECK(found->canonical_path == "/system/lib/libOpenSLES.so");
+        const auto repeated = native([&] { return libraries.LoadPath(found->canonical_path, found->class_loader); });
+        CHECK(repeated.already_loaded);
+        CHECK(repeated.handle == found->handle);
+        CHECK_FALSE(native([&] { return process.LoadApplicationModules("libOpenSLES.so", {}); }).mapped_range);
+        CHECK(process.ApplicationModuleCount() == count);
+        if (!apk_z) {
+            const auto preloaded = native([&] {
+                return libraries.LoadPath("/system/lib/libz.so", found->class_loader,
+                                          runtime::NativeLibraryEntry::native_activity);
+            });
+            const auto modules = process.ApplicationModuleCount();
+            call_system("loadLibrary", "z");
+            const auto z = native([&] { return libraries.LoadLibrary("z", found->class_loader); });
+            CHECK(z.already_loaded);
+            CHECK(z.module_index == preloaded.module_index);
+            CHECK(z.initialized_modules.empty());
+            CHECK(process.ApplicationModuleCount() == modules);
+        }
+    });
+    static_cast<void>(app->Stop());
+}
+
+TEST_CASE("native library publication exposes read-only ELF identities without mapping virtual SO files") {
+    using namespace ogplay;
+    FixtureProcess fixture;
+    const auto system_image = AppElf({"libSys.so", "", std::nullopt});
+    const runtime::BionicModuleSource system[]{{"libSys.so", system_image}, {"libogplay_jni.so", system_image}};
+    loader::ApkNativeLibraryInventory inventory{std::vector<loader::ApkNativeLibrary>{}};
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
+    const auto read = [&](const std::string& path) {
+        const auto info = fixture.filesystem.Stat(path);
+        std::vector<std::byte> bytes(static_cast<std::size_t>(info.size));
+        const auto fd = fixture.filesystem.Open(path, {.read = true});
+        CHECK(fixture.filesystem.Read(fd, bytes) == bytes.size());
+        fixture.filesystem.Close(fd);
+        return bytes;
+    };
+    std::vector<std::byte> open_sles;
+    {
+        runtime::NativeLibraryLoader libraries(*fixture.process, selected, runtime::SelectBionicProfile(19), system);
+        libraries.PublishSystemLibraries();
+        CHECK(read("/system/lib/libSys.so") == system_image);
+        for (const auto& module : runtime::AndroidBoundaryCatalog(runtime::AndroidApi::api19).Modules()) {
+            const auto path = "/system/lib/" + module.soname;
+            const auto info = fixture.filesystem.Stat(path);
+            CHECK_FALSE(info.writable);
+            CHECK(fixture.filesystem.FileSpelling(path) == path);
+            const auto bytes = read(path);
+            const auto elf = loader::ParseElf32Arm(bytes);
+            CHECK(elf.type == loader::Elf32ImageType::shared_object);
+            CHECK(loader::ReadElf32DynamicInfo(bytes, elf).soname == module.soname);
+            const auto symbols = loader::ReadElf32SymbolTable(bytes, elf);
+            REQUIRE(symbols.symbols.size() == 1U);
+            CHECK_FALSE(symbols.symbols[0].IsExported());
+            CHECK(symbols.symbols[0].name.empty());
+            CHECK(symbols.symbols[0].value.IsNull());
+            try {
+                static_cast<void>(fixture.filesystem.Open(path, {.write = true}));
+                FAIL("system library files must reject writes");
+            } catch (const runtime::VfsError& error) {
+                CHECK(error.ErrorNumber() == 30);
+            }
+        }
+        open_sles = read("/system/lib/libOpenSLES.so");
+        fixture.filesystem.AddPathAlias("/system-libraries", "/system/lib");
+        const auto count = fixture.process->ApplicationModuleCount();
+        const auto loaded = libraries.LoadPath("/SYSTEM-LIBRARIES/./LIBOPENSLES.SO", 7U);
+        CHECK(loaded.canonical_path == "/system/lib/libOpenSLES.so");
+        CHECK(fixture.process->ApplicationModuleCount() == count);
+        CHECK_FALSE(fixture.process->LoadApplicationModules("libOpenSLES.so", {}).mapped_range);
+        CHECK(loaded.jni_version == std::nullopt);
+        CHECK_THROWS_AS(static_cast<void>(fixture.filesystem.Stat("/system/lib/libogplay_jni.so")), runtime::VfsError);
+    }
+    // The VFS node still owns the bytes after both the Java registry and its
+    // process-owned native callback have been destroyed.
+    fixture.process.reset();
+    CHECK(read("/system/lib/libSys.so") == system_image);
+    CHECK(read("/system/lib/libOpenSLES.so") == open_sles);
+    CHECK(fixture.filesystem.IoStatistics().full_materialized_bytes == 0U);
+    FixtureProcess other;
+    runtime::NativeLibraryLoader libraries(*other.process, selected, runtime::SelectBionicProfile(19), {});
+    libraries.PublishSystemLibraries();
+    const auto fd = other.filesystem.Open("/system/lib/libOpenSLES.so", {.read = true});
+    std::vector<std::byte> repeated(open_sles.size());
+    CHECK(other.filesystem.Read(fd, repeated) == repeated.size());
+    other.filesystem.Close(fd);
+    CHECK(repeated == open_sles);
+}
+
+TEST_CASE("native library publication rejects existing VFS files without replacing them") {
+    using namespace ogplay;
+    FixtureProcess fixture;
+    const std::array sentinel{std::byte{0x42}};
+    fixture.filesystem.PutFile("/system/lib/LIBOPENSLES.SO", sentinel, false);
+    loader::ApkNativeLibraryInventory inventory{std::vector<loader::ApkNativeLibrary>{}};
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
+    runtime::NativeLibraryLoader libraries(*fixture.process, selected, runtime::SelectBionicProfile(19), {});
+    CHECK_THROWS_AS(libraries.PublishSystemLibraries(), runtime::NativeLibraryLoadError);
+    const auto fd = fixture.filesystem.Open("/system/lib/libOpenSLES.so", {.read = true});
+    std::array<std::byte, 1> bytes{};
+    CHECK(fixture.filesystem.Read(fd, bytes) == sentinel.size());
+    CHECK(bytes == sentinel);
+    fixture.filesystem.Close(fd);
+    CHECK_THROWS_AS(static_cast<void>(fixture.filesystem.Stat("/system/lib/libandroid.so")), runtime::VfsError);
 }

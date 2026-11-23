@@ -251,7 +251,7 @@ TEST_CASE("DVM-144 failed service binding retains a Context owned dispatcher unt
     }
 }
 
-TEST_CASE("Play licensing bind answers an invalid license response") {
+TEST_CASE("Play licensing bind answers SDK server contact failure") {
     constexpr auto action = "com.android.vending.licensing.ILicensingService";
     constexpr auto transact_signature = "(ILandroid/os/Parcel;Landroid/os/Parcel;I)Z";
     constexpr int interface_transaction = 0x5f4e5446;
@@ -388,7 +388,7 @@ TEST_CASE("Play licensing bind answers an invalid license response") {
                     .AsInt() == 1);
         CHECK(listener_code == -1);
         drain();
-        CHECK(listener_code == 999);
+        CHECK(listener_code == 0x101);  // SDK ERROR_CONTACTING_SERVER; no signed response is required.
         CHECK(listener_payload == "|");
         unbind();
         CHECK(f.context->google_play_bindings.empty());

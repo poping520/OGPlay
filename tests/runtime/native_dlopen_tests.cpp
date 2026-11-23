@@ -368,3 +368,24 @@ TEST_CASE("native VFS dladdr and proc maps retain file spelling without SONAME")
     CHECK(maps.find(expected) != std::string::npos);
     CHECK(maps.find("/data/files/libmixed.so") == std::string::npos);
 }
+
+TEST_CASE("native dlopen matches an unloaded virtual SO by basename regardless of directory or APK files") {
+    using namespace ogplay;
+    FixtureProcess fixture;
+    loader::ApkNativeLibraryInventory inventory{{Library("libGLESv2.so", AppElf({"libGLESv2.so", "", std::nullopt}))}};
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
+    runtime::NativeLibraryLoader java(*fixture.process, selected, runtime::SelectBionicProfile(19), {});
+    for (const std::string name : {"libEGL.so", "/vendor/lib/liblog.so", "/system/lib/egl/libOpenSLES.so",
+                                   "lib/libandroid.so", "/system/vendor/lib/libjnigraphics.so", "libGLESv2.so"}) {
+        CAPTURE(name);
+        const auto basename = name.substr(name.rfind('/') + 1U);
+        CHECK_FALSE(fixture.process->HasLoadedModule(basename));
+        const auto handle = NativeOpen(*fixture.process, name);
+        CHECK(handle != 0U);
+        CHECK(fixture.process->HasLoadedModule(basename));
+        CHECK(NativeOpen(*fixture.process, "/system/lib/" + basename) == handle);
+    }
+    CHECK(NativeOpen(*fixture.process, "/vendor/lib/libabsent.so") == 0U);
+    CHECK(fixture.process->ApplicationModuleCount() == 0U);
+    CHECK(java.Records().empty());
+}

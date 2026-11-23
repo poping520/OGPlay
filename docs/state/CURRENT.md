@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-11-20。
+更新：2026-11-21。
 
 本文件是项目当前状态的快照：只写“现在怎样”，不写过程。修改时覆盖对应行，不追加流水；
 跨会话在办事项写入任务单，完成后的过程、验证明细及证据留在提交说明中。能力见 [capabilities.toml](../../capabilities.toml)，
@@ -31,7 +31,7 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
 | Dungeon Hunter（P1000） | macOS | 1024×600：CG → 标题 → 建档/选职业 → 第一关可移动攻击，SIGTERM 退出 0 | 精灵/光晕白块由 VFS 拒绝纹理父目录路径导致，已修，第一关 MCP 复核；800×480 CG 后 nativeRender 读 0 | VFS-09、VFS-11、DVM-251 |
 | Asphalt 6 1.3.2 | macOS | CG → 中文主菜单 → 自由竞速拿索赛道，车辆/HUD/暂停交互正常，SIGINT 退出 0 | 混合链接 glGetString 错报 ES1、JNI 音频回调关闭取消误报已修；全赛程/跨平台待验 | BND-55 |
 | Asphalt 5 1.1.3 | macOS | 语言选择界面 | 无 Profile 场景 600 帧退出 0；交互未验 | DVM-19、WU5 |
-| PVZ | macOS | TermsActivity 首帧 | 退出 onDestroy 的 `stopService` 未实现；交互未验 | DVM-205 |
+| PVZ | macOS | 库中 6.0.1 清空沙盒首次启动收到标准 LVL 257；30 秒 36 帧，SIGINT 退出 0 | 原 LVL 999 引发列表越界已修；首次启动画面/交互与进关未验，旧版 onDestroy 的 `stopService` 缺口未复核 | DVM-205 |
 | Angry Birds 2.3.0 | macOS | 5000 呈现帧，退出 clean | onDestroy 拒绝已修；换卡 WebView 的 setScrollBarStyle/动画缺口已修（DVM-371），手测正常；JIT 整缓存提交与 APK 多副本已修，footprint 932→502 MB（WU-PERF-16）；画面未验收 | DVM-186、DVM-371、WU-PERF-16、WU7-1a |
 | Angry Birds 8.0.3 | macOS | 实现 poll/ppoll 后，13 个 worker 线程不再因 poll ENOSYS 空转（CPU 约 800%→80%），主菜单 32→120 FPS、episode 列表 10→109 FPS | 线程恢复后发起的网络请求失败（socket 未实现），随后 worker 上 `std::thread::join` 自身抛 EDEADLK 并 abort，启动后 0.5–2 分钟内复现；关卡选择帧率因此未完成验收 | — |
 | GTA3 | macOS | 首次启动 EULA 长消息模态已发布（1280×720、320dpi），原容纳异常消失 | 20 秒有界运行未见新 uncaught 异常，SIGINT 退出 0；EULA 手测正常；影片画面与 NV clock 提示仍待验 | DVM-370、DVM-363 |

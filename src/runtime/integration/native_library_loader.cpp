@@ -3,6 +3,7 @@
 #include "runtime/boundary/modules/module_catalog.h"
 
 #include <algorithm>
+#include <array>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -19,6 +20,7 @@
 #include <vector>
 
 #include "ogplay/loader/elf.h"
+#include "ogplay/core/byte_order.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -126,6 +128,72 @@ constexpr std::string_view kSyntheticLibraryRoot = "/data/app-lib/";
     return result;
 }
 
+// A file identity for ROM filesystem lookup, never an input to guest mapping.
+// Only STN_UNDEF is present; actual exports belong to the sealed boundary.
+[[nodiscard]] std::vector<std::byte> VirtualLibraryIdentityImage(const std::string_view soname) {
+    constexpr std::uint32_t kDynamic = 0x80U;
+    constexpr std::uint32_t kDynamicSize = 7U * 8U;
+    constexpr std::uint32_t kHash = 0xc0U;
+    constexpr std::uint32_t kSymbols = 0xd0U;
+    constexpr std::uint32_t kStrings = 0xe0U;
+    constexpr memory::GuestAddress kBase{0x10000U};
+    const auto string_size = static_cast<std::uint32_t>(soname.size() + 2U);
+    const auto file_size = kStrings + string_size;
+    std::vector<std::byte> bytes(file_size);
+    const auto put16 = [&](const std::size_t offset, const std::uint16_t value) {
+        core::WriteLittleEndian(std::span{bytes}, offset, value);
+    };
+    const auto put32 = [&](const std::size_t offset, const std::uint32_t value) {
+        core::WriteLittleEndian(std::span{bytes}, offset, value);
+    };
+    bytes[0] = std::byte{0x7f};
+    bytes[1] = std::byte{'E'};
+    bytes[2] = std::byte{'L'};
+    bytes[3] = std::byte{'F'};
+    bytes[4] = std::byte{1};  // ELFCLASS32
+    bytes[5] = std::byte{1};  // ELFDATA2LSB
+    bytes[6] = std::byte{1};  // EV_CURRENT
+    put16(16, static_cast<std::uint16_t>(loader::Elf32ImageType::shared_object));
+    put16(18, 40U);  // EM_ARM
+    put32(20, 1U);
+    put32(28, 52U);
+    put32(36, 0x05000000U);  // ARM EABI5
+    put16(40, 52U);
+    put16(42, 32U);
+    put16(44, 2U);
+    const auto program = [&](const std::size_t offset, const std::uint32_t type, const std::uint32_t start,
+                             const std::uint32_t size, const std::uint32_t alignment) {
+        put32(offset, type);
+        put32(offset + 4U, start);
+        put32(offset + 8U, kBase.Add(start).Value());
+        put32(offset + 16U, size);
+        put32(offset + 20U, size);
+        put32(offset + 24U, 4U);  // PF_R
+        put32(offset + 28U, alignment);
+    };
+    program(52U, loader::kElfProgramLoad, 0U, file_size, 0x1000U);
+    program(84U, loader::kElfProgramDynamic, kDynamic, kDynamicSize, 4U);
+    const std::array<std::pair<std::int32_t, std::uint32_t>, 7> dynamic{{
+        {loader::kElfDynamicStringTable, kBase.Add(kStrings).Value()},
+        {loader::kElfDynamicStringTableSize, string_size},
+        {loader::kElfDynamicSoname, 1U},
+        {loader::kElfDynamicSymbolTable, kBase.Add(kSymbols).Value()},
+        {loader::kElfDynamicSymbolEntrySize, 16U},
+        {loader::kElfDynamicHash, kBase.Add(kHash).Value()},
+        {loader::kElfDynamicNull, 0U},
+    }};
+    for (std::size_t index = 0; index < dynamic.size(); ++index) {
+        put32(kDynamic + index * 8U, static_cast<std::uint32_t>(dynamic[index].first));
+        put32(kDynamic + index * 8U + 4U, dynamic[index].second);
+    }
+    put32(kHash, 1U);  // One empty bucket and the null symbol's chain.
+    put32(kHash + 4U, 1U);
+    for (std::size_t index = 0; index < soname.size(); ++index) {
+        bytes[kStrings + 1U + index] = static_cast<std::byte>(soname[index]);
+    }
+    return bytes;
+}
+
 [[nodiscard]] NativeLibraryLoadErrorReason ClassifyProcessFailure(const std::string_view message) {
     if (message.find("constructor") != std::string_view::npos ||
         message.find("guest invocation") != std::string_view::npos) {
@@ -153,7 +221,7 @@ class NativeLibrarySources final {
 public:
     struct OwnedSystemLibrary final {
         std::string name;
-        std::vector<std::byte> image;
+        std::shared_ptr<const std::vector<std::byte>> image;
     };
 
     enum class LibraryKind { elf, virtual_so };
@@ -186,7 +254,7 @@ public:
         const auto key = GuestLibraryKey(name);
         for (const auto& source : system_libraries_) {
             if (GuestLibraryKey(source.name) == key) {
-                return ExplicitLibrary{"/system/lib/" + source.name, source.name, source.image,
+                return ExplicitLibrary{"/system/lib/" + source.name, source.name, *source.image,
                                        "bundled " + source.name,     true,        {}};
             }
         }
@@ -199,6 +267,47 @@ public:
             }
         }
         return std::nullopt;
+    }
+
+    void PublishSystemLibraries(VirtualFileSystem& filesystem) const {
+        std::vector<OwnedSystemLibrary> files;
+        for (const auto& source : system_libraries_) {
+            // This bridge is an internal dependency, not an Android device file.
+            if (source.name != "libogplay_jni.so") files.push_back(source);
+        }
+        if (boundary_api_) {
+            for (const auto& module : AndroidBoundaryCatalog(*boundary_api_).Modules()) {
+                files.push_back({module.soname, std::make_shared<const std::vector<std::byte>>(
+                                                    VirtualLibraryIdentityImage(module.soname))});
+            }
+        }
+        std::set<std::string> paths;
+        for (const auto& file : files) {
+            const auto path = "/system/lib/" + file.name;
+            if (!paths.insert(GuestLibraryKey(path)).second) {
+                throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::invalid_request,
+                                             "system library publication has duplicate identity: " + path);
+            }
+            try {
+                static_cast<void>(filesystem.Stat(path));
+            } catch (const VfsError& error) {
+                if (error.ErrorNumber() == 2) continue;
+                throw;
+            }
+            throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::invalid_request,
+                                         "system library publication path already exists: " + path);
+        }
+        for (const auto& file : files) {
+            filesystem.PutReadOnlyFile(
+                "/system/lib/" + file.name, file.image->size(),
+                [image = file.image](const std::uint64_t offset, const std::span<std::byte> destination) {
+                    if (offset >= image->size()) return std::size_t{};
+                    const auto bytes = std::span{*image}.subspan(static_cast<std::size_t>(offset));
+                    const auto count = std::min(bytes.size(), destination.size());
+                    std::copy_n(bytes.begin(), count, destination.begin());
+                    return count;
+                });
+        }
     }
 
     void IndexApkSonameAliases() {
@@ -314,8 +423,8 @@ public:
                                              "dynamic Bionic system library source is invalid or duplicate: " +
                                                  source.name);
             }
-            system_libraries_.push_back(
-                {source.name, std::vector<std::byte>(source.image.begin(), source.image.end())});
+            system_libraries_.push_back({source.name, std::make_shared<const std::vector<std::byte>>(
+                                                          source.image.begin(), source.image.end())});
         }
     }
 
@@ -404,7 +513,15 @@ public:
                                          "guest native library VFS is unavailable: " + requested_path);
         }
         auto image = std::make_shared<const std::vector<std::byte>>(ReadGuestLibraryImage(*filesystem, requested_path));
-        canonical_path = filesystem->FileSpelling(requested_path);
+        try {
+            canonical_path = filesystem->FileSpelling(requested_path);
+        } catch (const VfsError& error) {
+            // The file can be removed or replaced after its contents were read.
+            throw NativeLibraryLoadError(error.ErrorNumber() == 2 ? NativeLibraryLoadErrorReason::library_not_found
+                                                                  : NativeLibraryLoadErrorReason::invalid_request,
+                                         "guest native library is unavailable: " + requested_path + ": " +
+                                             error.what());
+        }
         const auto separator = canonical_path.find_last_of('/');
         const auto module_name = canonical_path.substr(separator + 1U);
         return {canonical_path, module_name, *image, canonical_path, false, std::move(image)};
@@ -502,6 +619,15 @@ public:
           sources_(std::make_shared<NativeLibrarySources>(process, libraries, bionic, system_libraries)),
           logger_(logger) {
         InstallNativeSources();
+    }
+
+    void PublishSystemLibraries() const {
+        auto* filesystem = process_->Filesystem();
+        if (!filesystem) {
+            throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::invalid_request,
+                                         "system library publication requires a guest VFS");
+        }
+        sources_->PublishSystemLibraries(*filesystem);
     }
 
     std::optional<std::string> FindLibraryPath(const std::string_view name) const {
@@ -728,6 +854,10 @@ NativeLibraryLoader::NativeLibraryLoader(AndroidGuestProcess& process,
     : impl_(std::make_unique<Impl>(process, libraries, bionic, system_libraries, logger)) {}
 
 NativeLibraryLoader::~NativeLibraryLoader() = default;
+
+void NativeLibraryLoader::PublishSystemLibraries() {
+    impl_->PublishSystemLibraries();
+}
 
 std::optional<std::string> NativeLibraryLoader::FindLibraryPath(const std::string_view logical_name) const {
     return impl_->FindLibraryPath(logical_name);

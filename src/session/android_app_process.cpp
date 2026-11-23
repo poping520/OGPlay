@@ -325,6 +325,7 @@ public:
                     native_libraries = std::make_unique<runtime::NativeLibraryLoader>(
                         session->Process(), *selected, runtime::SelectBionicProfile(request.api_level),
                         request.system_libraries, request.logger);
+                    native_libraries->PublishSystemLibraries();
                     context->session = session.get();
                     context->pcm_playback = &session->PcmPlayback();
                     context->encoded_audio_playback = &session->SoundPoolMixer();

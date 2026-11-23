@@ -1317,14 +1317,16 @@ public:
             std::scoped_lock lock(dynamic_link_mutex_);
             needs_load = !HasLoadedModuleLocked(library);
         }
-        if (needs_load && native_library_load_) {
-            const auto loaded = native_library_load_(library == DynamicLibraryName(path) ? path : library, thread_id);
+        // A virtual SO counts as already loaded, and API 19 matches loaded
+        // libraries by basename: neither the requested directory nor an APK file
+        // of the same name takes part.
+        if (needs_load && IsAndroidBoundaryLibrary(SelectBionicProfile(api_).api, library)) {
+            static_cast<void>(LoadApplicationModules(library, {}, thread_id));
+        } else if (needs_load && native_library_load_) {
+            const auto loaded = native_library_load_(path, thread_id);
             std::scoped_lock lock(dynamic_link_mutex_);
             const auto& root = loaded_.link_namespace.modules.at(loaded.root_module_index);
             library = root.dynamic.soname.value_or(root.name);
-        }
-        if (needs_load && !native_library_load_ && IsAndroidBoundaryLibrary(SelectBionicProfile(api_).api, library)) {
-            static_cast<void>(LoadApplicationModules(library, {}, thread_id));
         }
         std::vector<std::string> initialized;
         std::optional<std::size_t> root_index;

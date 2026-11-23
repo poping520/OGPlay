@@ -57,6 +57,7 @@ GuestProcessEnvironment GuestProcessEnvironment::Api19(
     }
     return GuestProcessEnvironment({
         {"PATH", "/sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin"},
+        {"LD_LIBRARY_PATH", "/vendor/lib:/system/lib"},
         {"ANDROID_ROOT", "/system"},
         {"ANDROID_DATA", "/data"},
         {"TZ", "UTC"},

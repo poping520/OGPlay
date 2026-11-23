@@ -99,8 +99,9 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 - InitializeApi19GuestProcess 事务建立 TLS/thread-info/preinit、独立环境页、4 MiB 栈、
   SVC #1 返回 trap 与空 property area，只写受检 libc 导出槽；冲突/非法名称/写失败回滚。
   配置来自 guest；Java 环境查询读 Bionic 当前 environ，不读宿主或另存影子快照。
-  默认 API19 环境显式设置 TZ=UTC；guest 后续 setenv 可修改本进程时区，时间读取仍经
-  统一 Clock，不继承宿主 TZ/时区数据库。
+  默认 API19 环境在 PATH 后发布 `LD_LIBRARY_PATH=/vendor/lib:/system/lib`，供 ROM System 初始化
+  `java.library.path`；不创建 `/vendor/lib`，不实现 linker 动态环境搜索。显式设置 TZ=UTC；
+  guest 后续 setenv 可修改本进程时区，时间读取仍经统一 Clock，不继承宿主 TZ/时区数据库。
 - AndroidGuestProcess 是 native 资源 owner。rootless create 只接收 API19 system closure，
   用 libc 建立 namespace、process memory、syscall/clone、boundary、JNI/JavaVM/root attach；
   不接受 app ELF，返回时 ApplicationModuleCount 为 0，此后只随成功动态加载增加。
@@ -124,7 +125,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   ActivityManager 共用同一快照；不读取宿主内存或动态刷新，不改变 DexVM 堆配额。
 - `dl_unwind_find_exidx` 按 PC 查询 process-owned namespace 的实际 load range，返回所属模块
   经 load bias 重定位的 `PT_ARM_EXIDX` 地址与 8-byte 表项数；初始和动态模块共用 linker 锁。
-- libdl handle 表归 process。dlopen 复用已装载 basename/SONAME 身份；首次装载保留来源拼写的 guest 路径，
+- libdl handle 表归 process。dlopen 复用已装载 basename/SONAME 身份；Virtual SO 视为已装载，
+  只按 basename 匹配，不看请求目录，也不受 APK 同名文件影响。其他库首次装载保留来源拼写的 guest 路径，
   `/data/app-lib/` 使用所选 ABI APK，`/system/lib/` 使用系统来源（bundled ELF 或 Virtual SO），其他路径只走 guest VFS。
   `/data/data/<包名>/lib` 是 `/data/app-lib` 的 VFS 别名（无 APK 原生库时也建立）；
   显式绝对路径先校验并解析 VFS 别名，再判定来源，别名与 APK 库共用模块身份及一次 JNI 初始化。
@@ -187,10 +189,18 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   复用同一 loader 和 application ClassLoader token。Java 边界
   为 NPE/UnsatisfiedLinkError，宿主保留 typed cause；legacy InitializeJniLibrary 只能在
   运行中、constructors 和类登记完成后调用一次，成功或无 OnLoad 才发布 ready。
-- BaseDexClassLoader.findLibrary 执行 ROM DexPathList，在 nativeLibraryDirectories 中通过
-  VFS 查找 System.mapLibraryName 结果；封存所选 ABI 库位于 `/data/app-lib`，系统库位于
-  `/system/lib`，所得路径由 Runtime 包内方法的绑定交统一 NativeLibraryLoader 装载。
-  integration 不覆盖 findLibrary 普通方法。
+- `NativeLibraryLoader::PublishSystemLibraries` 由 AndroidAppProcess 与 dex_run 在构造 DexVmGuestBridge
+  之前显式调用，保证 ROM 首次创建 ClassLoader 时 `/system/lib` 已可查。仅发布注入的随包系统 ELF
+  与当前 API 的全部 BoundaryCatalog 虚拟 SO，规范文件名、只读；内部 `libogplay_jni.so` 不发布，
+  内部加载路径不变。已有路径或重复身份明确失败，不覆盖。ELF 的 PutReadOnlyFile reader 与加载器
+  共享同一份不可变字节，VFS 节点持有 owner，不受 registry/process 退役影响，不再次复制库内容。
+  虚拟 SO 文件为确定性的 ELF32 ARM ET_DYN，带 SONAME、合法 PT_LOAD/PT_DYNAMIC 与仅含空项的
+  dynsym/hash；只表示存在与身份，读取文件看不到真实导出表是已知边界。任何系统路径加载（含别名、
+  点段及大小写变体）先解析为目录中的虚拟 SO，不将身份文件送入 ELF 映射。
+- BaseDexClassLoader.findLibrary 执行 ROM DexPathList，按应用 `/data/app-lib`、系统
+  `java.library.path` 的顺序过滤存在且可读的目录，再通过 VFS 查找 System.mapLibraryName 结果；
+  默认系统目录为 `/vendor/lib:/system/lib`，不存在的 vendor 目录由 ROM 跳过。所得路径由 Runtime
+  包内方法的绑定交统一 NativeLibraryLoader 装载。integration 不覆盖 findLibrary 普通方法。
 
 ## DexVM / JNI 唯一身份与执行
 

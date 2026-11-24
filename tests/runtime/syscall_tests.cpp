@@ -1540,6 +1540,7 @@ TEST_CASE("VFS-08 ARM append openat writev and pwrite64 use one shared file stat
 
 TEST_CASE("VFS-08 large append writes stay one record across the transfer scratch boundary") {
     MetadataSyscallFixture fixture;
+    fixture.vfs.CreateDirectory("/sdcard");
     constexpr std::uint32_t base = 0x300000;
     constexpr std::uint32_t length = 64U * 1024U + 3U;
     fixture.memory.Map({GuestAddress{base}, 128U * 1024U},
@@ -1570,6 +1571,7 @@ TEST_CASE("VFS-08 large append writes stay one record across the transfer scratc
 
 TEST_CASE("VFS-08 writev staging uses the shared resource budget before mutation") {
     MetadataSyscallFixture fixture({.resource_memory_budget_bytes = 1});
+    fixture.vfs.CreateDirectory("/sdcard");
     fixture.WriteString(0x20000, "/sdcard/log");
     const auto opened = fixture.Call(5, {0x20000, 0x441, 0, 0, 0, 0});
     REQUIRE(opened >= 3);
@@ -1659,6 +1661,7 @@ TEST_CASE("Android fstat64 preserves the live file descriptor offset") {
 
 TEST_CASE("Android access, rename and positional IO keep their contracts") {
     MetadataSyscallFixture fixture;
+    fixture.vfs.CreateDirectory("/sdcard");
     fixture.WriteString(0x20000, "/sdcard/old.sav");
     const auto descriptor = fixture.Call(5, {0x20000, 0x40 | 1, 0, 0, 0, 0});
     REQUIRE(descriptor >= 3);
@@ -1696,6 +1699,7 @@ TEST_CASE("Android access, rename and positional IO keep their contracts") {
 
 TEST_CASE("Android large file IO exceeds sixteen MiB with bounded transfers") {
     MetadataSyscallFixture fixture;
+    fixture.vfs.CreateDirectory("/sdcard");
     constexpr std::uint32_t size = 17U * 1024U * 1024U + 123U;
     constexpr std::uint32_t base = 0x100000U;
     fixture.memory.Map({GuestAddress{base}, 18U * 1024U * 1024U},
@@ -1942,6 +1946,8 @@ TEST_CASE("VFS-06 ARM device transfers preserve completed bytes on later failure
 
 TEST_CASE("ARM stat64 identities distinguish Mono exclusive opens and agree across exits") {
     MetadataSyscallFixture fixture;
+    fixture.vfs.CreateDirectory("/sdcard");
+    fixture.vfs.CreateDirectory("/sdcard/events");
     std::array<std::pair<std::uint64_t, std::uint64_t>, 2> identities;
     std::array<std::int32_t, 2> descriptors;
     // Mono registers FileShare.None after each open/fstat; keep both empty files live.

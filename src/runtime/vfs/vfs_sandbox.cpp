@@ -835,6 +835,12 @@ void VirtualFileSystem::Impl::AttachSandbox(SandboxStore& store, const std::span
             // The base layer keeps its entry; resolution hides it.
             tombstones_.insert(item.path);
             files_.erase(item.path);
+            // Mounted directories below a deleted one were deleted with it; a
+            // sandbox holds no live entry there.
+            directories_.erase(item.path);
+            const auto prefix = item.path + "/";
+            for (auto it = directories_.lower_bound(prefix); it != directories_.end() && it->first.starts_with(prefix);)
+                it = directories_.erase(it);
             continue;
         }
         // The overlay wins over any same-path base-layer file.

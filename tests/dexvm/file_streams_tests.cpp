@@ -638,6 +638,7 @@ TEST_CASE("ROM IoUtils.closeQuietly closes the FileInputStream descriptor") {
 
 TEST_CASE("DataOutputStream and wrapped FileOutputStream share one close state") {
     FileVm vm;
+    vm.vfs.CreateDirectory("/sdcard");
     const auto output =
         vm.interpreter.NewIntrinsicInstance("Ljava/io/FileOutputStream;");
     static_cast<void>(vm.CallOn(

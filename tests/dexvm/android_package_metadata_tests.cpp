@@ -1101,16 +1101,57 @@ TEST_CASE("PackageManager exposes user-disabled system package metadata through 
             f.OnOutcome(manager, "getPackageInfo", package_info, {VmValue::Ref(vending), VmValue::Int(0x40)});
         CHECK(store_signatures.exception_class ==
               f.linker.ResolveDescriptor("Ljava/lang/UnsupportedOperationException;"));
+        constexpr auto get_meta_data = 0x80;
+        for (const auto name : {package, vending}) {
+            const auto with_metadata =
+                f.On(manager, "getPackageInfo", package_info, {VmValue::Ref(name), VmValue::Int(get_meta_data)}).ref;
+            REQUIRE(with_metadata.IsValid());
+            const auto app_info =
+                PackageRef(f, with_metadata, "applicationInfo", "Landroid/content/pm/ApplicationInfo;");
+            REQUIRE(app_info.IsValid());
+            CHECK_FALSE(PackageRef(f, app_info, "metaData", "Landroid/os/Bundle;").IsValid());
+
+            const auto direct_app_info =
+                f.On(manager, "getApplicationInfo", "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
+                     {VmValue::Ref(name), VmValue::Int(get_meta_data)})
+                    .ref;
+            REQUIRE(direct_app_info.IsValid());
+            CHECK_FALSE(PackageRef(f, direct_app_info, "metaData", "Landroid/os/Bundle;").IsValid());
+
+            const auto with_signatures =
+                f.OnOutcome(manager, "getPackageInfo", package_info, {VmValue::Ref(name), VmValue::Int(0xC0)});
+            CHECK(with_signatures.exception_class ==
+                  f.linker.ResolveDescriptor("Ljava/lang/UnsupportedOperationException;"));
+        }
         f.context->package_inventory_known = true;
         f.context->package_resource_path = "/data/app/org.example.game-1.apk";
+        f.context->application_meta_data.emplace("fixture.setting", std::string("sealed"));
+        const std::array<std::string_view, 3> package_names{f.context->package_name, gsf, "com.android.vending"};
         for (const auto* method : {"getInstalledApplications", "getInstalledPackages"}) {
-            const auto list = f.On(manager, method, "(I)Ljava/util/List;", {VmValue::Int(0)}).ref;
+            CAPTURE(method);
+            const auto list = f.On(manager, method, "(I)Ljava/util/List;", {VmValue::Int(get_meta_data)}).ref;
             const auto list_root = f.vm.ProtectReferences(std::array{list});
             REQUIRE(f.On(list, "size", "()I").AsInt() == 3);
-            for (int i = 1; i <= 2; ++i) {
-                const auto item = f.On(list, "get", "(I)Ljava/lang/Object;", {VmValue::Int(i)}).ref;
-                CHECK(f.vm.StringUtf8(PackageRef(f, item, "packageName", "Ljava/lang/String;")) ==
-                      (i == 1 ? gsf : "com.android.vending"));
+            for (std::size_t i = 0; i < package_names.size(); ++i) {
+                const auto item =
+                    f.On(list, "get", "(I)Ljava/lang/Object;", {VmValue::Int(static_cast<std::int32_t>(i))}).ref;
+                REQUIRE(item.IsValid());
+                CHECK(f.vm.StringUtf8(PackageRef(f, item, "packageName", "Ljava/lang/String;")) == package_names[i]);
+                const auto app_info =
+                    std::string_view(method) == "getInstalledPackages"
+                        ? PackageRef(f, item, "applicationInfo", "Landroid/content/pm/ApplicationInfo;")
+                        : item;
+                REQUIRE(app_info.IsValid());
+                const auto metadata = PackageRef(f, app_info, "metaData", "Landroid/os/Bundle;");
+                if (i == 0) {
+                    REQUIRE(metadata.IsValid());
+                    const auto value = f.On(metadata, "getString", "(Ljava/lang/String;)Ljava/lang/String;",
+                                            {VmValue::Ref(f.vm.NewStringUtf8("fixture.setting"))})
+                                           .ref;
+                    CHECK(f.vm.StringUtf8(value) == "sealed");
+                } else {
+                    CHECK_FALSE(metadata.IsValid());
+                }
             }
         }
         f.context->google_play = false;
@@ -1350,6 +1391,62 @@ TEST_CASE("PackageManager GET_SIGNATURES caches DER and failures, and returns fr
             const auto bytes = f.On(f.model.GetObjectElement(array, 0), "toByteArray", "()[B").ref;
             CHECK(ogplay::core::Sha256(f.model.ReadByteRegion(bytes, 0, f.model.ArrayLength(bytes))) == digest);
         }
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("Local PackageManager returns null for unavailable components and permissions") {
+    constexpr auto kDisabledName = "fixture.app.Disabled";
+    constexpr auto kGetDisabledComponents = 0x200;
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
+        AndroidValueVm f(backend);
+        auto& c = *f.context;
+        c.package_name = "fixture.app";
+        c.activity_inventory_known = c.receiver_inventory_known = c.service_inventory_known =
+            c.permission_inventory_known = true;
+        c.activity_components = {{.name = kDisabledName, .enabled = false}};
+        c.receiver_components = {{.name = kDisabledName, .enabled = false}};
+        c.service_components = {{.name = kDisabledName, .enabled = false}};
+
+        const auto base = f.New("Landroid/content/Context;");
+        const auto base_root = f.vm.ProtectReferences(std::array{base});
+        const auto manager = f.On(base, "getPackageManager", "()Landroid/content/pm/PackageManager;").ref;
+        const auto service = PackageRef(f, manager, "mPM", "Landroid/content/pm/IPackageManager;");
+        REQUIRE(service.IsValid());
+        const auto service_root = f.vm.ProtectReferences(std::array{service});
+        const auto check_null = [](const VmCallOutcome& outcome) {
+            REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+            CHECK(outcome.value.kind == VmValue::Kind::ref);
+            CHECK_FALSE(outcome.value.ref.IsValid());
+        };
+        const auto zero = VmValue::Int(0);
+        for (const auto& [package, name, flags] : std::array{
+                 std::tuple{c.package_name.c_str(), "fixture.app.Missing", 0},
+                 std::tuple{c.package_name.c_str(), kDisabledName, 0},
+                 std::tuple{"other.package", kDisabledName, kGetDisabledComponents},
+             }) {
+            CAPTURE(package);
+            CAPTURE(name);
+            const auto package_ref = f.vm.NewStringUtf8(package);
+            const auto package_root = f.vm.ProtectReferences(std::array{package_ref});
+            const auto component = f.New("Landroid/content/ComponentName;", "(Ljava/lang/String;Ljava/lang/String;)V",
+                                         {VmValue::Ref(package_ref), VmValue::Ref(f.vm.NewStringUtf8(name))});
+            const auto component_root = f.vm.ProtectReferences(std::array{component});
+            for (const auto& [method, descriptor] : std::array{
+                     std::pair{"getActivityInfo",
+                               "(Landroid/content/ComponentName;II)Landroid/content/pm/ActivityInfo;"},
+                     std::pair{"getReceiverInfo",
+                               "(Landroid/content/ComponentName;II)Landroid/content/pm/ActivityInfo;"},
+                     std::pair{"getServiceInfo", "(Landroid/content/ComponentName;II)Landroid/content/pm/ServiceInfo;"},
+                 }) {
+                CAPTURE(method);
+                check_null(
+                    f.OnOutcome(service, method, descriptor, {VmValue::Ref(component), VmValue::Int(flags), zero}));
+            }
+        }
+        const auto permission = VmValue::Ref(f.vm.NewStringUtf8("fixture.app.MissingPermission"));
+        check_null(f.OnOutcome(service, "getPermissionInfo", "(Ljava/lang/String;I)Landroid/content/pm/PermissionInfo;",
+                               {permission, zero}));
         CHECK(f.ledger.Unimplemented().empty());
     }
 }

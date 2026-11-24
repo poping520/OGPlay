@@ -99,8 +99,8 @@ key 仍必须存在，NUL/孤立 surrogate 保留 Java code units；resource 保
 | getPackageArchiveInfo | ROM PackageManager/PackageParser 从 guest VFS 中的 APK 解析 Manifest。缺路径或损坏归档沿 ROM 返回 null |
 | getApplicationInfo | 当前包的独立 ApplicationInfo，含按请求返回的元数据及当前应用启用设置；表内系统包返回最小 ApplicationInfo |
 | getPackageInfo/getPackagesHoldingPermissions | 当前包按请求投影 activities、receivers、services、providers、instrumentation、权限、配置及签名。组件数组保留声明顺序和 alias；仅按组件声明过滤禁用项。没有声明时数组为 null；已有声明但全部被过滤时为零长度。Instrumentation 仅发布元数据。getPackageInfo 对表内系统包返回最小 PackageInfo |
-| getActivityInfo/getReceiverInfo/getServiceInfo/getProviderInfo/resolveContentProvider/queryContentProviders | 当前包组件或 authority。组件查询看应用与组件启用状态；同名 Activity/receiver/service 取最后声明。Provider 可按请求发布 URI 授权模式 |
-| getPermissionInfo/queryPermissionsByGroup | 当前 Manifest 注册的权限定义，GET_META_DATA 发布定义元数据。仅请求或授予的权限仍无定义 |
+| getActivityInfo/getReceiverInfo/getServiceInfo/getProviderInfo/resolveContentProvider/queryContentProviders | 当前包组件或 authority。组件查询看应用与组件启用状态；同名 Activity/receiver/service 取最后声明。Provider 可按请求发布 URI 授权模式。前三个 getter 查不到组件时，本地 PMS 返回 null，由 ROM ApplicationPackageManager 抛 NameNotFoundException |
+| getPermissionInfo/queryPermissionsByGroup | 当前 Manifest 注册的权限定义，GET_META_DATA 发布定义元数据。仅请求或授予的权限仍无定义。getPermissionInfo 查不到定义时，本地 PMS 返回 null，由 ROM ApplicationPackageManager 抛 NameNotFoundException |
 | queryIntentActivities/resolveIntent/queryIntentContentProviders | 当前 APK 显式组件及隐式过滤器。ROM IntentFilter 匹配 action/category、MIME、scheme、authority 与路径模式，按优先级、DEFAULT 与匹配分排序；resolveIntent 取首项 |
 | queryBroadcastReceivers | 支持显式组件；隐式查询要求非空 action、同一 filter category 子集、无 selector/data/type，按启用状态过滤并稳定排序。候选 data 条件无法解析时记账失败 |
 | queryIntentServices/resolveService | 支持显式组件。隐式支持 action-only 下可确定无候选的查询；应用/组件启用状态及 MATCH_DEFAULT_ONLY 参与筛选。潜在匹配或未知条件记账失败 |
@@ -115,7 +115,8 @@ GET_SIGNATURES 从 package_resource_path 对应的封存 APK 字节惰性提取�
 证书提取边界见 [loader 契约](../../../loader/MODULE.md#公共-api)。
 
 Google Play 系统包的元数据查询接受空有效位和 GET_DISABLED_COMPONENTS、GET_UNINSTALLED_PACKAGES、
-GET_DISABLED_UNTIL_USED_COMPONENTS、GET_INTENT_FILTERS 范围内的有效位；启用状态取系统包表。
+GET_DISABLED_UNTIL_USED_COMPONENTS、GET_INTENT_FILTERS、GET_META_DATA 范围内的有效位；启用状态取系统包表。
+系统包表未声明应用级 meta-data，ApplicationInfo.metaData 为 null。
 其他有效位按 `dexvm.disabled_system_packages` 记账并抛出 UnsupportedOperationException。
 getApplicationEnabledSetting 对 vending 返回 DEFAULT、对 gsf 返回 DISABLED_USER；getPackageUid 返回预留的应用 UID，isPackageAvailable 返回 true。
 这些查询限 user 0，跨用户查询及 setApplicationEnabledSetting 抛出 SecurityException。

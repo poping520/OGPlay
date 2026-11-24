@@ -178,6 +178,9 @@ TEST_CASE("VFS indexes Android paths case insensitively and isolates offsets") {
 
 TEST_CASE("VFS creates writes truncates and rejects unsafe paths") {
     ogplay::runtime::VirtualFileSystem vfs;
+    vfs.CreateDirectory("/data");
+    vfs.CreateDirectory("/data/data");
+    vfs.CreateDirectory("/data/data/sample");
     const auto descriptor = vfs.Open(
         "/data/data/sample/save.dat",
         {.read = true, .write = true, .create = true});
@@ -198,6 +201,22 @@ TEST_CASE("VFS creates writes truncates and rejects unsafe paths") {
     CHECK_THROWS_AS(vfs.PutFile("/data/data/sample/SAVE.dat", contents, true),
                     ogplay::runtime::VfsError);
     CHECK_THROWS_AS(vfs.Close(99), ogplay::runtime::VfsError);
+}
+
+TEST_CASE("VFS file creation requires a directory at the resolved parent path") {
+    using namespace ogplay::runtime;
+    VirtualFileSystem vfs;
+    vfs.AddPathAlias("/mnt/sdcard", "/sdcard");
+    const std::array entries{VfsMountEntry{"data/assets/base.dat", {std::byte{1}}}};
+    vfs.Mount(VfsSource::obb, "/sdcard", entries);
+    const auto create = [&](const char* path) { return vfs.Open(path, {.write = true, .create = true}); };
+
+    ExpectHostErrno([&] { (void)create("/mnt/sdcard/data/missing/new.dat"); }, 2);
+    ExpectHostErrno([&] { (void)create("/mnt/sdcard/data/assets/base.dat/new.dat"); }, 20);
+    ExpectHostErrno([&] { (void)vfs.Stat("/sdcard/data/missing"); }, 2);
+    CHECK(vfs.ListDirectory("/sdcard/data/assets") == std::vector<VfsDirectoryEntry>{{"base.dat", false}});
+    vfs.Close(create("/mnt/sdcard/data/assets/new.dat"));
+    CHECK(vfs.Stat("/sdcard/data/assets/new.dat").size == 0);
 }
 
 TEST_CASE("VFS exclusive creation chooses one winner without truncating existing bytes") {
@@ -502,8 +521,7 @@ TEST_CASE("VFS positioned IO preserves descriptor offsets and bounds reads") {
     CHECK(bytes_read == 4);
     vfs.Close(descriptor);
 
-    const auto writable = vfs.Open(
-        "/data/data/example/file", {.read = true, .write = true, .create = true});
+    const auto writable = vfs.Open("/file", {.read = true, .write = true, .create = true});
     CHECK(vfs.Write(writable, data) == data.size());
     CHECK(vfs.Seek(writable, 1, ogplay::runtime::VfsSeekWhence::begin) == 1);
     const std::array replacement{std::byte{9}};
@@ -690,6 +708,7 @@ TEST_CASE("VFS serializes same descriptor seek and keeps failed read offset") {
 
 TEST_CASE("VFS leases retain source identity across close unlink and replacement") {
     ogplay::runtime::VirtualFileSystem vfs;
+    vfs.CreateDirectory("/data");
     const std::array original{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}};
     vfs.PutFile("/data/file", original, true);
     const auto descriptor = vfs.Open("/data/file", {.read = true, .write = true});
@@ -819,6 +838,37 @@ TEST_CASE("VFS host directory mount lazily reads and preserves external writes")
     vfs.Close(descriptor);
 
     std::filesystem::remove_all(root);
+}
+
+TEST_CASE("VFS writable mounts keep directories that hold no files") {
+    using namespace ogplay::runtime;
+    HostMountFixture host;
+    std::filesystem::create_directories(host.root / "Save");
+    std::filesystem::create_directories(host.root / "Empty/Inner");
+    host.Put("Save/only.dat");
+    const auto create = [](VirtualFileSystem& vfs, const char* path) {
+        vfs.Close(vfs.Open(path, {.write = true, .create = true, .truncate = true}));
+    };
+    {
+        VirtualFileSystem vfs;
+        vfs.MountHostDirectory("/sdcard/Game", host.root);
+        CHECK(vfs.ListDirectory("/sdcard/game") == std::vector<VfsDirectoryEntry>{{"Empty", true}, {"Save", true}});
+        CHECK(vfs.ListDirectory("/sdcard/game/empty") == std::vector<VfsDirectoryEntry>{{"Inner", true}});
+        create(vfs, "/sdcard/game/empty/inner/new.dat");
+
+        vfs.RemoveFile("/sdcard/game/save/only.dat");
+        CHECK(vfs.Stat("/sdcard/game/save").is_directory);
+        CHECK(vfs.ListDirectory("/sdcard/game/save").empty());
+        create(vfs, "/sdcard/game/save/only.dat");
+        vfs.Rename("/sdcard/game/save/only.dat", "/sdcard/game/moved.dat");
+        CHECK(vfs.Stat("/sdcard/game/save").is_directory);
+        vfs.RemoveDirectory("/sdcard/game/save");
+        ExpectHostErrno([&] { create(vfs, "/sdcard/game/save/only.dat"); }, 2);
+    }
+    VirtualFileSystem collision;
+    collision.PutFile("/sdcard/game/empty/inner", {}, false);
+    ExpectHostErrno([&] { collision.MountHostDirectory("/sdcard/game", host.root); }, 17);
+    ExpectHostErrno([&] { static_cast<void>(collision.Stat("/sdcard/game/save")); }, 2);
 }
 
 TEST_CASE("VFS large host file small reads stay positioned and unmaterialized") {
@@ -1534,6 +1584,7 @@ TEST_CASE("VFS-08 append state survives seek dup aliases and positioned writes")
 TEST_CASE("VFS-08 independent append writers keep complete records") {
     using namespace ogplay::runtime;
     VirtualFileSystem vfs;
+    vfs.CreateDirectory("/sdcard");
     vfs.AddPathAlias("/legacy", "/sdcard");
     constexpr std::size_t writers = 4, records = 40;
     std::array<std::int32_t, writers> descriptors{};
@@ -1632,6 +1683,8 @@ TEST_CASE("VFS file spelling resolves aliases case and parent components without
 TEST_CASE("VFS file identity survives aliases mutations rename and unlink") {
     using namespace ogplay::runtime;
     VirtualFileSystem vfs;
+    vfs.CreateDirectory("/sdcard");
+    vfs.CreateDirectory("/sdcard/events");
     vfs.PutFile("/sdcard/events/A", {}, true);
     vfs.PutFile("/sdcard/events/B", {}, true);
     vfs.AddPathAlias("/storage/emulated/0", "/sdcard");

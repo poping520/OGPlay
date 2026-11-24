@@ -529,6 +529,17 @@ TEST_CASE("sandbox store keeps a deleted directory as the container of its child
         REQUIRE(deleted != nullptr);
         CHECK(deleted->is_tombstone);
         CHECK_FALSE(deleted->is_directory);
+        for (const auto* child : {"/a.dat", "/nested/new.dat"}) {
+            try {
+                store->WriteFileAtomic(directory + child, Bytes("no"));
+                FAIL("cannot write below a deleted directory");
+            } catch (const VfsError& error) {
+                CHECK(error.ErrorNumber() == 2);
+            }
+        }
+        CHECK(store->UsedBytes() == 0);
+        CHECK_FALSE(std::filesystem::exists(host / "unpack/a.dat"));
+        CHECK_FALSE(std::filesystem::exists(host / "unpack/nested"));
     }
     // Child tombstones are exact-path; they stay inside the host directory.
     CHECK(std::filesystem::is_directory(host / "unpack"));
@@ -548,6 +559,7 @@ TEST_CASE("sandbox store keeps a deleted directory as the container of its child
 
         // Recreating the directory lifts only its own tombstone.
         store->CreateDirectory(directory);
+        store->WriteFileAtomic(directory + "/new.dat", Bytes("restored"));
     }
     auto store = SandboxStore::Open(root.path, kPackage, kPackage);
     const auto entries = store->Entries();
@@ -559,6 +571,7 @@ TEST_CASE("sandbox store keeps a deleted directory as the container of its child
     REQUIRE(child != nullptr);
     CHECK(child->is_tombstone);
     CHECK_FALSE(std::filesystem::exists(host / "unpack.__ogplay_tombstone__"));
+    CHECK(Text(store->ReadFile(directory + "/new.dat")) == "restored");
 }
 
 TEST_CASE("sandbox store refuses to tombstone a directory with live entries") {

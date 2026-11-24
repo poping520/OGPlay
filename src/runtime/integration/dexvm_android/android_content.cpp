@@ -1130,12 +1130,6 @@ void SetRef(dx::IntrinsicContext& call, const dx::VmObjectRef object, const std:
     return call.vm.StringUtf8(typed.NonNullRef(argument, name));
 }
 
-void RequireCurrentPackage(const Context& context, const std::string_view package_name) {
-    if (package_name != context->package_name) {
-        throw dx::VmJavaThrow{"Landroid/content/pm/PackageManager$NameNotFoundException;", std::string(package_name)};
-    }
-}
-
 [[noreturn]] void UnsupportedPackageQuery(dx::IntrinsicContext& call, std::string_view capability, std::string reason) {
     if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented(capability, 0);
     throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", std::move(reason)};
@@ -1166,7 +1160,8 @@ void CheckGooglePlaySystemPackageFlags(dx::IntrinsicContext& call, std::int32_t 
     const auto allowed = PackageIntConstant(call, kPackageManager, "GET_DISABLED_COMPONENTS") |
                          PackageIntConstant(call, kPackageManager, "GET_UNINSTALLED_PACKAGES") |
                          PackageIntConstant(call, kPackageManager, "GET_DISABLED_UNTIL_USED_COMPONENTS") |
-                         PackageIntConstant(call, kPackageManager, "GET_INTENT_FILTERS");
+                         PackageIntConstant(call, kPackageManager, "GET_INTENT_FILTERS") |
+                         PackageIntConstant(call, kPackageManager, "GET_META_DATA");
     if (effective & ~allowed)
         UnsupportedPackageQuery(call, "dexvm.disabled_system_packages",
                                 std::string(method) +
@@ -1244,15 +1239,14 @@ dx::VmObjectRef MakePackageApplicationInfo(dx::IntrinsicContext& call, const Con
     return info;
 }
 
-[[nodiscard]] std::pair<std::string, std::string>
-ReadComponentIdentity(dx::IntrinsicContext& call, const Context& context, const dx::VmObjectRef component) {
+[[nodiscard]] std::optional<std::string>
+ReadCurrentPackageComponentName(dx::IntrinsicContext& call, const Context& context, const dx::VmObjectRef component) {
     const auto package = CallAndroidMethod(call.vm, component, "getPackageName", "()Ljava/lang/String;").ref;
     const auto name = CallAndroidMethod(call.vm, component, "getClassName", "()Ljava/lang/String;").ref;
     if (!package.IsValid() || !name.IsValid())
         throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "ComponentName has no package or class"};
-    const auto package_name = call.vm.StringUtf8(package);
-    RequireCurrentPackage(context, package_name);
-    return {package_name, call.vm.StringUtf8(name)};
+    if (call.vm.StringUtf8(package) != context->package_name) return std::nullopt;
+    return call.vm.StringUtf8(name);
 }
 
 [[nodiscard]] dx::VmObjectRef MakeStringArray(dx::IntrinsicContext& call, const std::vector<std::string>& values) {
@@ -1823,12 +1817,13 @@ dx::VmValue PackageActivityInfo(dx::IntrinsicContext& call, const Context& conte
     if (!context->activity_inventory_known)
         UnsupportedPackageQuery(call, "dexvm.activity_info",
                                 "getActivityInfo requires current-package component facts");
-    const auto [package, name] = ReadComponentIdentity(call, context, component);
+    const auto name = ReadCurrentPackageComponentName(call, context, component);
+    if (!name) return dx::VmValue::Ref(dx::VmObjectRef{});
     const auto flags =
         PackageQueryFlags(call, context, raw_flags, kComponentFlags, "getActivityInfo", "dexvm.activity_info");
-    const auto* found = loader::FindAndroidManifestActivityComponent(context->activity_components, name);
+    const auto* found = loader::FindAndroidManifestActivityComponent(context->activity_components, *name);
     if (found == nullptr || !IsPackageComponentEnabled(context, found->enabled, flags))
-        throw dx::VmJavaThrow{"Landroid/content/pm/PackageManager$NameNotFoundException;", package + "/" + name};
+        return dx::VmValue::Ref(dx::VmObjectRef{});
     const auto application = MakePackageApplicationInfo(call, context, flags);
     const auto root = call.vm.ProtectReferences(std::array{application});
     return dx::VmValue::Ref(MakeActivityInfo(call, context, *found, application, (flags & kGetMetaData) != 0));
@@ -1873,15 +1868,14 @@ dx::VmValue QueryReceiverInfo(dx::IntrinsicContext& call, const Context& context
     if (!context->receiver_inventory_known)
         UnsupportedPackageQuery(call, "dexvm.receiver_info",
                                 "getReceiverInfo requires current-package component facts");
-    const auto [package_name, class_name] = ReadComponentIdentity(call, context, component);
+    const auto class_name = ReadCurrentPackageComponentName(call, context, component);
+    if (!class_name) return dx::VmValue::Ref(dx::VmObjectRef{});
     const auto flags =
         PackageQueryFlags(call, context, raw_flags, kComponentFlags, "getReceiverInfo", "dexvm.receiver_info");
     const auto found = std::find_if(context->receiver_components.rbegin(), context->receiver_components.rend(),
-                                    [&](const auto& receiver) { return receiver.name == class_name; });
-    if (found == context->receiver_components.rend() || !IsPackageComponentEnabled(context, found->enabled, flags)) {
-        throw dx::VmJavaThrow{"Landroid/content/pm/PackageManager$NameNotFoundException;",
-                              package_name + "/" + class_name};
-    }
+                                    [&](const auto& receiver) { return receiver.name == *class_name; });
+    if (found == context->receiver_components.rend() || !IsPackageComponentEnabled(context, found->enabled, flags))
+        return dx::VmValue::Ref(dx::VmObjectRef{});
     const auto application = MakePackageApplicationInfo(call, context, flags);
     const auto root = call.vm.ProtectReferences(std::array{application});
     return dx::VmValue::Ref(MakeReceiverInfo(call, context, *found, (flags & kGetMetaData) != 0, application));
@@ -1902,15 +1896,14 @@ dx::VmValue QueryServiceInfo(dx::IntrinsicContext& call, const Context& context,
     }
     if (!context->service_inventory_known)
         UnsupportedPackageQuery(call, "dexvm.service_info", "getServiceInfo requires current-package component facts");
-    const auto [package_name, class_name] = ReadComponentIdentity(call, context, component);
+    const auto class_name = ReadCurrentPackageComponentName(call, context, component);
+    if (!class_name) return dx::VmValue::Ref(dx::VmObjectRef{});
     const auto flags =
         PackageQueryFlags(call, context, raw_flags, kComponentFlags, "getServiceInfo", "dexvm.service_info");
     const auto found = std::find_if(context->service_components.rbegin(), context->service_components.rend(),
-                                    [&](const auto& service) { return service.name == class_name; });
-    if (found == context->service_components.rend() || !IsPackageComponentEnabled(context, found->enabled, flags)) {
-        throw dx::VmJavaThrow{"Landroid/content/pm/PackageManager$NameNotFoundException;",
-                              package_name + "/" + class_name};
-    }
+                                    [&](const auto& service) { return service.name == *class_name; });
+    if (found == context->service_components.rend() || !IsPackageComponentEnabled(context, found->enabled, flags))
+        return dx::VmValue::Ref(dx::VmObjectRef{});
     const auto application = MakePackageApplicationInfo(call, context, flags);
     const auto root = call.vm.ProtectReferences(std::array{application});
     return dx::VmValue::Ref(MakeServiceInfo(call, context, *found, (flags & kGetMetaData) != 0, application));
@@ -1940,15 +1933,8 @@ using ComponentInfoQuery = dx::VmValue (*)(dx::IntrinsicContext&, const Context&
     if (package.IsValid() && call.vm.StringUtf8(package) != context->package_name)
         UnsupportedPackageQuery(call, capability, "external package inventory is unavailable");
 
-    dx::VmObjectRef info;
-    try {
-        // getXxxInfo masks both query-only bits, including the overloaded 0x40 bit.
-        info = query_info(call, context, component, flags).ref;
-    } catch (const dx::VmJavaThrow& error) {
-        if (error.existing.IsValid() || error.descriptor != "Landroid/content/pm/PackageManager$NameNotFoundException;")
-            throw;
-        return dx::VmObjectRef{};
-    }
+    // getXxxInfo masks both query-only bits, including the overloaded 0x40 bit.
+    const auto info = query_info(call, context, component, flags).ref;
     if (!info.IsValid()) return dx::VmObjectRef{};
     const auto info_root = call.vm.ProtectReferences(std::array{info});
     const auto result = NewQueryObject(call, "Landroid/content/pm/ResolveInfo;");
@@ -2126,8 +2112,7 @@ dx::VmValue QueryPermissionInfo(dx::IntrinsicContext& call, const Context& conte
     const auto found =
         std::find_if(context->defined_permissions.begin(), context->defined_permissions.end(),
                      [&](const auto& definition) { return definition.registered && definition.name == name; });
-    if (found == context->defined_permissions.end())
-        throw dx::VmJavaThrow{"Landroid/content/pm/PackageManager$NameNotFoundException;", name};
+    if (found == context->defined_permissions.end()) return dx::VmValue::Ref(dx::VmObjectRef{});
     const auto flags = PackageQueryFlags(call, context, call.arguments[1].AsInt(), kGetMetaData, "getPermissionInfo",
                                          "dexvm.permission_info");
     return dx::VmValue::Ref(MakePermissionInfo(call, context, *found, (flags & kGetMetaData) != 0));

@@ -687,6 +687,12 @@ std::vector<std::byte> SandboxStore::ReadFile(const std::string_view raw_guest_p
 void SandboxStore::WriteFileAtomic(const std::string_view raw_guest_path, const std::span<const std::byte> contents) {
     const auto guest_path = impl_->CanonicalGuestPath(raw_guest_path);
     RequireNoReservedSuffix(guest_path);
+    for (auto slash = guest_path.rfind('/'); slash != 0; slash = guest_path.rfind('/', slash - 1)) {
+        const auto parent = std::string_view(guest_path).substr(0, slash);
+        const auto ancestor = impl_->entries.find(parent);
+        if (ancestor != impl_->entries.end() && ancestor->second.is_tombstone)
+            throw VfsError(kEnoent, "sandbox ancestor directory was deleted: " + std::string(parent));
+    }
     const auto existing = impl_->entries.find(guest_path);
     if (existing != impl_->entries.end() && existing->second.is_directory) {
         throw VfsError(kEinval, "sandbox path is a directory");

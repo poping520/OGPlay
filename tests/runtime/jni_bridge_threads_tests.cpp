@@ -110,6 +110,72 @@ TEST_CASE("JNI stopped Java callbacks preserve native thread cancellation") {
     }
 }
 
+TEST_CASE("JNI native attachment constructs pending exceptions while the default context is active") {
+    using namespace ogplay;
+    using namespace runtime;
+    for (const auto backend : test::InterpreterBackends()) {
+        ApplicationProcess fixture(backend);
+        auto& process = fixture.session->Process();
+        auto& env = process.Environment();
+        auto& vm = fixture.bridge->Vm();
+        constexpr std::uint64_t worker_thread = 5;
+        const auto memory = process.GuestMemoryAccess();
+        const auto scratch = memory.allocate(64);
+        const auto write = [&](const std::string& value, std::uint32_t offset = 0) {
+            const auto address = scratch.Add(offset);
+            memory.write(address, std::as_bytes(std::span{value.c_str(), value.size() + 1}));
+            return address.Value();
+        };
+        auto& lock = vm.ExecutionLock();
+        vm.RunInExecutionContext(vm.ExecutionContext(vm.CurrentContextToken()), [&] {
+            auto worker = std::async(std::launch::async, [&] {
+                process.PrepareDexVmThread(worker_thread, 0);
+                const auto call = [&](const char* name, std::uint32_t a = 0, std::uint32_t b = 0, std::uint32_t c = 0) {
+                    return process
+                        .Invoke({memory::GuestAddress{EnvironmentThunk(name)},
+                                 {process.GuestEnvironment().Value(), a, b, c},
+                                 {},
+                                 worker_thread})
+                        .return_value;
+                };
+                const auto expect_exception = [&](const char* name, const char* message) {
+                    CHECK(call("ExceptionCheck") == 1);
+                    const auto pending = env.PendingExceptionMetadata(worker_thread);
+                    REQUIRE(pending.has_value());
+                    CHECK(process.Classes().ClassName(pending->exception_class) == name);
+                    CHECK(pending->modified_utf8_message == message);
+                    const auto throwable = JniReference{call("ExceptionOccurred")};
+                    CHECK(env.ResolveObjectForHle(worker_thread, throwable) == pending->throwable);
+                    CHECK(fixture.bridge->Model().FindIdentity(pending->throwable).IsValid());
+                    call("ExceptionClear");
+                    CHECK(call("ExceptionCheck") == 0);
+                };
+
+                CHECK(call("FindClass", write("fixture/Invalid;")) == 0);
+                expect_exception("java/lang/NoClassDefFoundError", "fixture/Invalid;");
+                const auto object = call("FindClass", write("java/lang/Object"));
+                REQUIRE(object != 0);
+                CHECK(call("GetMethodID", object, write("missing", 0), write("()V", 32)) == 0);
+                expect_exception("java/lang/NoSuchMethodError", "java/lang/Object.missing()V");
+                CHECK(call("GetMethodID", object, write("<init>", 0), write("()V", 32)) != 0);
+                const auto exception = call("FindClass", write("java/lang/RuntimeException"));
+                REQUIRE(exception != 0);
+                CHECK(call("ThrowNew", exception, write("worker exception")) == 0);
+                expect_exception("java/lang/RuntimeException", "worker exception");
+                CHECK(call("FindClass", write("java/lang/Object")) != 0);
+                process.ReleaseDexVmThread(worker_thread);
+            });
+            // Keep the default context active while the worker can take the VM lock and enter JNI.
+            const auto depth = lock.ReleaseForBlocking();
+            worker.wait();
+            lock.ReacquireAfterBlocking(depth);
+            worker.get();
+        });
+        CHECK_FALSE(env.IsThreadAttached(worker_thread));
+        CHECK_FALSE(env.ExceptionCheck(AndroidGuestProcess::kRootThreadId));
+    }
+}
+
 TEST_CASE("JNI native attachments isolate Java execution identity and detach cleanup") {
     using namespace ogplay::runtime;
     using namespace ogplay::runtime::dexvm;

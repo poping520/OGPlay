@@ -307,13 +307,21 @@ void VirtualFileSystem::Impl::Mount(const VfsSource source, const std::string_vi
     for (auto& [path, file] : pending) {
         file->node_id = file->inode = AllocateNodeIdLocked();
         file->canonical_path = path;
+        if (file->writable) RegisterMountDirectoriesLocked(path, file->spelling);
         files_.emplace(std::move(path), std::move(file));
     }
 }
 
+void VirtualFileSystem::Impl::RegisterMountDirectoriesLocked(const std::string_view canonical,
+                                                             const std::string_view spelling) {
+    for (auto slash = canonical.find('/', 1); slash != std::string_view::npos; slash = canonical.find('/', slash + 1))
+        directories_.try_emplace(std::string(canonical.substr(0, slash)), spelling.substr(0, slash));
+}
+
 void VirtualFileSystem::Impl::MountLazy(const VfsSource source, const std::string_view root,
                                         const std::span<const VfsLazyMountEntry> entries, const bool writable,
-                                        const std::span<const std::shared_ptr<HostFileBacking>> host_backings) {
+                                        const std::span<const std::shared_ptr<HostFileBacking>> host_backings,
+                                        const std::span<const std::string> empty_directories) {
     const auto valid_source = source == VfsSource::apk || source == VfsSource::obb || source == VfsSource::external;
     if (!valid_source || entries.empty() || (!host_backings.empty() && host_backings.size() != entries.size()) ||
         (writable && source != VfsSource::external)) {
@@ -348,6 +356,15 @@ void VirtualFileSystem::Impl::MountLazy(const VfsSource source, const std::strin
             pending.back().second->host_mounted = true;
         }
     }
+    std::vector<std::pair<std::string, std::string>> directories;
+    directories.reserve(empty_directories.size());
+    for (const auto& directory : empty_directories) {
+        const auto combined = std::string(root) + "/" + directory;
+        const auto normalized = NormalizePath(combined);
+        if (std::ranges::any_of(pending, [&](const auto& candidate) { return candidate.first == normalized; }))
+            throw VfsError(kEexist, "VFS mount contains a duplicate path");
+        directories.emplace_back(normalized, PreserveSpelling(normalized, combined));
+    }
     std::scoped_lock lock(mutex_);
     for (const auto& [path, file] : pending) {
         static_cast<void>(file);
@@ -355,11 +372,20 @@ void VirtualFileSystem::Impl::MountLazy(const VfsSource source, const std::strin
             throw VfsError(kEexist, "VFS mount path already exists");
         }
     }
+    for (const auto& [path, spelling] : directories) {
+        static_cast<void>(spelling);
+        if (files_.contains(path)) throw VfsError(kEexist, "VFS mount path already exists");
+    }
     mounts_.push_back({NormalizePath(root), source});
     for (auto& [path, file] : pending) {
         file->node_id = file->inode = AllocateNodeIdLocked();
         file->canonical_path = path;
+        if (writable) RegisterMountDirectoriesLocked(path, file->spelling);
         files_.emplace(std::move(path), std::move(file));
+    }
+    for (const auto& [path, spelling] : directories) {
+        RegisterMountDirectoriesLocked(path, spelling);
+        directories_.try_emplace(path, spelling);
     }
 }
 
@@ -372,6 +398,7 @@ void VirtualFileSystem::Impl::MountHostDirectory(const std::string_view root, co
 
     std::vector<VfsLazyMountEntry> entries;
     std::vector<std::shared_ptr<HostFileBacking>> host_backings;
+    std::vector<std::string> empty_directories;
     std::filesystem::recursive_directory_iterator iterator(directory, error);
     const std::filesystem::recursive_directory_iterator end;
     if (error) {
@@ -415,6 +442,11 @@ void VirtualFileSystem::Impl::MountHostDirectory(const std::string_view root, co
             });
         } else if (!std::filesystem::is_directory(status)) {
             throw VfsError(kEinval, "external VFS backing contains a special file");
+        } else if (std::filesystem::is_empty(path, error)) {
+            empty_directories.push_back(path.lexically_relative(directory).generic_string());
+        }
+        if (error) {
+            throw VfsError(kEio, "cannot inspect external VFS backing entry");
         }
         iterator.increment(error);
         if (error) {
@@ -424,7 +456,7 @@ void VirtualFileSystem::Impl::MountHostDirectory(const std::string_view root, co
     if (entries.empty()) {
         throw VfsError(kEinval, "external VFS backing directory has no files");
     }
-    MountLazy(VfsSource::external, root, entries, true, host_backings);
+    MountLazy(VfsSource::external, root, entries, true, host_backings, empty_directories);
 }
 
 void VirtualFileSystem::Impl::MountHostFile(const VfsSource source, const std::string_view root,
@@ -618,6 +650,10 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path, const Vf
         if (sandbox_ != nullptr && !IsWritableNamespaceLocked(normalized)) {
             throw VfsError(kEacces, "VFS path is outside the writable namespace");
         }
+        const auto parent = normalized.substr(0, std::max<std::size_t>(1, normalized.rfind('/')));
+        if (tombstones_.contains(parent)) throw VfsError(kEnoent, "VFS parent directory was deleted");
+        if (files_.contains(parent)) throw VfsError(kEnotdir, "VFS parent path is not a directory");
+        if (!IsDirectoryLocked(parent)) throw VfsError(kEnoent, "VFS parent directory does not exist");
         auto spelling = NewPathSpellingLocked(normalized, path);
         const auto node_id = AllocateNodeIdLocked();
         found =

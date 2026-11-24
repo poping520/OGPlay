@@ -134,6 +134,9 @@ TEST_CASE("preferences XML refuses what it cannot represent") {
 
 TEST_CASE("preferences load and store go through the guest filesystem") {
     VirtualFileSystem vfs;
+    vfs.CreateDirectory("/data");
+    vfs.CreateDirectory("/data/data");
+    vfs.CreateDirectory("/data/data/com.example.game");
     const auto path = PreferencesGuestPath("com.example.game", "settings");
     CHECK(path == "/data/data/com.example.game/shared_prefs/settings.xml");
 

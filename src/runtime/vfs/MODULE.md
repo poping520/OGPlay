@@ -27,6 +27,10 @@
   的读写/截断由节点锁排序。失败未交付字节时不推进 offset。要求有界定位读的打开方式
   拒绝生成节点、字符设备及只能整份物化的 backing，允许已在内存中的普通文件。
 - create+exclusive 在同一索引锁内检查存在并创建，已存在路径返回 EEXIST，早于截断/写入。
+  新建文件要求别名解析后的父目录存在，含隐式目录。父目录不存在返回 ENOENT，
+  父路径为文件返回 ENOTDIR。
+- 可写挂载的各级目录及宿主空子目录是显式目录，子文件删空后仍存在，可 rmdir；登记不写沙盒。
+  装载沙盒时，目录 tombstone 移除该目录及其下的挂载目录。PutFile 和只读挂载的目录仍为隐式目录。
 - append 是打开状态的不可变属性，Duplicate 共享；每次非空 Write 在节点锁内选当前
   EOF、写入并提交 offset，先 seek 不解除追加。WriteAt 对 append fd 按 Android/Linux
   pwrite 行为忽略请求位置并追加，但不移动顺序 offset；其他 fd 保持定位写。
@@ -34,7 +38,7 @@
 - `DescriptorStatus` 在 FD 表锁内读取不可变的访问模式、append/nonblocking、directory 及
   large-file/no-follow 打开标志，供 syscall 编组 F_GETFL；不返回创建/截断/close-on-exec。
   Duplicate 共享同一打开状态，关闭或非法 FD 返回 EBADF。VFS 不保存 ARM 数值标志。
-- 宿主目录挂载在发布前拒绝 symlink、特殊文件、空目录与大小写歧义；单个 OBB 宿主文件
+- 宿主目录挂载在发布前拒绝 symlink、特殊文件、不含文件的根目录与大小写歧义；单个 OBB 宿主文件
   可按原文件名只读挂载。挂载只索引元数据，首次 guest Open 绑定打开对象身份。
   所有宿主挂载共用 `host_file_handle_budget`，默认 128；空闲句柄 LRU 回收，独立
   FD/dup 打开状态、只读 lease 与在途读取强引用保活，不能淘汰。全部占用返回 EMFILE。
@@ -151,7 +155,8 @@ SandboxStore::Clear 原地清空四个语义根的全部内容并清零索引，
 专用根优先；其他包的 external/obb 路径仍落本实例通用 sdcard。反向枚举若发现两个宿主
 位置映射同一 guest 节点或大小写折叠后同一节点则拒绝；唯一例外是已删除目录：tombstone 只按精确路径
 生效，rmdir 时子 tombstone 必须保留，宿主目录作为其容器与同名目录 tombstone 并存，装载读为一个已删除
-目录，容器内出现非 tombstone 条目则拒绝。WriteTombstone 对仍含活动子项的目录返回 ENOTEMPTY。文件名转义、ASCII case-fold、越界拒绝、tmp 原子替换、
+目录，容器内出现非 tombstone 条目则拒绝。WriteTombstone 对仍含活动子项的目录返回 ENOTEMPTY。
+WriteFileAtomic 遇到祖先 tombstone 返回 ENOENT，mkdir 清除对应标记后可再写。文件名转义、ASCII case-fold、越界拒绝、tmp 原子替换、
 tombstone、16 GiB/65536 活动项配额继续保留。close/fsync/pause/shutdown 落文件内容；
 mkdir/unlink/rmdir/rename 立即落元数据。unlink/覆盖后的存活句柄不得复活旧路径。
 

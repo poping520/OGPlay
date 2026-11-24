@@ -380,9 +380,17 @@ void StorePreferences(VirtualFileSystem& filesystem,
         bytes[index] = static_cast<std::byte>(text[index]);
     }
     try {
-        const auto descriptor = filesystem.Open(
-            guest_path, VfsOpenOptions{.write = true, .create = true,
-                                       .truncate = true});
+        // API 19 SharedPreferencesImpl creates the prefs directory on first write.
+        const auto canonical = filesystem.CanonicalPath(guest_path);
+        const auto slash = canonical.rfind('/');
+        if (slash != 0) {
+            try {
+                filesystem.CreateDirectory(std::string_view(canonical).substr(0, slash));
+            } catch (const VfsError& error) {
+                if (error.ErrorNumber() != 17) throw;
+            }
+        }
+        const auto descriptor = filesystem.Open(guest_path, {.write = true, .create = true, .truncate = true});
         std::size_t cursor = 0;
         while (cursor < bytes.size()) {
             cursor += filesystem.Write(descriptor,

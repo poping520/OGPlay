@@ -647,6 +647,8 @@ TEST_CASE("File URI constructor rejects non-file URI components") {
 
 TEST_CASE("File writes and native reads share one filesystem") {
     FileVm vm;
+    vm.vfs.CreateDirectory("/sdcard");
+    vm.vfs.CreateDirectory("/sdcard/game");
     vm.JavaWrite("/sdcard/game/slot0.sav", "progress-42");
 
     CHECK(vm.NativeRead("/sdcard/game/slot0.sav") == "progress-42");
@@ -665,6 +667,8 @@ TEST_CASE("File writes and native reads share one filesystem") {
 
 TEST_CASE("File.delete removes real entries and refuses the rest") {
     FileVm vm;
+    vm.vfs.CreateDirectory("/sdcard");
+    vm.vfs.CreateDirectory("/sdcard/game");
     vm.JavaWrite("/sdcard/game/slot0.sav", "body");
     const auto file = vm.NewFile("/sdcard/game/slot0.sav");
     CHECK(vm.BoolOn(file, "delete"));
@@ -680,6 +684,7 @@ TEST_CASE("File.delete removes real entries and refuses the rest") {
 TEST_CASE("File.createNewFile reports whether it created anything") {
     for (const auto backend : ogplay::test::InterpreterBackends()) {
         FileVm vm(nullptr, true, {.backend = backend});
+        vm.vfs.CreateDirectory("/sdcard");
         const auto file = vm.NewFile("/sdcard/fresh.dat");
         CHECK(vm.CallOn(file, "createNewFile", "()Z").AsInt() == 1);
         CHECK(vm.BoolOn(file, "exists"));

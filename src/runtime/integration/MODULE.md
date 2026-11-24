@@ -22,12 +22,15 @@ DexVM bridge 拥有 JNI 反射转换适配：FromReflected 使用 ReflectionRunt
 校验引用类型、声明类与 static 标志，在 VM 执行锁内发布调用线程 local reference；ID 不
 拥有 wrapper，不另建字段存储。销毁前先停止调用，再清除 JniEnvironment 的反射 hooks。
 JNI FindClass 的线程 resolver 按正在执行的 native 方法、JNI_OnLoad 的加载参数或 ROM system
-loader 查找并发布真实类身份，保留平台注册表既有实现。按类 ID 发布层级及 own 成员。
+loader 查找并发布真实类身份。有效 loader 非 boot 时，FindClass 把非数组点分名归一化为
+斜杠名并共用类身份。boot loader 的点分名查找失败并挂起 NoClassDefFoundError。
+保留平台注册表既有实现，按类 ID 发布层级及 own 成员。
 被动 FindClass 查询默认注册名。启动时预发布类身份和声明层级，
 新登记的 BootDex 类由显式类或成员查询按需发布成员，过程受 VM 执行锁保护。
 预发布遇到实现类型非 interface 等 Java 链接错误时延后到真实 Java/JNI 使用，
 不因未使用的非法类使进程装配失败；失败发布不保留递归标记。
-值传输复用稳定的双向类身份缓存，成员解析仍经发布入口补齐按需物化的成员。异常 factory 发布真实 local Throwable。
+值传输复用稳定的双向类身份缓存，成员解析仍经发布入口补齐按需物化的成员。
+ThrowableFactory 在 VM 执行锁内绑定调用线程的执行上下文，构造并发布该线程的真实 local Throwable。
 JNI 字段访问经解释器共享守卫：未实现非常量字段记账、挂起 UnsatisfiedLinkError，禁止侧表回落。
 GC 强根包含 JNI 引用、数组 pin 和活动 MUTF-8 lease。UTF-16 pin 保活 String 的 value 数组。
 进程 quiesce 只 join clone runtime 实际拥有的 child；Java-only 线程交由 Java

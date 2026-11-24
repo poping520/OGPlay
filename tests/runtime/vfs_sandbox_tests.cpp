@@ -113,6 +113,8 @@ TEST_CASE("VFS sandbox preinstalls semantic roots for obb mkdirs and preserves t
         CHECK(vfs.Stat(obb).is_directory);
         CHECK(store->Entries().empty());
         WriteThrough(vfs, "/data/data/com.example.game/save", "keep");
+        WriteThrough(vfs, "/storage/emulated/0/Android/obb/com.example.game/new.obb", "obb");
+        WriteThrough(vfs, "/storage/emulated/0/root.sav", "root");
     }
     CHECK(std::filesystem::is_directory(root.path / kPackage / "obb"));
     auto reopened = SandboxStore::Open(root.path, kPackage, kPackage);
@@ -121,6 +123,8 @@ TEST_CASE("VFS sandbox preinstalls semantic roots for obb mkdirs and preserves t
     vfs.AttachSandbox(*reopened, kWritableRoots);
     CHECK(vfs.Stat(obb).is_directory);
     CHECK(ReadAll(vfs, "/data/data/com.example.game/save") == "keep");
+    CHECK(ReadAll(vfs, std::string(obb) + "/new.obb") == "obb");
+    CHECK(ReadAll(vfs, "/sdcard/root.sav") == "root");
 }
 
 TEST_CASE("DVM-243 sandbox statvfs shares alias identity and dirty quota facts") {
@@ -342,6 +346,7 @@ TEST_CASE("VFS sandbox keeps guest writes across two sessions") {
 
         vfs.CreateDirectory("/sdcard/game");
         vfs.CreateDirectory("/sdcard/game/saves");
+        vfs.CreateDirectory("/data/data/com.example.game/files");
         WriteThrough(vfs, "/sdcard/game/saves/slot0.sav", "progress-42");
         WriteThrough(vfs, "/data/data/com.example.game/files/prefs.bin", "ok");
         vfs.FlushAll();  // clean shutdown
@@ -433,13 +438,27 @@ TEST_CASE("VFS sandbox reopens after rmdir of a directory whose files were delet
         VirtualFileSystem vfs;
         vfs.AttachSandbox(*store, kWritableRoots);
         vfs.CreateDirectory(files);
+        const auto create = [&] { return vfs.Open(unpack + "/a.dat", {.write = true, .create = true}); };
+        const auto before = vfs.StatVfs(files).values;
+        CHECK(ErrnoOf([&] { static_cast<void>(create()); }) == 2);
+        CHECK(vfs.StatVfs(files).values == before);
+        CHECK(vfs.ListDirectory(files).empty());
+        vfs.FlushAll();
+        CHECK_FALSE(std::filesystem::exists(root.path / kPackage / "internal/files/unpack"));
         vfs.CreateDirectory(unpack);
-        WriteThrough(vfs, unpack + "/a.dat", "a");
+        const auto orphan = create();
+        CHECK(vfs.Write(orphan, Bytes("a")) == 1);
+        vfs.Flush(orphan);
         WriteThrough(vfs, unpack + "/b.dat", "b");
         WriteThrough(vfs, files + "/keep.dat", "keep");
         vfs.RemoveFile(unpack + "/a.dat");
         vfs.RemoveFile(unpack + "/b.dat");
         vfs.RemoveDirectory(unpack);
+        CHECK(ErrnoOf([&] { static_cast<void>(create()); }) == 2);
+        CHECK(vfs.Write(orphan, Bytes("orphan")) == 6);
+        vfs.Flush(orphan);
+        vfs.Close(orphan);
+        CHECK_FALSE(std::filesystem::exists(root.path / kPackage / "internal/files/unpack/a.dat"));
     }
     {
         auto store = SandboxStore::Open(root.path, kPackage, kPackage);
@@ -492,6 +511,43 @@ TEST_CASE("VFS sandbox recreate clears a tombstone before close and persists rea
     vfs.AttachSandbox(*store, kWritableRoots);
     CHECK(vfs.Stat("/sdcard/data/save.dat").size == 0);
     CHECK(ReadAll(vfs, "/sdcard/data/save.dat").empty());
+}
+
+TEST_CASE("VFS sandbox keeps emptied mounted directories and hides deleted ones across sessions") {
+    const TemporaryRoot root("mounted-directories");
+    const std::vector<VfsMountEntry> entries{{"keep/a.dat", Bytes("a")}, {"gone/sub/b.dat", Bytes("b")}};
+    const auto session = [&](const auto& body) {
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
+        VirtualFileSystem vfs;
+        vfs.Mount(VfsSource::external, "/sdcard/data", entries);
+        vfs.AttachSandbox(*store, kWritableRoots);
+        body(vfs, *store);
+        vfs.FlushAll();
+    };
+    session([](VirtualFileSystem& vfs, SandboxStore& store) {
+        CHECK(store.Entries().empty());  // mounted directories are not overlay state
+        vfs.RemoveFile("/sdcard/data/keep/a.dat");
+        vfs.RemoveFile("/sdcard/data/gone/sub/b.dat");
+        vfs.RemoveDirectory("/sdcard/data/gone/sub");
+        vfs.RemoveDirectory("/sdcard/data/gone");
+        CHECK(vfs.ListDirectory("/sdcard/data") == std::vector<VfsDirectoryEntry>{{"keep", true}});
+    });
+    session([](VirtualFileSystem& vfs, SandboxStore&) {
+        CHECK(vfs.ListDirectory("/sdcard/data") == std::vector<VfsDirectoryEntry>{{"keep", true}});
+        CHECK(ErrnoOf([&] { static_cast<void>(vfs.Stat("/sdcard/data/gone")); }) == 2);
+        CHECK(ErrnoOf([&] { vfs.CreateDirectory("/sdcard/data/gone/sub"); }) == 2);
+        CHECK(ErrnoOf([&] {
+                  static_cast<void>(vfs.Open("/sdcard/data/gone/b.dat", {.write = true, .create = true}));
+              }) == 2);
+        WriteThrough(vfs, "/sdcard/data/keep/a.dat", "new");
+        vfs.CreateDirectory("/sdcard/data/gone");
+        CHECK(vfs.ListDirectory("/sdcard/data/gone").empty());
+        WriteThrough(vfs, "/sdcard/data/gone/c.dat", "c");
+    });
+    session([](VirtualFileSystem& vfs, SandboxStore&) {
+        CHECK(ReadAll(vfs, "/sdcard/data/keep/a.dat") == "new");
+        CHECK(vfs.ListDirectory("/sdcard/data/gone") == std::vector<VfsDirectoryEntry>{{"c.dat", false}});
+    });
 }
 
 TEST_CASE("VFS sandbox refuses writes outside the writable namespace") {
@@ -614,8 +670,8 @@ TEST_CASE("VFS rename over an open target orphans the replaced node") {
 TEST_CASE("VFS without a sandbox keeps its in-memory behaviour") {
     VirtualFileSystem vfs;
     CHECK_FALSE(vfs.SandboxAttached());
-    // No writable-namespace restriction and no persistence: exactly the
-    // behaviour every existing test and the ephemeral mode rely on.
+    vfs.CreateDirectory("/anywhere");
+    vfs.CreateDirectory("/anywhere/at");
     WriteThrough(vfs, "/anywhere/at/all.dat", "fine");
     CHECK(ReadAll(vfs, "/anywhere/at/all.dat") == "fine");
     vfs.FlushAll();
@@ -741,11 +797,11 @@ TEST_CASE("VFS directory listing survives children whose own stat fails") {
         REQUIRE(found != entries.end());
         return *found;
     };
-    SUBCASE("file created below a removed directory") {
+    SUBCASE("a backing publishes a child under a removed directory") {
         vfs.CreateDirectory("/sdcard/cache");
         const auto old = vfs.Stat("/sdcard/cache").inode;
         vfs.RemoveDirectory("/sdcard/cache");
-        vfs.Close(vfs.Open("/sdcard/cache/file", {.write = true, .create = true}));
+        vfs.PutFile("/sdcard/cache/file", {}, false);
         CHECK(find_entry(vfs.ListDirectory("/sdcard")).inode != old);
     }
     SUBCASE("alias without its target") {

@@ -2060,11 +2060,16 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
     });
     session.Environment().SetThrowableFactory([bridge_state](std::uint64_t thread, JniObjectIdentity type,
                                                              const std::string& message) {
-        const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+        auto& vm = *bridge_state->vm;
+        const dx::VmExecutionLockScope guard(vm.ExecutionLock());
         const std::vector<std::uint8_t> encoded(message.begin(), message.end());
         const auto utf8 = core::Utf16ToUtf8(DecodeJniModifiedUtf8(encoded), core::InvalidUtf16Policy::replace).value();
-        const auto object = bridge_state->vm->MakeThrowable(bridge_state->DexClassIdentity(type), utf8);
-        return bridge_state->PublishLocal(object, thread);
+        JniReference result;
+        vm.RunInExecutionContext(bridge_state->ContextForJniThread(thread), [&] {
+            const auto object = vm.MakeThrowable(bridge_state->DexClassIdentity(type), utf8);
+            result = bridge_state->PublishLocal(object, thread);
+        });
+        return result;
     });
     session.Classes().SetClassResolver([bridge_state](const std::string& name) -> std::optional<JniObjectIdentity> {
         const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
@@ -2093,15 +2098,22 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
                                                           const std::string& name) -> std::optional<JniObjectIdentity> {
         auto& vm = *bridge_state->vm;
         const dx::VmExecutionLockScope guard(vm.ExecutionLock());
-        const bool is_array = name.starts_with('[');
-        if (!is_array && !IsValidJniObjectClassName(name)) return std::nullopt;
         std::optional<JniObjectIdentity> result;
         vm.RunInExecutionContext(bridge_state->ContextForJniThread(thread), [&] {
             try {
-                if (is_array) static_cast<void>(ParseJniFieldDescriptor(name));
                 auto loader = vm.JniClassLoader();
                 if (!loader) loader = vm.ClassLoaders().RoleOf(vm.ClassLoaders().SystemLoader());
-                const auto type = vm.Linker().ResolveDescriptor(is_array ? name : "L" + name + ";", loader.value());
+                const bool is_array = name.starts_with('[');
+                auto class_name = name;
+                if (is_array) {
+                    static_cast<void>(ParseJniFieldDescriptor(class_name));
+                } else {
+                    // Dalvik's non-bootstrap lookup reaches ClassLoader.loadClass via dvmDescriptorToDot.
+                    if (loader && *loader != dx::kBootstrapLoader) std::ranges::replace(class_name, '.', '/');
+                    if (!IsValidJniObjectClassName(class_name)) return;
+                }
+                const auto type =
+                    vm.Linker().ResolveDescriptor(is_array ? class_name : "L" + class_name + ";", loader.value());
                 result = is_array ? bridge_state->JniClassIdentity(type) : bridge_state->RegisterClassForNative(type);
             } catch (const JniSignatureError&) {
             } catch (const dx::VmJavaThrow& error) {

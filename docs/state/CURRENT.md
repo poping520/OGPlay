@@ -22,7 +22,7 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
 | 游戏 | 平台 | 到达点 | 阻塞 / 待办 | 任务 |
 | --- | --- | --- | --- | --- |
 | My Boy! 1.8.0 | macOS | 浏览器、240p 菜单/短音、hello、设置/文本/存档/横竖屏；basic 场景三轮通过 | ARM 自动核心 test 225、SRAM test 004 与同 APK API25 真机一致；并发下偶发半帧；长时音频未验 | P4-myboy |
-| Island Castaway 1.3 | macOS | CG 带字幕，PLAY 进入第一关；菜单/第一关及按钮音效已验证非零 PCM 提交 SDL | OpenSL 必需 AndroidConfiguration 缺失致无声已修；SurfaceView 默认格式误用 alpha 致黑块闪烁已修，连续 48 帧检查通过；原生磁盘空间弹窗、退出 `runFinalizersOnExit` 已修复，原 APK 待外验 | BND-56、SBX-16 |
+| Island Castaway 1.3 / 1.5（72） | macOS | 1.3 的 CG 带字幕，PLAY 进入第一关，菜单与第一关音效已验证非零 PCM。1.5 在同一新沙盒连续三次各约 60 秒，呈现 4,262 / 4,350 / 4,352 帧，SIGTERM 均退出 0 | 1.5 的 JNI 上下文错误与沙盒墓碑冲突均未重现，未触发下一阻断首错。旧损坏沙盒需手动恢复，交互待验。1.3 既有 OpenSL、SurfaceView 闪烁、磁盘空间弹窗及 `runFinalizersOnExit` 修复待外验 | BND-56、SBX-16 |
 | TML 1.0 | macOS | 标题；三点击 survey 零命中；基础场景退出 0 | 正式交互/稳定性待验 | LUI-18、DVM-257 |
 | Lili 1.06 | macOS | 两段开场影片、CONTINUE 存档菜单，纹理正常 | 音频、按钮退出未验收 | DVM-247..249、BND-54 |
 | Wild Blood 1.0.4 | Win / macOS | 中文菜单/教学；macOS 安装器 Large ProgressBar 已封存，原命令 120 秒 5550 帧退出 0 | 进关 MyVideoView 的 setText(NORMAL) 崩溃已修（DVM-372），手测正常；GAThread `ContentValues$1.<init>` 未实现；CG/Win 待验 | DVM-257、DVM-372 |
@@ -53,6 +53,7 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
 | Horn 1.3.2.7 | macOS | Play 授权弹框消失，启动阶段持续呈现；60 秒 2,921 帧，SIGINT 退出 0 | 后续画面/交互未验；该 APK 的首次授权检查已恒允许，弹框来自 ShowSplash 的诱饵公钥二次校验 | — |
 | Mass Effect Infiltrator 1.0.58（mod） | macOS | 原 APK 用既有数据越过路径型 `DT_NEEDED`、FreeType 和 EA Text 字体选择，Release 呈现 180 帧并按上限退出 0 | 180 帧后的进度与交互待验证 | — |
 | N.O.V.A. 3 | macOS | 原 `libOpenSLES.so` 显式加载错误消失，`libNOVA3_neon.so` 已加载并完成 JNI_OnLoad；日志到达 GameInstaller，60 秒 7 帧，SIGINT 退出 0 | 下一阻断首错未触发；加载后首个能力缺口为 `exec("ls")` 未注册命令（警告后继续）；安装器后续与游戏内未验 | — |
+| MC4 1.2.3e | macOS | Google Play 开启，越过 GameInstaller 的 `getInstalledPackages(GET_META_DATA)`，`libModernCombat4.so` 完成 JNI_OnLoad；90 秒呈现 200 帧，SIGTERM 退出 0 | 授权回调报 `Parcel underflow`，`LicenseChecker` 随后超时；本次缺失报告未列 OBB，弹框、画面及交互未验 | — |
 
 ## 未闭合问题
 

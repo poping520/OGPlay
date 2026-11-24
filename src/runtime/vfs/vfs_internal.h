@@ -238,7 +238,8 @@ public:
     void PutReadOnlyFile(std::string_view path, std::uint64_t size, VfsReadAtLoader read_at);
     void Mount(VfsSource source, std::string_view root, std::span<const VfsMountEntry> entries);
     void MountLazy(VfsSource source, std::string_view root, std::span<const VfsLazyMountEntry> entries, bool writable,
-                   std::span<const std::shared_ptr<HostFileBacking>> host_backings = {});
+                   std::span<const std::shared_ptr<HostFileBacking>> host_backings = {},
+                   std::span<const std::string> empty_directories = {});
     void MountHostDirectory(std::string_view root, const std::filesystem::path& directory);
     void MountHostFile(VfsSource source, std::string_view root, const std::filesystem::path& file);
     void AddPathAlias(std::string_view alias, std::string_view target);
@@ -280,6 +281,8 @@ public:
     [[nodiscard]] GuestFileSystemStats VolumeStatsLocked(std::string_view path) const;
     [[nodiscard]] GuestFileSystemStats SandboxStatsLocked(std::uint32_t filesystem_type) const;
     [[nodiscard]] std::string ResolveDataPathLocked(std::string_view path) const;
+    // A writable mount owns its directories: they outlive the files that were mounted in them.
+    void RegisterMountDirectoriesLocked(std::string_view canonical, std::string_view spelling);
     [[nodiscard]] std::string NewPathSpellingLocked(std::string_view canonical, std::string_view path) const;
     [[nodiscard]] VfsFileInfo StatLocked(const std::string& normalized) const;
     [[nodiscard]] std::vector<VfsDirectoryEntry> ListDirectory(std::string_view path) const;

@@ -483,6 +483,45 @@ TEST_CASE("DVM-231 JNI-created strings and arrays expose their actual runtime cl
     }
 }
 
+TEST_CASE("DexVM JNI FindClass follows the effective loader for dotted names") {
+    using namespace ogplay;
+    using namespace runtime;
+    using namespace runtime::dexvm;
+    for (const auto backend : test::InterpreterBackends()) {
+        ApplicationProcess fixture(backend);
+        auto& process = fixture.session->Process();
+        auto& vm = fixture.bridge->Vm();
+        const auto memory = process.GuestMemoryAccess();
+        const auto scratch = memory.allocate(64);
+        const auto find = [&](const std::string& name) {
+            memory.write(scratch, std::as_bytes(std::span{name.c_str(), name.size() + 1}));
+            return JniReference{process
+                                    .Invoke({memory::GuestAddress{EnvironmentThunk("FindClass")},
+                                             {process.GuestEnvironment().Value(), scratch.Value()},
+                                             {}})
+                                    .return_value};
+        };
+        auto& env = process.Environment();
+        constexpr auto thread = AndroidGuestProcess::kRootThreadId;
+        const auto slashed = find("java/lang/String");
+        const auto dotted = find("java.lang.String");
+        REQUIRE_FALSE(slashed.IsNull());
+        REQUIRE_FALSE(dotted.IsNull());
+        CHECK(env.IsSameObject(thread, slashed, dotted));
+        CHECK_FALSE(env.ExceptionCheck(thread));
+
+        {
+            const Interpreter::JniClassLoaderScope boot(vm, kBootstrapLoader);
+            CHECK(env.IsSameObject(thread, slashed, find("java/lang/String")));
+            CHECK(find("java.lang.String").IsNull());
+            const auto pending = env.PendingExceptionMetadata(thread);
+            REQUIRE(pending.has_value());
+            CHECK(process.Classes().ClassName(pending->exception_class) == "java/lang/NoClassDefFoundError");
+            env.ExceptionClear(thread);
+        }
+    }
+}
+
 TEST_CASE("DexVM exposes canonical array classes across JNI and Java") {
     using namespace ogplay;
     using namespace runtime;

@@ -1741,12 +1741,14 @@ Decl Declare_android_os_MessageQueue_Natives(const Context& context) {
                 context->native_activity->PumpCommands(call.vm, static_cast<std::uint32_t>(token)))
                 return dx::VmValue::Void();
             auto& execution = call.vm.ExecutionLock();
+            const auto signal_thread = call.vm.NativeSignalThread(call.vm.CurrentContextToken());
             // Main-queue idleness must not bypass pacing. Other Looper threads
             // can own an EGL producer, and a real poll wait settles that frame.
             const bool observe_blocking = call.vm.CurrentContextToken() != 1U && timeout != 0;
             const auto depth = execution.ReleaseForBlocking(observe_blocking);
             const auto ready = [&] {
                 return queue->wake || queue->destroyed || context->scheduler_shutdown ||
+                       call.vm.NativeSignalDeliverable(signal_thread) ||
                        (queue->context_token == 1U &&
                         (context->UptimeMillis() >= context->toast_deadline_millis.load() || context->AlarmDue() ||
                          context->UptimeMillis() >= context->serial_broadcast_deadline_millis.load())) ||
@@ -1785,6 +1787,10 @@ Decl Declare_android_os_MessageQueue_Natives(const Context& context) {
             }
             execution.ReacquireAfterBlocking(depth, observe_blocking);
             if (stopped) throw dx::DexVmError(dx::DexVmErrorReason::thread_stopped, "MessageQueue shutdown");
+            // Like an epoll_wait interrupted on device: run the handlers, then
+            // return to MessageQueue.next, which polls again.
+            if (call.vm.NativeSignalDeliverable(signal_thread))
+                call.vm.DeliverNativeSignals(call.vm.CurrentContextToken());
             if (context->native_activity)
                 context->native_activity->PumpCommands(call.vm, static_cast<std::uint32_t>(token));
             PumpJavaSensorEvents(call.vm, context);

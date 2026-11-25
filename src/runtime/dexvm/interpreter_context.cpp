@@ -342,6 +342,27 @@ void Interpreter::CheckExecutionDeadline(const std::uint64_t context) const {
         throw DexVmError(DexVmErrorReason::budget_exhausted, "lifecycle execution wall-time budget exhausted");
 }
 
+std::uint64_t Interpreter::NativeSignalThread(const std::uint64_t context) const {
+    return impl_->bridge == nullptr ? 0 : impl_->bridge->SignalThread(context);
+}
+
+bool Interpreter::NativeSignalDeliverable(const std::uint64_t native_thread) const {
+    return native_thread != 0 && impl_->bridge->AnySignalPending() && impl_->bridge->SignalDeliverable(native_thread);
+}
+
+void Interpreter::DeliverNativeSignals(const std::uint64_t context) {
+    if (impl_->bridge != nullptr) impl_->bridge->DeliverSignals(context);
+}
+
+void Interpreter::NotifyNativeSignal() {
+    Monitors().WakeParked();
+    if (auto* threads = AttachedThreadRuntime(); threads != nullptr) threads->WakeParked();
+    {
+        const std::lock_guard guard(impl_->clinit_wait_mutex);
+    }
+    impl_->clinit_changed.notify_all();
+}
+
 void Interpreter::RunWithExecutionDeadline(const std::uint64_t deadline_ns, const std::function<void()>& action) {
     if (deadline_ns == 0 || !action)
         throw DexVmError(DexVmErrorReason::invalid_operand, "invalid lifecycle deadline scope");
@@ -1015,6 +1036,9 @@ void Interpreter::Impl::PollExecutionSafepoint(const InterpreterExecutionState& 
     owner->CheckExecutionDeadline();
     if (model->HasPendingGcRequest() && !execution.collecting_gc && !execution.constructing_throwable)
         static_cast<void>(owner->CollectGarbage("deferred-allocation", false));
+    if (bridge != nullptr && bridge->AnySignalPending() && yield_forbidden_depth == 0 && !execution.collecting_gc &&
+        !execution.constructing_throwable && bridge->SignalDeliverable(bridge->SignalThread(execution.token)))
+        bridge->DeliverSignals(execution.token);
     execution_lock.YieldToWaiter();
 }
 

@@ -675,6 +675,34 @@ public:
         return session->Environment().PublishLocalObject(thread, identity);
     }
 
+    [[nodiscard]] std::uint64_t SignalThread(const std::uint64_t token) {
+        const std::scoped_lock lock(thread_contexts_mutex);
+        const auto found = token_to_process_thread.find(token);
+        return found == token_to_process_thread.end() ? 0U : found->second;
+    }
+
+    void DeliverSignals(const std::uint64_t token) {
+        const auto thread = SignalThread(token);
+        if (thread == 0U) return;
+        auto& execution_lock = vm->ExecutionLock();
+        const auto depth = execution_lock.ReleaseForBlocking(false);
+        try {
+            session->Process().DeliverSignals(thread, token);
+        } catch (const A32GuestCallCancelled&) {
+            execution_lock.ReacquireAfterBlocking(depth, false);
+            if (native_attachments.contains(thread)) throw;
+            throw dx::DexVmError(dx::DexVmErrorReason::thread_stopped, "guest signal handler cancelled for teardown");
+        } catch (const A32GuestCallExit&) {
+            execution_lock.ReacquireAfterBlocking(depth, false);
+            if (const auto code = session->NativeExitCode()) vm->Exit(*code);
+            throw;
+        } catch (...) {
+            execution_lock.ReacquireAfterBlocking(depth, false);
+            throw;
+        }
+        execution_lock.ReacquireAfterBlocking(depth, false);
+    }
+
     [[nodiscard]] std::uint64_t ProcessThreadForToken(const std::uint64_t token) {
         {
             const std::scoped_lock lock(thread_contexts_mutex);
@@ -2162,6 +2190,7 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
         if (!android_context->standalone_dex_path.empty()) {
             vm.ClassLoaders().SetApplicationLoaderFactory([&vm] { return vm.ClassLoaders().SystemLoader(); });
         }
+        session.Process().SetSignalObserver([&vm] { vm.NotifyNativeSignal(); });
         try {
             PrepareAndroidMainLooper(*impl_->vm, android_context);
             if (android_context->sealed_apk_bytes || !android_context->standalone_dex_path.empty()) {
@@ -2172,6 +2201,7 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
             }
         } catch (...) {
             // The process outlives this constructor's VM state when startup fails.
+            session.Process().SetSignalObserver({});
             android_context->threads = nullptr;
             android_context->clock_monitors = nullptr;
             android_context->prepare_native_looper = {};
@@ -2249,6 +2279,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
     if (impl_->threads) impl_->threads->Shutdown();
     if (impl_->android_context) impl_->android_context->clock_monitors = nullptr;
     if (impl_->vm) impl_->vm->SetClassInitializationPendingSource({});
+    impl_->session->Process().SetSignalObserver({});
     impl_->session->Process().SetBitmapHooks({});
     if (impl_->android_context) {
     }
@@ -2365,6 +2396,22 @@ void DexVmGuestBridge::AttachThread(const std::uint64_t guest_thread_id, const s
     }
     const std::scoped_lock lock(impl_->thread_contexts_mutex);
     impl_->java_thread_tokens.emplace(execution_token);
+}
+
+bool DexVmGuestBridge::AnySignalPending() const noexcept {
+    return impl_->session->Process().AnySignalPending();
+}
+
+std::uint64_t DexVmGuestBridge::SignalThread(const std::uint64_t execution_token) const {
+    return impl_->SignalThread(execution_token);
+}
+
+bool DexVmGuestBridge::SignalDeliverable(const std::uint64_t native_thread) const {
+    return impl_->session->Process().SignalDeliverable(native_thread);
+}
+
+void DexVmGuestBridge::DeliverSignals(const std::uint64_t execution_token) {
+    impl_->DeliverSignals(execution_token);
 }
 
 void DexVmGuestBridge::DetachThread(const std::uint64_t guest_thread_id, const std::uint64_t execution_token) noexcept {

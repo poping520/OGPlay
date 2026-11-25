@@ -246,6 +246,27 @@ public:
 
     [[nodiscard]] virtual VmValue Invoke(const LinkedMethod& method, VmObjectRef receiver,
                                          std::span<const VmValue> arguments) = 0;
+
+    // Native signals aimed at a thread that is executing or waiting in Java.
+    // The native thread id of a context is stable while the context is parked;
+    // zero means the context has no native thread.
+    [[nodiscard]] virtual bool AnySignalPending() const noexcept { return false; }
+
+    [[nodiscard]] virtual std::uint64_t SignalThread(std::uint64_t execution_token) const {
+        static_cast<void>(execution_token);
+        return 0;
+    }
+
+    // Called under VM wait locks: must not take the execution lock or any
+    // lock that is held while entering the VM.
+    [[nodiscard]] virtual bool SignalDeliverable(std::uint64_t native_thread) const {
+        static_cast<void>(native_thread);
+        return false;
+    }
+
+    // Runs the pending handlers on the calling owner thread, releasing the
+    // execution lock around guest code.
+    virtual void DeliverSignals(std::uint64_t execution_token) { static_cast<void>(execution_token); }
 };
 
 enum class InterpreterBackend : std::uint8_t {
@@ -385,6 +406,15 @@ public:
     [[nodiscard]] bool ExecutionDeadlineExpired(std::uint64_t context = 0) const;
     [[nodiscard]] bool HasExecutionDeadline(std::uint64_t context = 0) const;
     void CheckExecutionDeadline(std::uint64_t context = 0) const;
+
+    // Blocking VM waits resolve the native thread before parking, include
+    // NativeSignalDeliverable in their wake predicate, deliver with the
+    // execution lock reacquired and then keep waiting.
+    [[nodiscard]] std::uint64_t NativeSignalThread(std::uint64_t context) const;
+    [[nodiscard]] bool NativeSignalDeliverable(std::uint64_t native_thread) const;
+    void DeliverNativeSignals(std::uint64_t context);
+    // Wakes every parked VM wait to re-evaluate its signal predicate.
+    void NotifyNativeSignal();
 
     // Runtime.nativeExit: stop this VM without joining the calling thread.
     // The process owner performs teardown after the guest stack unwinds.

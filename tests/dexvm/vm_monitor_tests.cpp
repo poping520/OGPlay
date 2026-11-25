@@ -12,6 +12,7 @@
 #include <atomic>
 #include <chrono>
 #include <fstream>
+#include <functional>
 #include <latch>
 #include <string>
 #include <thread>
@@ -39,6 +40,39 @@ std::vector<std::uint8_t> ReadFixture(const std::string& name) {
     return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
 }
 
+// Publishes one pending native signal for an execution context.
+struct SignalBridge final : NativeMethodBridge {
+    static constexpr std::uint64_t kThreadOffset = 100;
+    VmExecutionLock* lock{};
+    std::atomic<std::uint64_t> pending_thread{};
+    std::atomic<std::thread::id> handler_host{};
+    std::atomic<int> delivered{};
+    std::atomic<bool> held_lock{};
+    std::atomic<bool> stop{};
+
+    VmValue Invoke(const LinkedMethod&, VmObjectRef, std::span<const VmValue>) override { return VmValue::Void(); }
+
+    bool AnySignalPending() const noexcept override { return pending_thread.load() != 0; }
+
+    std::uint64_t SignalThread(const std::uint64_t token) const override { return token + kThreadOffset; }
+
+    bool SignalDeliverable(const std::uint64_t thread) const override { return pending_thread.load() == thread; }
+
+    void DeliverSignals(const std::uint64_t token) override {
+        auto expected = token + kThreadOffset;
+        if (!pending_thread.compare_exchange_strong(expected, 0)) return;
+        held_lock = lock->HeldByCurrentThread();
+        handler_host = std::this_thread::get_id();
+        ++delivered;
+        if (stop) throw DexVmError(DexVmErrorReason::thread_stopped, "handler cancelled");
+    }
+
+    void Send(Interpreter& vm, const std::uint64_t token) {
+        pending_thread = token + kThreadOffset;
+        vm.NotifyNativeSignal();
+    }
+};
+
 struct MonitorVm final {
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
@@ -53,7 +87,8 @@ struct MonitorVm final {
     std::atomic<std::int64_t> fake_real{};
 
     explicit MonitorVm(const bool platform_bindings = false,
-                       const InterpreterBackend backend = InterpreterBackend::threaded)
+                       const InterpreterBackend backend = InterpreterBackend::threaded,
+                       NativeMethodBridge* bridge = nullptr)
         : model(arrays, {}), linker(),
           interpreter(
               [this, platform_bindings]() -> DexClassLinker& {
@@ -65,7 +100,7 @@ struct MonitorVm final {
                   linker.Link();
                   return linker;
               }(),
-              model, nullptr, ledger, InterpreterConfig{.backend = backend}),
+              model, bridge, ledger, InterpreterConfig{.backend = backend}),
           threads(interpreter) {}
 
     void UseTestClock() {
@@ -459,6 +494,125 @@ TEST_CASE("dexvm teardown wakes every waiter and stops the thread") {
     CHECK(vm.interpreter.Monitors().ShuttingDown());
     // Waking at teardown is not a guest failure, and nothing was observed.
     CHECK(!vm.threads.TakeFailure().has_value());
+}
+
+TEST_CASE("native signals run on threads waiting or executing in Java and the wait continues") {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
+        SignalBridge bridge;
+        MonitorVm vm(false, backend, &bridge);
+        bridge.lock = &vm.interpreter.ExecutionLock();
+        vm.UseTestClock();
+        auto& monitors = vm.interpreter.Monitors();
+        const auto lock = vm.Lock();
+        const auto token_of = [&](const VmObjectRef thread) {
+            for (const auto& entry : vm.threads.Snapshot())
+                if (entry.object == thread.Value()) return entry.context_token;
+            return std::uint64_t{};
+        };
+        const auto waiting = [&](const VmObjectRef thread) {
+            return WaitFor([&] {
+                return std::ranges::any_of(vm.threads.Snapshot(), [&](const auto& entry) {
+                    return entry.object == thread.Value() && entry.wait_state == VmThreadWaitState::monitor;
+                });
+            });
+        };
+        const auto deliver = [&](const std::uint64_t token) {
+            const auto before = bridge.delivered.load();
+            bridge.Send(vm.interpreter, token);
+            CHECK(WaitFor([&] { return bridge.delivered.load() == before + 1; }));
+            CHECK(bridge.held_lock.load());
+            CHECK(bridge.handler_host.load() != std::this_thread::get_id());
+        };
+
+        // Contended monitor entry, then an unbounded Object.wait.
+        {
+            const VmExecutionLockScope execution(vm.interpreter.ExecutionLock());
+            monitors.Enter(lock, 1U);
+        }
+        const auto waiter = vm.Make("LWaitProbe;");
+        vm.threads.Start(waiter, "waiter", vm.threads.AllocateThreadId());
+        REQUIRE(waiting(waiter));
+        CHECK(monitors.WaitingCount(lock) == 0U);
+        deliver(token_of(waiter));
+        CHECK(waiting(waiter));
+        CHECK(vm.threads.IsAlive(waiter));
+        {
+            const VmExecutionLockScope execution(vm.interpreter.ExecutionLock());
+            monitors.Exit(lock, 1U);
+        }
+        REQUIRE(WaitFor([&] { return monitors.WaitingCount(lock) == 1U; }));
+        deliver(token_of(waiter));
+        deliver(token_of(waiter));
+        CHECK(monitors.WaitingCount(lock) == 1U);
+        CHECK(vm.Observed() == 0);
+        // A signal for another thread leaves this wait alone.
+        const auto before = bridge.delivered.load();
+        bridge.Send(vm.interpreter, token_of(waiter) + 50U);
+        CHECK(monitors.WaitingCount(lock) == 1U);
+        CHECK(bridge.delivered.load() == before);
+        bridge.pending_thread = 0;
+        REQUIRE(!vm.CallStatic("LWaitProbe;", "signal", "()V").exception.IsValid());
+        vm.threads.Join(waiter);
+        CHECK(vm.Observed() == 1);
+
+        // Bytecode loop: no wait to interrupt, only the safepoint.
+        const auto spinner = vm.Make("LThreadSpin;");
+        vm.threads.Start(spinner, "spin", vm.threads.AllocateThreadId());
+        REQUIRE(WaitFor([&] { return token_of(spinner) != 0; }));
+        deliver(token_of(spinner));
+        CHECK(vm.threads.IsAlive(spinner));
+
+        // Thread.join and Thread.sleep park the root context on this host.
+        vm.threads.SetRootThreadObject(vm.NewThreadObject());
+        const auto on_root = [&](const std::function<void()>& park, const std::function<void()>& finish) {
+            const auto delivered = bridge.delivered.load();
+            const auto root_host = std::this_thread::get_id();
+            std::thread sender([&] {
+                CHECK(WaitFor([&] {
+                    return std::ranges::any_of(vm.threads.Snapshot(), [](const auto& entry) {
+                        return entry.context_token == 1U && entry.wait_state != VmThreadWaitState::none;
+                    });
+                }));
+                bridge.Send(vm.interpreter, 1U);
+                static_cast<void>(WaitFor([&] { return bridge.delivered.load() == delivered + 1; }));
+                finish();
+            });
+            {
+                const VmExecutionLockScope execution(vm.interpreter.ExecutionLock());
+                park();
+            }
+            sender.join();
+            CHECK(bridge.delivered.load() == delivered + 1);
+            CHECK(bridge.handler_host.load() == root_host);
+            CHECK(bridge.held_lock.load());
+        };
+        on_root([&] { vm.threads.Sleep(1000); }, [&] { vm.clock_millis += 1000; });
+        on_root([&] { vm.threads.Join(spinner, 1000); }, [&] { vm.clock_millis += 1000; });
+        on_root([&] { vm.threads.Join(spinner); },
+                [&] { vm.interpreter.RequestStop(vm.interpreter.ExecutionContext(token_of(spinner))); });
+        CHECK(!vm.threads.IsAlive(spinner));
+        vm.threads.Shutdown();
+        CHECK(!vm.threads.TakeFailure().has_value());
+    }
+}
+
+TEST_CASE("a native signal handler that ends the thread leaves no monitor wait behind") {
+    SignalBridge bridge;
+    MonitorVm vm(false, InterpreterBackend::threaded, &bridge);
+    bridge.lock = &vm.interpreter.ExecutionLock();
+    vm.UseTestClock();
+    const auto lock = vm.Lock();
+    const auto waiter = vm.Make("LWaitProbe;");
+    vm.threads.Start(waiter, "waiter", vm.threads.AllocateThreadId());
+    REQUIRE(WaitFor([&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
+    bridge.stop = true;
+    for (const auto& entry : vm.threads.Snapshot())
+        if (entry.object == waiter.Value()) bridge.Send(vm.interpreter, entry.context_token);
+    CHECK(WaitFor([&] { return !vm.threads.IsAlive(waiter); }));
+    CHECK(bridge.delivered.load() == 1);
+    CHECK(vm.interpreter.Monitors().WaitingCount(lock) == 0U);
+    CHECK(vm.Observed() == 0);
+    vm.threads.Shutdown();
 }
 
 TEST_CASE("dexvm monitor-exit without ownership is a guest exception") {

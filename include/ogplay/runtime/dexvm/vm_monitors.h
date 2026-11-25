@@ -95,6 +95,8 @@ public:
     // Thread.interrupt (AOSP vm/Thread.cpp dvmThreadInterrupt): raise the
     // flag, then wake the target if it is parked.
     void Interrupt(std::uint64_t owner);
+    // Parked threads re-evaluate their wake predicates without a lost wakeup.
+    void WakeParked();
     [[nodiscard]] bool Interrupted(std::uint64_t owner) const;
     [[nodiscard]] bool ClearInterrupt(std::uint64_t owner);
 

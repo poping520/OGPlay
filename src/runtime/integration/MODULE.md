@@ -254,6 +254,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   代替 native TID；GLThread 的 Java/native current context 与错误状态共享。
   native 执行释放 VM 锁，JNI 回调重获；executor 按 thread 和重入深度复用 CPU/JIT，同层复用
   缓存、不同深度隔离现场，nested 使用 suspended SP/TLS，线程退出回收全部 executor。
+  DeliverSignals 以返回陷阱为目标做一次空 guest 调用，handler 在所属线程的当前 guest 栈上运行；
+  嵌套时先把外层 r4-r11 写入 guest 栈，供按信号停线程的 GC 扫描。teardown 或原生故障后不再投递。
   JNI monitor 使用 VM token/对象身份，与 Java synchronized 共享状态；TID 受 Bionic 16-bit 限制。
   原生 JNI 附加线程首次 Java 调用、字段 clinit 或 monitor 操作建立独立 VM token，最多
   64 个存活附加 context；复用原生 clone CPU/SP/TLS 进行 Java→native 重入，不另起线程。

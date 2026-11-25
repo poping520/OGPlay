@@ -28,6 +28,8 @@ inline constexpr Dynarmic::HaltReason kCallbackHalt =
     Dynarmic::HaltReason::UserDefined1;
 inline constexpr Dynarmic::HaltReason kExternalHalt =
     Dynarmic::HaltReason::UserDefined2;
+// Leaves the block at the faulting data access instead of at the block end.
+inline constexpr Dynarmic::HaltReason kDataFaultHalt = Dynarmic::HaltReason::MemoryAbort;
 
 struct PendingStop final {
     RunStopReason reason{RunStopReason::undefined_instruction};
@@ -243,6 +245,12 @@ public:
                                   &memory::MemoryBus::CompareExchange64);
         }
 
+        // Runtime-generated code may rely on fault handlers that inspect and
+        // resume guest state (managed null checks). Other code stays optimized.
+        bool PreciseDataFaults(const Dynarmic::A32::VAddr pc) override {
+            return memory_bus_.IsWritableCode(memory::GuestAddress{pc});
+        }
+
         void InterpreterFallback(const Dynarmic::A32::VAddr pc,
                                  std::size_t) override {
             RecordStop({RunStopReason::unsupported_instruction,
@@ -411,7 +419,9 @@ public:
                     CpuFault{fault.Address(), fault.Access(), fault.Reason(),
                              fault.ThreadId()}};
             }
-            jit_->HaltExecution(kCallbackHalt);
+            // A fetch fault is raised while translating; earlier instructions still run.
+            jit_->HaltExecution(fault.Access() == memory::AccessType::execute ? kCallbackHalt
+                                                                              : kCallbackHalt | kDataFaultHalt);
         }
 
         void RecordStop(PendingStop stop) {
@@ -480,10 +490,9 @@ public:
         config.detect_misaligned_access_via_page_table =
             8U | 16U | 32U | 64U;
         config.only_detect_misalignment_via_page_table_on_page_boundary = true;
-        // OGPlay uses callback-only memory access. Dynarmic's per-access abort
-        // checks apply to page-table/fastmem fallbacks, while enabling this flag
-        // still disables register get/set elimination on the Arm64 backend.
-        config.check_halt_on_memory_access = false;
+        // Checked only after a callback fallback, so direct page accesses pay nothing.
+        // Register get/set elimination is chosen per block by PreciseDataFaults.
+        config.check_halt_on_memory_access = true;
         config.enable_cycle_counting = true;
         // 16 MiB was exhausted by real titles at steady state: Dynarmic clears
         // the whole cache when full and recompiles hot blocks every frame.
@@ -539,7 +548,7 @@ RunResult DynarmicCpu::Run(const std::uint64_t tick_budget) {
         return {0, RunStopReason::halt_requested, pc, 0, 0, std::nullopt};
     }
     impl_->callbacks.Begin(budget ? lease.Ticks() : tick_budget, impl_->thread_id);
-    impl_->jit.ClearHalt(kCallbackHalt | kExternalHalt);
+    impl_->jit.ClearHalt(kCallbackHalt | kDataFaultHalt | kExternalHalt);
     auto halt_reason = impl_->jit.Run();
     // A concurrent invalidation can interrupt before the first guest tick.
     // It is internal maintenance, not the runner's "CPU made no progress".
@@ -560,7 +569,11 @@ RunResult DynarmicCpu::Run(const std::uint64_t tick_budget) {
 #endif
 
     if (impl_->callbacks.Pending().has_value()) {
-        const auto& pending = *impl_->callbacks.Pending();
+        auto pending = *impl_->callbacks.Pending();
+        if (pending.fault && pending.fault->access != memory::AccessType::execute) {
+            pending.pc = memory::GuestAddress{impl_->jit.Regs()[15]};
+            pending.fault->precise_state = impl_->callbacks.PreciseDataFaults(pending.pc.Value());
+        }
         return {ticks, pending.reason, pending.pc, pending.instruction,
                 pending.immediate, pending.fault};
     }

@@ -84,11 +84,16 @@ namespace {
 
 bool TryDeliverSynchronousCpuSignal(cpu::Cpu& cpu, const cpu::RunResult& stopped,
                                     const A32SyscallDispatcher& dispatcher) {
+    const auto& binding = *dispatcher.signal_binding;
+    if (stopped.reason == cpu::RunStopReason::memory_fault) {
+        return binding.runtime && stopped.fault && stopped.fault->precise_state &&
+               stopped.fault->reason != memory::FaultReason::misaligned &&  // SIGBUS on Linux
+               binding.runtime->DeliverSynchronousSigsegv(cpu, stopped.pc, *stopped.fault);
+    }
     if (stopped.reason != cpu::RunStopReason::unsupported_instruction &&
         stopped.reason != cpu::RunStopReason::undefined_instruction) {
         return false;
     }
-    const auto& binding = *dispatcher.signal_binding;
     return binding.runtime && binding.classify_user_undefined &&
            binding.classify_user_undefined(stopped.reason, stopped.instruction, cpu.GetState().State()) &&
            binding.runtime->DeliverSynchronousSigill(cpu, stopped.pc);

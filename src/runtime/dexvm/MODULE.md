@@ -192,6 +192,10 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   有界生命周期 scope 另使用统一 Clock 的 steady deadline；Java 指令、monitor/睡眠与
   clinit 等待检查同一不可续期预算。到期以非 Java 控制故障退出、移除等待账本，
   不返回伪造通知；正常 Java wait/异常仍按原规则恢复 monitor。
+- 原生信号可发给正在执行或等待 Java 的线程，handler 只在该线程上运行。monitor 进入、Object.wait、
+  join、sleep、clinit 等待和 MessageQueue 轮询把 NativeSignalDeliverable 纳入唤醒谓词，取回 VM 执行锁后
+  DeliverNativeSignals 再继续原等待（MessageQueue 如 epoll EINTR 返回重轮询）；字节码在周期安全点投递。
+  SignalDeliverable 会在等待锁内调用，不得取 VM 执行锁。网络、管道与子进程等待不投递。
   通过 ROM 主 Looper 异步派发的进程关闭可以从宿主设置默认 execution 的截止时间，
   由其所有者退出 Looper 后清除，再运行资源清理。
 - execution context 进入时验证活动宿主归属；阻塞释放 VM 锁不解除归属，禁止异宿主

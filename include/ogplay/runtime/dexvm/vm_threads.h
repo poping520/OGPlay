@@ -93,6 +93,8 @@ public:
     // The time source moved; timed sleepers recheck their deadline now instead of
     // at the next poll.
     void NotifyClockAdvanced() noexcept;
+    // Parked threads re-evaluate their wake predicates without a lost wakeup.
+    void WakeParked();
 
     // Raises the interrupt flag and wakes the target if it is parked
     // (AOSP vm/Thread.cpp dvmThreadInterrupt).

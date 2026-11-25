@@ -1510,7 +1510,8 @@ TEST_CASE("DVM-259 Proxy ordered interfaces cache checked exceptions and GC use 
                 if (mode == 3) return VmValue::Ref(VmObjectRef{});
                 if (mode == 4) return VmValue::Ref(call.vm.NewStringUtf8("wrong type"));
                 if (call.vm.Linker().Method(meta.method).name == "checked") {
-                    CHECK_FALSE(call.arguments[2].ref.IsValid());
+                    REQUIRE(call.arguments[2].ref.IsValid());
+                    CHECK(call.vm.Model().ArrayLength(call.arguments[2].ref) == 0);
                     return VmValue::Ref(VmObjectRef{});
                 }
                 return VmValue::Ref(

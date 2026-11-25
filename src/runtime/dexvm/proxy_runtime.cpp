@@ -137,13 +137,10 @@ void AddInterfaceMethods(Interpreter& vm, const DexClassId interface_id, std::ve
     const auto method_object = reflection.MaterializeMethod(*meta);
     const auto method_root = vm.ProtectReferences(std::array{method_object});
 
-    // Dalvik passes null, not an empty array, for a method without parameters.
-    VmObjectRef boxed;
-    if (!meta->parameter_types.empty()) {
-        const auto count = static_cast<JniSize>(meta->parameter_types.size());
-        boxed = model.NewObjectArray(linker.ResolveDescriptor("[Ljava/lang/Object;"),
-                                     linker.ResolveDescriptor("Ljava/lang/Object;"), count);
-    }
+    // API 19 Dalvik boxMethodArgs always allocates: an empty array for a method without parameters.
+    const auto boxed = model.NewObjectArray(linker.ResolveDescriptor("[Ljava/lang/Object;"),
+                                            linker.ResolveDescriptor("Ljava/lang/Object;"),
+                                            static_cast<JniSize>(meta->parameter_types.size()));
     const auto boxed_root = vm.ProtectReferences(std::array{boxed});
     for (std::size_t index = 0; index < meta->parameter_types.size(); ++index) {
         const auto value = reflection.Codec().BoxReturn(meta->parameter_types[index], call.arguments[index]);

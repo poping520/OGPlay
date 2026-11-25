@@ -43,6 +43,7 @@ void InlineExclusiveReadMemory(oaknut::CodeGenerator& code, EmitContext& ctx, IR
 
     code.l(fallback);
     EmitRelocation(code, ctx, ExclusiveReadMemoryLinkTarget(bitsize));
+    ctx.conf.emit_check_memory_abort(code, ctx, inst, end);
     code.l(end);
     code.MOV(Wscratch0, 1);
     code.STRB(Wscratch0, Xstate, ctx.conf.state_exclusive_state_offset);
@@ -139,6 +140,7 @@ void InlineExclusiveWriteMemory(oaknut::CodeGenerator& code, EmitContext& ctx, I
     code.B(end);
     code.l(fallback);
     EmitRelocation(code, ctx, ExclusiveWriteMemoryLinkTarget(bitsize));
+    ctx.conf.emit_check_memory_abort(code, ctx, inst, end);
     code.l(end);
     if (ordered) code.DMB(oaknut::BarrierOp::ISH);
     ctx.reg_alloc.DefineAsRegister(inst, X0);

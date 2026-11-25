@@ -172,8 +172,8 @@ RunResult InterpreterCpu::Run(const std::uint64_t tick_budget) {
                     pc,
                     instruction,
                     0,
-                    CpuFault{fault.Address(), fault.Access(), fault.Reason(),
-                             fault.ThreadId()}};
+                    CpuFault{fault.Address(), fault.Access(), fault.Reason(), fault.ThreadId(),
+                             fault.Access() != memory::AccessType::execute}};
         }
     }
     return {consumed,

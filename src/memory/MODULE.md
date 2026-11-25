@@ -48,6 +48,7 @@
 - `CheckedMemoryBus`：完整权限验证和观察器钩子的 soft-MMU 调试后端。
 - `DirectMemoryPageTable`：按 4 KiB guest 页索引的稳定数据页表；只有无 observer 的 RW
   非执行页可交给 JIT，其他页和跨页访问继续回退受检 bus。
+- `IsWritableCode`：查询已映射页是否同时可写可执行，供 CPU 识别 guest 运行时生成的代码；权限变化经映射通知使旧块失效。
 - `DirectReadPageTable`：独立的数据读取页表，仅发布已映射且具有 read 权限的页，
   包含 R/RX；不得用于写入或取指。observer 禁用，两张表使用相同映射发布及恢复边界。
 - `DescribeMappings(maximum_ranges)`：同一锁内按地址合并连续同权限已映射页，仅返回

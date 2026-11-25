@@ -64,12 +64,13 @@ public:
         throw std::logic_error("memory bus atomic compare/exchange is unavailable");
     }
     // Fixed-mapping buses need no subscription. Mutable buses must forward it.
-    [[nodiscard]] virtual MappingChangeSubscription ObserveMappingChanges(MappingChangeHandler) {
-        return {};
-    }
-    [[nodiscard]] virtual DirectMemoryPageTable* DirectPageTable() noexcept {
-        return nullptr;
-    }
+    [[nodiscard]] virtual MappingChangeSubscription ObserveMappingChanges(MappingChangeHandler) { return {}; }
+
+    [[nodiscard]] virtual DirectMemoryPageTable* DirectPageTable() noexcept { return nullptr; }
+
+    // True for a mapped page that is both writable and executable, i.e. code
+    // the guest generates at run time.
+    [[nodiscard]] virtual bool IsWritableCode(GuestAddress) const { return false; }
     [[nodiscard]] virtual DirectMemoryPageTable* DirectReadPageTable() noexcept {
         return nullptr;
     }
@@ -113,6 +114,7 @@ public:
     }
     [[nodiscard]] DirectMemoryPageTable* DirectPageTable() noexcept override;
     [[nodiscard]] DirectMemoryPageTable* DirectReadPageTable() noexcept override;
+    [[nodiscard]] bool IsWritableCode(GuestAddress address) const override;
 
 private:
     AddressSpace& address_space_;

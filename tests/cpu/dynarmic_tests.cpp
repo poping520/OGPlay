@@ -708,6 +708,75 @@ TEST_CASE("Dynarmic exclusive reservations include sparse processor IDs and call
     }
 }
 
+TEST_CASE("Dynarmic data faults stop at the access and keep registers current in writable code") {
+    using namespace ogplay;
+
+    struct Observer final : memory::MemoryAccessObserver {
+        void OnMemoryAccess(const memory::BusAccess&) override {}
+    };
+
+    struct Program final {
+        const char* name;
+        bool thumb;
+        std::uint32_t fault_offset;
+        std::vector<std::uint32_t> words;
+    };
+
+    const std::array programs{
+        // cmp r0,r0; mov r2,#7; ldr r1,[r0]; mov r2,#9; str r2,[r3]; svc #1
+        Program{"load", false, 8, {0xe1500000U, 0xe3a02007U, 0xe5901000U, 0xe3a02009U, 0xe5832000U, 0xef000001U}},
+        Program{
+            "exclusive load", false, 8, {0xe1500000U, 0xe3a02007U, 0xe1901f9fU, 0xe3a02009U, 0xe5832000U, 0xef000001U}},
+        // cmp r0,r0; movs r2,#7; cmp r0,r0; it eq; ldreq r1,[r0]; movs r2,#9; str r2,[r3]; svc #1
+        Program{"Thumb load inside an IT block", true, 8, {0x22074280U, 0xbf084280U, 0x22096801U, 0xdf01601aU}},
+    };
+    const auto rw = memory::PageProtection::read | memory::PageProtection::write;
+    for (const auto& program : programs) {
+        for (const bool callbacks : {false, true}) {
+            CAPTURE(program.name);
+            CAPTURE(callbacks);
+            memory::AddressSpace space;
+            const memory::GuestAddress code{sample::kCodeAddress}, data{0x40000}, target{0x50000};
+            space.Map({code, space.PageSize()}, rw);
+            space.Map({data, space.PageSize()}, rw);
+            Observer observer;
+            memory::CheckedMemoryBus bus(space, callbacks ? &observer : nullptr);
+            for (std::uint32_t index = 0; index < program.words.size(); ++index)
+                bus.Write32(code.Add(index * 4U), program.words[index]);
+            space.Protect({code, space.PageSize()}, rw | memory::PageProtection::execute);
+            CHECK(bus.IsWritableCode(code));
+            CHECK_FALSE(bus.IsWritableCode(data));
+
+            cpu::DynarmicCpu executor(bus);
+            cpu::A32State state;
+            state.SetRegister(cpu::CoreRegister::pc, code.Value());
+            state.SetRegister(cpu::CoreRegister::r0, target.Value());
+            state.SetRegister(cpu::CoreRegister::r1, 3);
+            state.SetRegister(cpu::CoreRegister::r3, data.Value());
+            if (program.thumb) state.SetState(cpu::ExecutionState::thumb);
+            executor.SetState(state);
+            const auto stopped = executor.Run(64);
+            REQUIRE(stopped.reason == cpu::RunStopReason::memory_fault);
+            REQUIRE(stopped.fault.has_value());
+            CHECK(stopped.fault->precise_state);
+            CHECK(stopped.pc == code.Add(program.fault_offset));
+            const auto after = executor.GetState();
+            CHECK(after.Register(cpu::CoreRegister::r1) == 3);
+            CHECK(after.Register(cpu::CoreRegister::r2) == 7);
+            CHECK((after.Cpsr() & 0xc0000000U) == 0x40000000U);
+            CHECK((after.Cpsr() & 0x0600fc00U) == (program.thumb ? 0x800U : 0U));
+            CHECK(bus.Read32(data) == 0);
+
+            // Mapping the page lets the same instruction resume with intact state.
+            space.Map({target, space.PageSize()}, rw);
+            executor.SetState(after);
+            REQUIRE(executor.Run(64).reason == cpu::RunStopReason::supervisor_call);
+            CHECK(executor.GetState().Register(cpu::CoreRegister::r1) == 0);
+            CHECK(bus.Read32(data) == 9);
+        }
+    }
+}
+
 TEST_CASE("Dynarmic reports callback-only data memory faults") {
     const ogplay::memory::GuestAddress code{sample::kCodeAddress};
     const ogplay::memory::GuestAddress unmapped{0x30000U};

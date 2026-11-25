@@ -167,6 +167,11 @@ bool CheckedMemoryBus::CompareExchange64(const GuestAddress address,
 DirectMemoryPageTable* CheckedMemoryBus::DirectPageTable() noexcept {
     return observer_ == nullptr ? address_space_.DirectPageTable() : nullptr;
 }
+
+bool CheckedMemoryBus::IsWritableCode(const GuestAddress address) const {
+    return address_space_.IsWritableCode(address);
+}
+
 DirectMemoryPageTable* CheckedMemoryBus::DirectReadPageTable() noexcept {
     return observer_ == nullptr ? address_space_.DirectReadPageTable() : nullptr;
 }

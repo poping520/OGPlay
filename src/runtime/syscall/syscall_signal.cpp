@@ -3,12 +3,14 @@
 
 #include <array>
 #include <algorithm>
+#include <atomic>
 #include <bit>
 #include <chrono>
 #include <condition_variable>
 #include <utility>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <span>
@@ -27,6 +29,14 @@ constexpr std::uint32_t kSigUnblock = 1;
 constexpr std::uint32_t kSigSetmask = 2;
 constexpr std::uint32_t kSigill = 4;
 constexpr std::uint32_t kIllIllopc = 1;
+constexpr std::uint32_t kSigsegv = 11;
+constexpr std::uint32_t kSegvMaperr = 1;
+constexpr std::uint32_t kSegvAccerr = 2;
+// ARM data abort reported by Linux: trap number, page-level DFSR status, write flag.
+constexpr std::uint32_t kArmDataAbortTrap = 14;
+constexpr std::uint32_t kArmPageTranslationFault = 0x7;
+constexpr std::uint32_t kArmPagePermissionFault = 0xf;
+constexpr std::uint32_t kArmWriteFault = 1U << 11U;
 constexpr std::uint64_t kUnblockableSignals =
     (UINT64_C(1) << (9U - 1U)) | (UINT64_C(1) << (19U - 1U));
 
@@ -41,6 +51,15 @@ struct SignalAction final {
     std::uint32_t flags{};
     memory::GuestAddress restorer{0};
     std::uint64_t mask{};
+};
+
+// Faulting address, si_code and the sigcontext fault registers of a synchronous signal.
+struct SynchronousFault final {
+    std::uint32_t address{};
+    std::uint32_t code{};
+    std::uint32_t trap_number{};
+    std::uint32_t error_code{};
+    std::uint32_t context_address{};
 };
 struct SignalFrame final {
     memory::GuestAddress stack;
@@ -59,6 +78,9 @@ struct SignalData {
     std::unordered_map<std::uint64_t, std::uint64_t> suspend_masks;
     std::unordered_map<std::uint64_t, A32SyscallFrame> restart;
     std::condition_variable changed;
+    std::atomic_bool any_pending{};
+    std::mutex observer_mutex;
+    std::function<void()> send_observer;
 };
 
 [[nodiscard]] std::uint32_t DecodeWord(
@@ -139,8 +161,24 @@ public:
     A32SyscallOutcome Suspend(const A32SyscallFrame&);
     A32SyscallOutcome Return(const A32SyscallFrame&);
     void DeliverHandler(cpu::Cpu&, const cpu::A32State&, std::uint32_t signal, const SignalAction&,
-                        std::uint64_t old_mask, std::optional<memory::GuestAddress> fault_address);
+                        std::uint64_t old_mask, std::optional<SynchronousFault> fault_address);
     bool Ready(std::uint64_t id) { return (pending[id] & ~masks[id]) != 0; }
+
+    // The state lock is held.
+    void RefreshAnyPending() {
+        any_pending.store(std::ranges::any_of(pending, [](const auto& item) { return item.second != 0; }),
+                          std::memory_order_release);
+    }
+
+    void ClearPending(const std::uint64_t id, const std::uint64_t bit) {
+        pending[id] &= ~bit;
+        RefreshAnyPending();
+    }
+
+    void NotifySent() {
+        std::scoped_lock lock(observer_mutex);
+        if (send_observer) send_observer();
+    }
 };
 
 GuestSignalRuntime::GuestSignalRuntime(memory::AddressSpace& memory,
@@ -317,8 +355,9 @@ void GuestSignalRuntime::Bind(A32SyscallDispatcher& dispatcher) {
         dispatcher.Implement(number, [state, binding = dispatcher.signal_binding](const A32SyscallFrame& frame) {
             auto result = state->Send(frame);
             // Notify after releasing signal state; futex predicates take its lock.
-            if (result.return_value == 0 && binding->waiters) {
-                binding->waiters->NotifyWaiters();
+            if (result.return_value == 0) {
+                if (binding->waiters) binding->waiters->NotifyWaiters();
+                state->NotifySent();
             }
             return result;
         });
@@ -358,6 +397,7 @@ A32SyscallOutcome GuestSignalRuntime::Impl::Action(const A32SyscallFrame& frame)
             if (requested.handler.Value() == 1) {
                 const auto bit = UINT64_C(1) << (signal - 1);
                 for (auto& item : pending) item.second &= ~bit;
+                RefreshAnyPending();
             }
         }
         return 0;
@@ -396,6 +436,7 @@ A32SyscallOutcome GuestSignalRuntime::Impl::Send(const A32SyscallFrame& frame) {
         const auto bit = UINT64_C(1) << (signal - 1);
         if (!(pending[target] & bit)) senders[target][signal] = frame;
         pending[target] |= bit;
+        any_pending.store(true, std::memory_order_release);
         changed.notify_all();
         return 0;
     } catch (const GuestThreadLifecycleError&) { return -kEsrch; }
@@ -409,6 +450,27 @@ bool GuestSignalRuntime::Pending(const std::uint64_t id) const {
         } catch (const GuestThreadLifecycleError&) { return true; }
     }
     return impl_->Ready(id);
+}
+
+bool GuestSignalRuntime::AnyPending() const noexcept {
+    return impl_->any_pending.load(std::memory_order_acquire);
+}
+
+bool GuestSignalRuntime::Deliverable(const std::uint64_t id) const {
+    if (!AnyPending()) return false;
+    std::scoped_lock lock(impl_->mutex);
+    if (!impl_->Ready(id)) return false;
+    if (!impl_->lifecycle) return true;
+    try {
+        return impl_->lifecycle->State(id).status == GuestThreadStatus::running;
+    } catch (const GuestThreadLifecycleError&) {
+        return false;
+    }
+}
+
+void GuestSignalRuntime::SetSendObserver(std::function<void()> observer) {
+    std::scoped_lock lock(impl_->observer_mutex);
+    impl_->send_observer = std::move(observer);
 }
 
 GuestSignalRuntime::SleepResult GuestSignalRuntime::Sleep(
@@ -464,6 +526,7 @@ void GuestSignalRuntime::Retire(const std::uint64_t id) {
     impl_->masks.erase(id); impl_->alternate_stacks.erase(id);
     impl_->pending.erase(id); impl_->senders.erase(id); impl_->frames.erase(id);
     impl_->suspend_masks.erase(id); impl_->restart.erase(id);
+    impl_->RefreshAnyPending();
 }
 void GuestSignalRuntime::InterruptedWait(const A32SyscallFrame& frame) {
     std::scoped_lock lock(impl_->mutex);
@@ -514,9 +577,12 @@ void GuestSignalRuntime::Deliver(cpu::Cpu& cpu) {
     const auto bit = UINT64_C(1) << (signal - 1);
     const auto action = s.actions[signal];
     const auto sender = s.senders[id][signal];
-    if (action.handler.Value() == 1) { s.pending[id] &= ~bit; return; }
+    if (action.handler.Value() == 1) {
+        s.ClearPending(id, bit);
+        return;
+    }
     if (action.handler.IsNull()) {
-        s.pending[id] &= ~bit;
+        s.ClearPending(id, bit);
         if (signal == 17 || signal == 23 || signal == 28) return;
         if (!s.lifecycle) throw SyscallError("signal default termination requires lifecycle");
         s.lifecycle->RequestExitGroup(id, 128 + static_cast<std::int32_t>(signal),
@@ -536,7 +602,7 @@ void GuestSignalRuntime::Deliver(cpu::Cpu& cpu) {
     const auto old_mask = s.suspend_masks.contains(id) ? s.suspend_masks.at(id) : s.masks[id];
     s.DeliverHandler(cpu, saved, signal, action, old_mask, std::nullopt);
     s.suspend_masks.erase(id);
-    s.pending[id] &= ~bit;
+    s.ClearPending(id, bit);
 }
 
 bool GuestSignalRuntime::DeliverSynchronousSigill(cpu::Cpu& cpu, const memory::GuestAddress fault_address) {
@@ -549,13 +615,33 @@ bool GuestSignalRuntime::DeliverSynchronousSigill(cpu::Cpu& cpu, const memory::G
     if (action.handler.Value() <= 1 || (mask & (UINT64_C(1) << (kSigill - 1))) != 0) return false;
     if (s.lifecycle && s.lifecycle->State(id).status != GuestThreadStatus::running) return false;
     saved.SetRegister(cpu::CoreRegister::pc, fault_address.Value());
-    s.DeliverHandler(cpu, saved, kSigill, action, mask, fault_address);
+    s.DeliverHandler(cpu, saved, kSigill, action, mask, SynchronousFault{fault_address.Value(), kIllIllopc});
+    return true;
+}
+
+bool GuestSignalRuntime::DeliverSynchronousSigsegv(cpu::Cpu& cpu, const memory::GuestAddress pc,
+                                                   const cpu::CpuFault& fault) {
+    auto saved = cpu.GetState();
+    const auto id = saved.ThreadId();
+    auto& s = *impl_;
+    std::scoped_lock lock(s.mutex);
+    const auto action = s.actions[kSigsegv];
+    const auto mask = s.masks[id];
+    if (action.handler.Value() <= 1 || (mask & (UINT64_C(1) << (kSigsegv - 1))) != 0) return false;
+    if (s.lifecycle && s.lifecycle->State(id).status != GuestThreadStatus::running) return false;
+    saved.SetRegister(cpu::CoreRegister::pc, pc.Value());
+    const bool unmapped = fault.reason == memory::FaultReason::unmapped;
+    s.DeliverHandler(cpu, saved, kSigsegv, action, mask,
+                     SynchronousFault{fault.address.Value(), unmapped ? kSegvMaperr : kSegvAccerr, kArmDataAbortTrap,
+                                      (unmapped ? kArmPageTranslationFault : kArmPagePermissionFault) |
+                                          (fault.access == memory::AccessType::write ? kArmWriteFault : 0U),
+                                      fault.address.Value()});
     return true;
 }
 
 void GuestSignalRuntime::Impl::DeliverHandler(cpu::Cpu& cpu, const cpu::A32State& saved, const std::uint32_t signal,
                                               const SignalAction& action, const std::uint64_t old_mask,
-                                              const std::optional<memory::GuestAddress> fault_address) {
+                                              const std::optional<SynchronousFault> fault) {
     const auto id = saved.ThreadId();
     const auto bit = UINT64_C(1) << (signal - 1);
     if (frames[id].size() >= 32) throw SyscallError("guest signal nesting limit exceeded");
@@ -580,9 +666,9 @@ void GuestSignalRuntime::Impl::DeliverHandler(cpu::Cpu& cpu, const cpu::A32State
     };
     if (rt) {
         word(0, signal);
-        if (fault_address) {
-            word(8, kIllIllopc);
-            word(12, fault_address->Value());
+        if (fault) {
+            word(8, fault->code);
+            word(12, fault->address);
         } else {
             word(8, static_cast<std::uint32_t>(-6));  // SI_TKILL
             word(12, process_id);
@@ -590,6 +676,11 @@ void GuestSignalRuntime::Impl::DeliverHandler(cpu::Cpu& cpu, const cpu::A32State
         }
     }
     word(prefix + 8, alt.pointer); word(prefix + 12, on_alt ? 1U : alt.flags); word(prefix + 16, alt.size);
+    if (fault) {
+        word(prefix + 20, fault->trap_number);
+        word(prefix + 24, fault->error_code);
+        word(prefix + 100, fault->context_address);
+    }
     word(prefix + 28, static_cast<std::uint32_t>(old_mask));
     for (std::uint32_t i = 0; i < 16; ++i) word(prefix + 32 + i * 4, saved.Register(static_cast<cpu::CoreRegister>(i)));
     word(prefix + 96, saved.Cpsr());

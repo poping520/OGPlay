@@ -906,6 +906,126 @@ TEST_CASE("Android guest process owns reusable DexVM native thread contexts") {
     process->Stop();
 }
 
+TEST_CASE("pending signals run on the owner of an idle or nested guest thread") {
+    using namespace ogplay;
+    constexpr std::uint32_t kCode = 0x10011000U;
+    constexpr std::uint32_t kMarker = 0x10010300U;
+    constexpr std::uint32_t kAction = 0x10010320U;
+    auto libc = LibdlDefaultLibcElf();
+    const auto code = [&](const std::uint32_t offset, const std::initializer_list<std::uint32_t> words) {
+        std::uint32_t index = 0x1000U + offset;
+        for (const auto word : words) {
+            Put32(libc, index, word);
+            index += 4U;
+        }
+    };
+    code(0x00, {0xe3a07043U, 0xef000000U, 0xe12fff1eU});  // sigaction
+    code(0x10, {0xe3a070eeU, 0xef000000U, 0xe12fff1eU});  // tkill
+    // handler: record signal and stack pointer.
+    code(0x20, {0xe59f1008U, 0xe5810000U, 0xe581d004U, 0xe12fff1eU, kMarker});
+    // Nested: live callee-saved values across a host call.
+    const auto hle_symbols = runtime::detail::BuildAndroidBoundarySymbols(runtime::AndroidApi::api19);
+    const auto dlopen = std::ranges::find_if(
+        hle_symbols, [](const auto& entry) { return entry.library == "libdl.so" && entry.symbol == "dlopen"; });
+    REQUIRE(dlopen != hle_symbols.end());
+    code(0x40,  // push {r4-r11,lr}; mov r4,#0x55; mov r11,#0xaa; ldr r3,[pc,#4]; blx r3; pop {r4-r11,pc}
+         {0xe92d4ff0U, 0xe3a04055U, 0xe3a0b0aaU, 0xe59f3004U, 0xe12fff33U, 0xe8bd8ff0U, dlopen->address.Value()});
+    const loader::Elf32ModuleInput module{"libc.so", libc, memory::GuestAddress{0x10000000U}};
+    runtime::VirtualFileSystem filesystem;
+    auto process =
+        runtime::AndroidGuestProcess::Start({19, std::span{&module, 1}, {}, 64, 36, 100000, 1, &filesystem, {}});
+    const auto guest = process->GuestMemoryAccess();
+    const auto read = [&](const std::uint32_t address) {
+        std::array<std::byte, 4> bytes{};
+        guest.read(memory::GuestAddress{address}, bytes);
+        std::uint32_t value{};
+        for (std::size_t i = 0; i < bytes.size(); ++i)
+            value |= std::to_integer<std::uint32_t>(bytes[i]) << (8U * i);
+        return value;
+    };
+    const auto write = [&](const std::uint32_t address, const std::uint32_t value) {
+        std::array<std::byte, 4> bytes{};
+        for (std::size_t i = 0; i < bytes.size(); ++i)
+            bytes[i] = static_cast<std::byte>(value >> (8U * i));
+        guest.write(memory::GuestAddress{address}, bytes);
+    };
+    const auto call = [&](const std::uint32_t offset, const std::uint32_t r0, const std::uint32_t r1) {
+        return process->Invoke({memory::GuestAddress{kCode + offset}, {r0, r1, 0, 0}, {}}).return_value;
+    };
+
+    constexpr std::uint32_t kThread = 0x4000;
+    process->PrepareDexVmThread(kThread, 0);
+    write(kAction, kCode + 0x20);
+    for (const auto offset : {4U, 8U, 12U})
+        write(kAction + offset, 0);
+    REQUIRE(call(0x00, 30, kAction) == 0);
+    int sent = 0;
+    process->SetSignalObserver([&] { ++sent; });
+    CHECK_FALSE(process->AnySignalPending());
+
+    // Nothing executes on the target, so only its owner can run the handler.
+    REQUIRE(call(0x10, kThread, 30) == 0);
+    CHECK(sent == 1);
+    CHECK(process->AnySignalPending());
+    CHECK(process->SignalDeliverable(kThread));
+    CHECK_FALSE(process->SignalDeliverable(1));
+    CHECK(read(kMarker) == 0);
+    std::thread([&] { process->DeliverSignals(kThread, 7); }).join();
+    CHECK(read(kMarker) == 30);
+    CHECK_FALSE(process->AnySignalPending());
+    CHECK_FALSE(process->SignalDeliverable(kThread));
+    write(kMarker, 0);
+    process->DeliverSignals(kThread, 7);  // nothing pending
+    CHECK(read(kMarker) == 0);
+
+    // The root waits in the host below a guest frame; the handler runs under
+    // that frame and sees its callee-saved registers on the guest stack.
+    int nested = 0;
+    process->SetNativeLibraryLoadHandler([&](std::string_view, std::uint64_t) -> runtime::AndroidGuestApplicationLoad {
+        ++nested;
+        REQUIRE(call(0x10, 1, 30) == 0);
+        // The nested tkill call delivers to itself before returning.
+        CHECK(read(kMarker) == 30);
+        write(kMarker, 0);
+        std::thread([&] {
+            runtime::A32GuestCallFrame sender;
+            sender.target = memory::GuestAddress{kCode + 0x10};
+            sender.registers = {1, 30, 0, 0};
+            sender.thread_id = kThread;
+            CHECK(process->Invoke(sender).return_value == 0);
+        }).join();
+        CHECK(process->SignalDeliverable(1));
+        process->DeliverSignals(1, 1);
+        CHECK(read(kMarker) == 30);
+        const auto spilled = read(kMarker + 4) + 752U;
+        CHECK(read(spilled) == 0x55U);
+        CHECK(read(spilled + 28U) == 0xaaU);
+        throw loader::LinkError("no such library");
+    });
+    const std::string_view name = "libnested.so";
+    for (std::size_t i = 0; i <= name.size(); ++i) {
+        const std::array byte{i < name.size() ? static_cast<std::byte>(name[i]) : std::byte{}};
+        guest.write(memory::GuestAddress{kAction + 0x20U + static_cast<std::uint32_t>(i)}, byte);
+    }
+    CHECK(call(0x40, kAction + 0x20, 2) == 0);
+    CHECK(nested == 1);
+
+    // Teardown never starts another handler.
+    std::thread([&] {
+        runtime::A32GuestCallFrame sender;
+        sender.target = memory::GuestAddress{kCode + 0x10};
+        sender.registers = {1, 30, 0, 0};
+        sender.thread_id = kThread;
+        CHECK(process->Invoke(sender).return_value == 0);
+    }).join();
+    CHECK(process->SignalDeliverable(1));
+    process->BeginTeardown();
+    CHECK_FALSE(process->SignalDeliverable(1));
+    process->SetSignalObserver({});
+    process->ReleaseDexVmThread(kThread);
+    process->Stop();
+}
+
 TEST_CASE("legacy Android guest call session delegates process ownership") {
     auto libc = MinimalLibcElf();
     const ogplay::loader::Elf32ModuleInput module{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};

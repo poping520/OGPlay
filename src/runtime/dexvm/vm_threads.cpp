@@ -96,6 +96,21 @@ public:
         return record->name + " (id " + std::to_string(record->id) + ")";
     }
 
+    // Runs pending native signal handlers from a park. The execution lock is
+    // released on entry and on return; a throw leaves it held and the wait
+    // state cleared.
+    void ServiceNativeSignals(const std::uint64_t self, std::size_t& depth) {
+        auto& lock = vm->ExecutionLock();
+        lock.ReacquireAfterBlocking(depth);
+        try {
+            vm->DeliverNativeSignals(self);
+        } catch (...) {
+            vm->Threads().SetWaitState(self, VmThreadWaitState::none);
+            throw;
+        }
+        depth = lock.ReleaseForBlocking();
+    }
+
     // Parks the calling thread until ready() holds. The execution lock is
     // fully released while parked and restored to the same depth after.
     // Interruptible, like Thread.join on device.
@@ -130,9 +145,10 @@ public:
                            ? std::numeric_limits<std::int64_t>::max()
                            : now + *timeout_millis;
         }
+        const auto signal_thread = vm->NativeSignalThread(self);
         vm->Threads().SetWaitState(self, wait_state);
         auto& lock = vm->ExecutionLock();
-        const auto depth = lock.ReleaseForBlocking();
+        auto depth = lock.ReleaseForBlocking();
         bool interrupted = false;
         {
             std::unique_lock guard(mutex);
@@ -141,6 +157,12 @@ public:
                 interrupted = monitors.Interrupted(self);
                 if (interrupted) break;
                 if (timeout_millis.has_value() && clock() >= deadline) break;
+                if (vm->NativeSignalDeliverable(signal_thread)) {
+                    guard.unlock();
+                    ServiceNativeSignals(self, depth);
+                    guard.lock();
+                    continue;
+                }
                 if (timeout_millis.has_value() || vm->HasExecutionDeadline(self)) {
                     changed.wait_for(guard, std::chrono::milliseconds(2));
                     if (timeout_millis.has_value()) {
@@ -464,11 +486,12 @@ void VmThreadRuntime::Sleep(const std::int64_t timeout_millis) {
                        : now + timeout_millis;
     }
 
+    const auto signal_thread = impl_->vm->NativeSignalThread(self);
     if (timeout_millis > 0) {
         SetWaitState(self, VmThreadWaitState::sleeping);
     }
     auto& lock = impl_->vm->ExecutionLock();
-    const auto depth = lock.ReleaseForBlocking();
+    auto depth = lock.ReleaseForBlocking();
     bool interrupted = false;
     bool stopped = false;
     if (timeout_millis == 0) {
@@ -479,6 +502,12 @@ void VmThreadRuntime::Sleep(const std::int64_t timeout_millis) {
         std::unique_lock guard(impl_->mutex);
         while (!(stopped = impl_->shutting_down) && !(interrupted = monitors.Interrupted(self)) &&
                !impl_->vm->ExecutionDeadlineExpired() && clock() < deadline) {
+            if (impl_->vm->NativeSignalDeliverable(signal_thread)) {
+                guard.unlock();
+                impl_->ServiceNativeSignals(self, depth);
+                guard.lock();
+                continue;
+            }
             impl_->changed.wait_for(guard, std::chrono::milliseconds(2));
             {
                 guard.unlock();
@@ -502,6 +531,13 @@ void VmThreadRuntime::Sleep(const std::int64_t timeout_millis) {
 }
 
 void VmThreadRuntime::NotifyClockAdvanced() noexcept {
+    impl_->changed.notify_all();
+}
+
+void VmThreadRuntime::WakeParked() {
+    {
+        const std::lock_guard guard(impl_->mutex);
+    }
     impl_->changed.notify_all();
 }
 

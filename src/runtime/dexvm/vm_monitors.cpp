@@ -106,11 +106,13 @@ public:
     void AcquireLocked(std::unique_lock<std::mutex>& guard, const VmObjectRef object, const std::uint64_t owner,
                        const std::int32_t recursion) {
         auto* monitor = &MonitorFor(object);
+        std::uint64_t signal_thread{};
         try {
             while (!shutting_down && !monitor->CanAcquire(owner)) {
                 if (std::ranges::find(monitor->entry_waiters, owner) == monitor->entry_waiters.end())
                     monitor->entry_waiters.push_back(owner);
                 guard.unlock();
+                signal_thread = vm->NativeSignalThread(owner);
                 SetMonitorWaitState(owner, VmThreadWaitState::monitor);
                 auto& lock = vm->ExecutionLock();
                 const auto depth = lock.ReleaseForBlocking();
@@ -118,7 +120,7 @@ public:
                     std::unique_lock parked(mutex);
                     const auto ready = [&] {
                         return shutting_down || MonitorFor(object).CanAcquire(owner) ||
-                               vm->ExecutionDeadlineExpired(owner);
+                               vm->ExecutionDeadlineExpired(owner) || vm->NativeSignalDeliverable(signal_thread);
                     };
                     if (vm->HasExecutionDeadline(owner)) {
                         while (!ready())
@@ -128,6 +130,7 @@ public:
                 }
                 lock.ReacquireAfterBlocking(depth);
                 SetMonitorWaitState(owner, VmThreadWaitState::none);
+                if (vm->NativeSignalDeliverable(signal_thread)) vm->DeliverNativeSignals(owner);
                 guard.lock();
                 monitor = &MonitorFor(object);
                 vm->CheckExecutionDeadline(owner);
@@ -343,9 +346,10 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object, const std::uint64_t
 
     const std::int64_t deadline = timed ? clock() + timeout_millis : 0;
     auto outcome = VmWaitOutcome::notified;
+    const auto signal_thread = impl_->vm->NativeSignalThread(owner);
     impl_->SetMonitorWaitState(owner, VmThreadWaitState::monitor);
     auto& lock = impl_->vm->ExecutionLock();
-    const auto depth = lock.ReleaseForBlocking();
+    auto depth = lock.ReleaseForBlocking();
     bool deadline_expired = false;
     {
         std::unique_lock parked(impl_->mutex);
@@ -369,6 +373,24 @@ VmWaitOutcome VmMonitorTable::Wait(const VmObjectRef object, const std::uint64_t
             if (timed && clock() >= deadline) {
                 outcome = VmWaitOutcome::timed_out;
                 break;
+            }
+            if (impl_->vm->NativeSignalDeliverable(signal_thread)) {
+                parked.unlock();
+                lock.ReacquireAfterBlocking(depth);
+                try {
+                    impl_->vm->DeliverNativeSignals(owner);
+                } catch (...) {
+                    {
+                        const std::lock_guard guard(impl_->mutex);
+                        std::erase(impl_->MonitorFor(object).wait_set, owner);
+                        impl_->woken.erase(owner);
+                    }
+                    impl_->SetMonitorWaitState(owner, VmThreadWaitState::none);
+                    throw;
+                }
+                depth = lock.ReleaseForBlocking();
+                parked.lock();
+                continue;
             }
             if (timed || impl_->vm->HasExecutionDeadline(owner)) {
                 // Deadline decisions stay with the unified Clock; this only
@@ -464,6 +486,13 @@ void VmMonitorTable::NotifyForGc(const VmObjectRef object) {
         for (const auto waiter : monitor.wait_set)
             impl_->woken.insert(waiter);
         monitor.wait_set.clear();
+    }
+    impl_->changed.notify_all();
+}
+
+void VmMonitorTable::WakeParked() {
+    {
+        const std::lock_guard guard(impl_->mutex);
     }
     impl_->changed.notify_all();
 }

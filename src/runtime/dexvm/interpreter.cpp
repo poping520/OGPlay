@@ -304,13 +304,14 @@ void Interpreter::Impl::EnsureInitialized(InterpreterExecutionState& execution, 
             if (observed.clinit_thread == execution.token) return;
             {
                 const auto generation = clinit_generation.load(std::memory_order_acquire);
+                const auto signal_thread = owner->NativeSignalThread(execution.token);
                 auto& lock = execution_lock;
                 const auto depth = lock.ReleaseForBlocking();
                 std::unique_lock wait_lock(clinit_wait_mutex);
                 const auto ready = [&] {
                     return clinit_generation.load(std::memory_order_acquire) != generation ||
                            execution.stop_requested.load(std::memory_order_relaxed) ||
-                           owner->ExecutionDeadlineExpired();
+                           owner->ExecutionDeadlineExpired() || owner->NativeSignalDeliverable(signal_thread);
                 };
                 if (owner->HasExecutionDeadline()) {
                     while (!ready())
@@ -320,6 +321,7 @@ void Interpreter::Impl::EnsureInitialized(InterpreterExecutionState& execution, 
                 wait_lock.unlock();
                 lock.ReacquireAfterBlocking(depth);
                 owner->CheckExecutionDeadline();
+                if (owner->NativeSignalDeliverable(signal_thread)) owner->DeliverNativeSignals(execution.token);
                 Tick(execution, 0);
             }
             continue;

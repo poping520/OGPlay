@@ -384,6 +384,13 @@ public:
         }
     }
 
+    [[nodiscard]] bool IsWritableCode(const GuestAddress address) const {
+        std::scoped_lock lock(mutex_);
+        const auto page = static_cast<std::size_t>(address.Value() / page_size_);
+        return mapped_[page] && HasProtection(pages_[page], PageProtection::write) &&
+               HasProtection(pages_[page], PageProtection::execute);
+    }
+
     std::byte* ResolveNativeRange(const GuestRange& range, AccessType access) {
         std::scoped_lock lock(mutex_);
         if (range.Size() != 0) ValidateLocked(range, access, 0);
@@ -875,6 +882,10 @@ void AddressSpace::Unmap(const GuestRange& range) {
 
 void AddressSpace::ValidateMapped(const GuestRange& range, const std::uint64_t thread_id) const {
     impl_->ValidateMapped(range, thread_id);
+}
+
+bool AddressSpace::IsWritableCode(const GuestAddress address) const {
+    return impl_->IsWritableCode(address);
 }
 
 void AddressSpace::Validate(const GuestRange& range, const AccessType access, const std::uint64_t thread_id) const {

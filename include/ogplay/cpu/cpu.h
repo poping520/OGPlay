@@ -147,6 +147,9 @@ struct CpuFault final {
     memory::AccessType access;
     memory::FaultReason reason;
     std::uint64_t thread_id{};
+    // The stop PC is the faulting data access and the registers hold its state.
+    // A base writeback or the earlier transfers of the same instruction may already be visible.
+    bool precise_state{};
 };
 
 struct RunResult final {

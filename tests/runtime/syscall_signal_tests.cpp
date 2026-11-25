@@ -379,6 +379,111 @@ TEST_CASE_TEMPLATE("BND-57 synchronous SIGILL signal handler resumes an A32 or T
     CHECK(result.return_value_high == 0xfedcba98);
 }
 
+TEST_CASE_TEMPLATE("synchronous SIGSEGV reports a precise data fault and resumes generated code", Cpu,
+                   cpu::InterpreterCpu, cpu::DynarmicCpu) {
+    SignalFixture<Cpu> f;
+    constexpr GuestAddress stack_top{0x24000}, return_trap{0x100f0}, report{0x20080};
+    f.Code(return_trap.Value(), {0xef000001});
+    f.Code(0x10040, {0xe3a070ae, 0xef000000, 0xe12fff1e});  // mov r7,#174; svc #0; bx lr
+    f.Code(0x20000, {0x10100, 4, 0, 0, 0});                 // rt_sigaction with SA_SIGINFO
+    f.Code(0x10100, {
+                        0xe3a03802,
+                        0xe2833080,  // r3 = report
+                        0xe5830000,  // handler signo
+                        0xe5910008,
+                        0xe5830004,  // si_code
+                        0xe591000c,
+                        0xe5830008,  // si_addr
+                        0xe5920018,
+                        0xe583000c,  // ucontext error_code
+                        0xe5920064,
+                        0xe5830010,  // ucontext fault_address
+                        0xe5920030,
+                        0xe5830014,  // ucontext r4, written before the fault
+                        0xe592005c,
+                        0xe5830018,  // ucontext PC
+                        0xe2800004,
+                        0xe582005c,  // advance saved PC by one instruction
+                        0xe12fff1e,  // bx lr
+                    });
+    const auto install = runtime::InvokeA32GuestCall(
+        f.cpu, f.dispatcher, f.lifecycle, f.memory,
+        {.target = GuestAddress{0x10040}, .registers = {11, 0x20000, 0, 8}, .stack_words = {}, .thread_id = 2},
+        stack_top, return_trap, 128);
+    REQUIRE(install.return_value == 0);
+
+    std::uint32_t target = 0x1c, code = 1, error = 0x7;
+    SUBCASE("null read") {
+        // A dead result still faults: r5 is overwritten before any use.
+        f.Code(0x10000, {0xe3a04005, 0xe595501c, 0xe3a05009, 0xe5835000, 0xe12fff1e});
+    }
+    SUBCASE("null write") {
+        error = 0x807;
+        f.Code(0x10000, {0xe3a04005, 0xe585401c, 0xe3a05009, 0xe5835000, 0xe12fff1e});
+    }
+    SUBCASE("write to a read-only page") {
+        f.memory.Map({GuestAddress{0x30000}, 0x1000}, memory::PageProtection::read);
+        target = 0x3001c;
+        code = 2;
+        error = 0x80f;
+        f.Code(0x10000, {0xe3a04005, 0xe585401c, 0xe3a05009, 0xe5835000, 0xe12fff1e});
+    }
+    auto state = f.cpu.GetState();
+    state.SetRegister(CoreRegister::r4, 1);
+    state.SetRegister(CoreRegister::r5, target - 0x1cU);
+    f.cpu.SetState(state);
+    const auto result = runtime::InvokeA32GuestCall(f.cpu, f.dispatcher, f.lifecycle, f.memory,
+                                                    {.target = GuestAddress{0x10000},
+                                                     .registers = {0x13579bdf, 0xfedcba98, 0, 0x200c0},
+                                                     .stack_words = {},
+                                                     .thread_id = 2},
+                                                    stack_top, return_trap, 128);
+    CHECK(f.memory.Read32(report) == 11);
+    CHECK(f.memory.Read32(report.Add(4)) == code);
+    CHECK(f.memory.Read32(report.Add(8)) == target);
+    CHECK(f.memory.Read32(report.Add(12)) == error);
+    CHECK(f.memory.Read32(report.Add(16)) == target);
+    CHECK(f.memory.Read32(report.Add(20)) == 5);
+    CHECK(f.memory.Read32(report.Add(24)) == 0x10004);
+    CHECK(f.memory.Read32(GuestAddress{0x200c0}) == 9);
+    CHECK(result.return_value == 0x13579bdf);
+}
+
+TEST_CASE("data faults without a deliverable SIGSEGV keep the original CPU stop") {
+    SignalFixture<cpu::DynarmicCpu> f;
+    f.Code(0x10100, {0xe12fff1e});
+    SUBCASE("default disposition") {}
+    SUBCASE("blocked SIGSEGV") {
+        f.Action(11, 0x10100);
+        f.memory.Write64(GuestAddress{0x20020}, 1U << (11 - 1));
+        REQUIRE(f.Call(175, {0, 0x20020, 0, 8}) == 0);
+    }
+    SUBCASE("optimized read-only code has no precise registers") {
+        f.Action(11, 0x10100);
+        f.memory.Map({GuestAddress{0x30000}, 0x1000}, memory::PageProtection::read | memory::PageProtection::write);
+        f.Code(0x30000, {0xe3a04005, 0xe595501c});
+        f.memory.Protect({GuestAddress{0x30000}, 0x1000},
+                         memory::PageProtection::read | memory::PageProtection::execute);
+        auto state = f.cpu.GetState();
+        state.SetRegister(CoreRegister::pc, 0x30000);
+        f.cpu.SetState(state);
+    }
+    SUBCASE("instruction fetch") {
+        f.Action(11, 0x10100);
+        f.Code(0x10000, {0xe3a04005, 0xe12fff15});  // bx r5 to address zero
+    }
+    if (f.memory.Read32(GuestAddress{0x10000}) == 0) f.Code(0x10000, {0xe3a04005, 0xe595501c});
+    const auto pc = f.cpu.GetState().Register(CoreRegister::pc);
+    const auto result = runtime::RunAndroidArmGuestThread(f.cpu, f.dispatcher, f.lifecycle, f.bus, f.futex, 32);
+    CHECK(result.reason == runtime::GuestThreadRunStop::cpu_stop);
+    CHECK(result.cpu_stop.reason == cpu::RunStopReason::memory_fault);
+    REQUIRE(result.cpu_stop.fault.has_value());
+    if (result.cpu_stop.fault->access == memory::AccessType::execute)
+        CHECK_FALSE(result.cpu_stop.fault->precise_state);
+    else
+        CHECK(result.cpu_stop.pc.Value() == pc + 4U);
+}
+
 TEST_CASE_TEMPLATE("BND-57 ineligible synchronous signals preserve the original CPU stop", Cpu, cpu::InterpreterCpu,
                    cpu::DynarmicCpu) {
     SignalFixture<Cpu> f;
@@ -452,8 +557,16 @@ TEST_CASE("ARM signal pending coalesces inherits mask and retires thread state")
     f.Action(30, 0x10100);
     f.memory.Write32(GuestAddress{0x20080}, 1U << 29);
     REQUIRE(f.Call(126, {2, 0x20080}) == 0);
+    auto& runtime = *f.dispatcher.signal_binding->runtime;
+    int sent = 0;
+    // The observer may query signal state: it runs outside the state lock.
+    runtime.SetSendObserver([&] { sent += runtime.AnyPending() ? 1 : 0; });
+    CHECK_FALSE(runtime.AnyPending());
     REQUIRE(f.Send(30) == 0);
     REQUIRE(f.Send(30) == 0);
+    CHECK(sent == 2);
+    CHECK(runtime.AnyPending());
+    CHECK_FALSE(runtime.Deliverable(2));  // blocked
     CHECK_FALSE(f.dispatcher.signal_binding->runtime->Pending(2));
     REQUIRE(f.Call(73, {0x20084}) == 0);
     CHECK(f.memory.Read32(GuestAddress{0x20084}) == (1U << 29));
@@ -464,7 +577,17 @@ TEST_CASE("ARM signal pending coalesces inherits mask and retires thread state")
     CHECK(f.memory.Read32(GuestAddress{0x20084}) == 0);
     REQUIRE(f.Call(126, {1, 0x20080}) == 0);
     CHECK(f.dispatcher.signal_binding->runtime->Pending(2));
+    CHECK(runtime.Deliverable(2));
+    CHECK_FALSE(runtime.Deliverable(3));
+    runtime.Deliver(f.cpu);
+    CHECK_FALSE(runtime.AnyPending());
+    CHECK_FALSE(runtime.Deliverable(2));
+    runtime.SetSendObserver({});
+    REQUIRE(f.Send(30) == 0);
+    CHECK(sent == 2);
+    CHECK(runtime.AnyPending());
     f.dispatcher.signal_binding->runtime->Retire(2);
+    CHECK_FALSE(runtime.AnyPending());
     CHECK_FALSE(f.dispatcher.signal_binding->runtime->Pending(2));
 }
 

@@ -176,6 +176,7 @@ public:
     void Protect(const GuestRange& range, PageProtection protection);
     void Unmap(const GuestRange& range);
     void ValidateMapped(const GuestRange& range, std::uint64_t thread_id = 0) const;
+    [[nodiscard]] bool IsWritableCode(GuestAddress address) const;
     void Validate(const GuestRange& range, AccessType access, std::uint64_t thread_id = 0) const;
     // Synchronous native access. Caller excludes unmap/protect/restore and keeps the
     // owning process (and any Java payload owner) alive until the native returns.

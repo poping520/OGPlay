@@ -1111,6 +1111,41 @@ public:
         }
     }
 
+    [[nodiscard]] bool AnySignalPending() const noexcept {
+        const auto& runtime = dispatcher_.signal_binding->runtime;
+        return runtime && runtime->AnyPending();
+    }
+
+    [[nodiscard]] bool SignalDeliverable(const std::uint64_t thread_id) const {
+        const auto& runtime = dispatcher_.signal_binding->runtime;
+        return runtime && !teardown_requested_.load(std::memory_order_acquire) &&
+               !native_state_faulted_.load(std::memory_order_acquire) && runtime->Deliverable(thread_id);
+    }
+
+    // An empty guest call: pending handlers run before its first instruction.
+    void DeliverSignals(const std::uint64_t thread_id, const std::uint64_t context_token) {
+        A32GuestCallFrame frame;
+        frame.target = process_memory_.return_trap;
+        frame.thread_id = thread_id;
+        frame.context_token = context_token;
+        frame.renewable_native_frame = true;
+        std::array<std::uint32_t, 8> callee_saved{};  // r4-r11
+        if (const auto active = active_guest_calls.find(this); active != active_guest_calls.end()) {
+            // Collectors that stop threads by signal scan guest stacks. Device JNI
+            // frames spill the caller's callee-saved registers there.
+            const auto caller = active->second.cpu->GetState();
+            for (std::size_t index = 0; index < callee_saved.size(); ++index)
+                callee_saved[index] = caller.Register(static_cast<cpu::CoreRegister>(index + 4U));
+            frame.stack_words = callee_saved;
+        }
+        static_cast<void>(Invoke(frame));
+    }
+
+    void SetSignalObserver(std::function<void()> observer) {
+        if (dispatcher_.signal_binding->runtime)
+            dispatcher_.signal_binding->runtime->SetSendObserver(std::move(observer));
+    }
+
     void PrepareDexVmThread(const std::uint64_t thread_id, const std::uint32_t allocation_slot,
                             const bool attach_jni = true) {
         if (cleanup_requested_.load(std::memory_order_acquire))
@@ -3770,6 +3805,22 @@ void AndroidGuestProcess::NotifyLooperPollers() {
 
 void AndroidGuestCallSession::NotifyLooperPollers() {
     process_->NotifyLooperPollers();
+}
+
+bool AndroidGuestProcess::AnySignalPending() const noexcept {
+    return impl_->AnySignalPending();
+}
+
+bool AndroidGuestProcess::SignalDeliverable(const std::uint64_t thread_id) const {
+    return impl_->SignalDeliverable(thread_id);
+}
+
+void AndroidGuestProcess::DeliverSignals(const std::uint64_t thread_id, const std::uint64_t context_token) {
+    impl_->DeliverSignals(thread_id, context_token);
+}
+
+void AndroidGuestProcess::SetSignalObserver(std::function<void()> observer) {
+    impl_->SetSignalObserver(std::move(observer));
 }
 
 }  // namespace ogplay::runtime

@@ -361,6 +361,19 @@ bool TranslatorVisitor::asimd_VQDMULH_scalar(]=] _asimd_source "${_asimd_source}
 endforeach()
 target_include_directories(dynarmic BEFORE PRIVATE "${_asimd_output}")
 
+# ---- Precise data faults (all hosts) ----
+# Every data access leaves a block at a MemoryAbort with the faulting PC. Blocks the
+# callbacks select also keep guest registers current; the others stay optimized.
+set(_precise_config_hash a3b54e06be8f22f13271d47fb5e49d1573f6236f08080d18dbdcb1f0ea01c658)
+macro(_precise_adapt_config)
+    string(REPLACE "    /// The interpreter must execute exactly num_instructions starting from PC."
+        "    // OGPlay extension: keep guest state current at data faults in the block at pc.\n    virtual bool PreciseDataFaults(VAddr /*pc*/) { return false; }\n\n    /// The interpreter must execute exactly num_instructions starting from PC."
+        _source "${_source}")
+    if(NOT _source MATCHES "PreciseDataFaults")
+        message(FATAL_ERROR "Dynarmic precise data fault configuration did not apply")
+    endif()
+endmacro()
+
 # ---- ARM64 read page table ----
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64)$")
 # Checked ARM64 adaptation: keep the pinned vendor tree unchanged. A separate
@@ -387,6 +400,7 @@ function(_rp_adapt relative expected)
         string(REPLACE "    bool absolute_offset_page_table = false;"
             "    bool absolute_offset_page_table = false;\n    // Conservative live processor-ID bound, published before first Run.\n    const std::atomic<size_t>* exclusive_processor_bound = nullptr;\n    bool inline_exclusive_memory = false;"
             _source "${_source}")
+        _precise_adapt_config()
     elseif(relative STREQUAL "dynarmic/backend/arm64/emit_arm64.h")
         string(REPLACE "    u64 page_table_pointer;" "    u64 page_table_pointer;\n    bool preserve_memory_fpsr{};\n    u64 read_page_table_pointer{};\n    u64 write_page_table_pointer{};\n    bool inline_exclusive_memory{};\n    u64 exclusive_lock_pointer{};\n    u64 exclusive_address_pointer{};\n    u64 exclusive_addresses_pointer{};\n    u64 exclusive_value_pointer{};\n    u64 exclusive_epoch_pointer{};\n    size_t exclusive_reservation_stride{};\n    u64 exclusive_processor_bound_pointer{};\n    size_t exclusive_processor_count{};" _source "${_source}")
     elseif(relative STREQUAL "dynarmic/backend/arm64/a32_address_space.cpp")
@@ -399,6 +413,12 @@ function(_rp_adapt relative expected)
         string(REPLACE "        Optimization::A32GetSetElimination(ir_block, {.convert_nzc_to_nz = true});"
             "        Optimization::A32GetSetElimination(ir_block, {.convert_nzc_to_nz = true});\n        ForwardAdjacentFpscrNZCV(ir_block);"
             _source "${_source}")
+        string(REPLACE "    if (conf.HasOptimization(OptimizationFlag::GetSetElimination)) {"
+            "    if (conf.HasOptimization(OptimizationFlag::GetSetElimination) && !conf.callbacks->PreciseDataFaults(A32::LocationDescriptor{descriptor}.PC())) {"
+            _source "${_source}")
+        if(NOT _source MATCHES "PreciseDataFaults")
+            message(FATAL_ERROR "Dynarmic A32 precise data fault adaptation did not apply")
+        endif()
         # Wrapped fallback memory calls preserve live guest FPSR. Normal
         # page-table loads/stores need not spill it on their fast path.
         string(REPLACE "ABI_PushRegisters(code, save_regs, 0);"
@@ -426,6 +446,16 @@ function(_rp_adapt relative expected)
         string(REPLACE "if (conf.page_table) {\n            code.MOV(Xpagetable, mcl::bit_cast<u64>(conf.page_table));"
             "if (conf.read_page_table || conf.page_table) {\n            code.MOV(Xpagetable, mcl::bit_cast<u64>(conf.read_page_table ? conf.read_page_table : conf.page_table));"
             _source "${_source}")
+    elseif(relative STREQUAL "dynarmic/backend/arm64/emit_arm64_a32.cpp")
+        # The halt word is 32 bits wide and only 4-byte aligned; a 64-bit LDAR faults.
+        set(_abort_load "    code.LDAR(Xscratch0, Xhalt);\n    code.TST(Xscratch0, static_cast<u32>(HaltReason::MemoryAbort));")
+        string(FIND "${_source}" "${_abort_load}" _found)
+        if(_found LESS 0)
+            message(FATAL_ERROR "Dynarmic A32 memory abort check changed; review the load width")
+        endif()
+        string(REPLACE "${_abort_load}"
+            "    code.LDAR(Wscratch0, Xhalt);\n    code.TST(Wscratch0, static_cast<u32>(HaltReason::MemoryAbort));"
+            _source "${_source}")
     elseif(relative STREQUAL "dynarmic/backend/arm64/reg_alloc.h")
         string(REPLACE "arg3 = {});" "arg3 = {}, bool preserve_fpsr = false);" _source "${_source}")
     elseif(relative STREQUAL "dynarmic/backend/arm64/reg_alloc.cpp")
@@ -434,6 +464,18 @@ function(_rp_adapt relative expected)
         string(REPLACE "    fpsr_manager.Spill();\n    SpillFlags();"
             "    if (preserve_fpsr) fpsr_manager.Load();\n    else fpsr_manager.Spill();\n    SpillFlags();" _source "${_source}")
     elseif(relative STREQUAL "dynarmic/backend/arm64/emit_arm64_memory.cpp")
+        # Callback-only and exclusive accesses lack the abort check that the
+        # page-table fallbacks already have.
+        foreach(_access IN ITEMS ReadMemory WriteMemory ExclusiveReadMemory ExclusiveWriteMemory)
+            set(_barrier "    EmitRelocation(code, ctx, ${_access}LinkTarget(bitsize));\n    if (ordered) {\n        code.DMB(oaknut::BarrierOp::ISH);\n    }\n")
+            string(FIND "${_source}" "${_barrier}" _found)
+            if(_found LESS 0)
+                message(FATAL_ERROR "Dynarmic ${_access} callback emitter changed; review the abort check")
+            endif()
+            string(REPLACE "${_barrier}"
+                "${_barrier}    {\n        oaknut::Label no_abort;\n        ctx.conf.emit_check_memory_abort(code, ctx, inst, no_abort);\n        code.l(no_abort);\n    }\n"
+                _source "${_source}")
+        endforeach()
         # Only page-table emitters use this exact lookup sequence. Fastmem and
         # ordinary ABI callbacks retain their existing FPSR spill boundaries.
         string(REPLACE
@@ -492,10 +534,11 @@ function(_rp_adapt relative expected)
     endif()
 endfunction()
 
-_rp_adapt(dynarmic/interface/A32/config.h a3b54e06be8f22f13271d47fb5e49d1573f6236f08080d18dbdcb1f0ea01c658)
+_rp_adapt(dynarmic/interface/A32/config.h ${_precise_config_hash})
 _rp_adapt(dynarmic/backend/arm64/emit_arm64.h 8eb97a435794853634320229bd4909834570a8d5ab8892810992a6a760ab28c4)
 _rp_adapt(dynarmic/backend/arm64/a32_address_space.cpp 69a0ee103e8c366cff937482514b4c6284a2569b62088616af6021c3fb8f2668)
 _rp_adapt(dynarmic/backend/arm64/emit_arm64_memory.cpp 6bd36b28a27a9b071fe0dd7709276caa059a471ff3641df933fbbcf6db4155b6)
+_rp_adapt(dynarmic/backend/arm64/emit_arm64_a32.cpp 15e1ec18fc34c613557d2cba54677a7a8a8d114afc0607f0098a4653fe79eb53)
 _rp_adapt(dynarmic/backend/arm64/fpsr_manager.h b2107a6103de0c9e41ce5a5edefadbe35a9ebd9ad6064c268ed8d836739e94cb)
 _rp_adapt(dynarmic/backend/arm64/fpsr_manager.cpp 85c7823b89d8c25c6d8be056a007889c0b8fb75f74f9ce7707079930fa4e72e8)
 _rp_adapt(dynarmic/backend/arm64/stack_layout.h ad78f0c35c97338a3f5ce0eab616591793c286a490d0a9ed48a2c96dd6a64028)
@@ -509,7 +552,58 @@ target_include_directories(dynarmic BEFORE PUBLIC "$<BUILD_INTERFACE:${_rp_outpu
 # A newly shadowed vendor header is absent from existing dependency files.
 # Bump the ABI marker when adding such a header so incremental builds rebuild
 # both the backend and its consumers rather than mixing object layouts.
-target_compile_definitions(dynarmic PUBLIC OGPLAY_DYNARMIC_READ_PAGES_ABI=9)
+target_compile_definitions(dynarmic PUBLIC OGPLAY_DYNARMIC_READ_PAGES_ABI=10)
+endif()
+
+# ---- x64 precise data faults ----
+set(_dyn_x64_interface "${PROJECT_SOURCE_DIR}/third_party/dynarmic/src/dynarmic/backend/x64/a32_interface.cpp")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64)$")
+set(_precise_output "${CMAKE_BINARY_DIR}/generated/dynarmic-precise-faults")
+foreach(_precise_entry IN ITEMS
+    "dynarmic/interface/A32/config.h|${_precise_config_hash}"
+    "dynarmic/backend/x64/a32_interface.cpp|6e636794b5a8e64e9ee86c573edcee2c787bf5840efae14db4eef325cf84a912")
+    string(REPLACE "|" ";" _precise_entry "${_precise_entry}")
+    list(GET _precise_entry 0 _precise_relative)
+    list(GET _precise_entry 1 _precise_expected)
+    set(_precise_input "${PROJECT_SOURCE_DIR}/third_party/dynarmic/src/${_precise_relative}")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_precise_input}")
+    file(READ "${_precise_input}" _source)
+    string(REPLACE "\r\n" "\n" _source "${_source}")
+    string(SHA256 _precise_hash "${_source}")
+    if(NOT _precise_hash STREQUAL _precise_expected)
+        message(FATAL_ERROR "Dynarmic ${_precise_relative} changed; review the precise data fault adaptation")
+    endif()
+    if(_precise_relative MATCHES "config\\.h$")
+        _precise_adapt_config()
+    else()
+        string(REPLACE "GetSetElimination) && !conf.check_halt_on_memory_access)"
+            "GetSetElimination) && !conf.callbacks->PreciseDataFaults(A32::LocationDescriptor{descriptor}.PC()))"
+            _source "${_source}")
+        if(NOT _source MATCHES "PreciseDataFaults")
+            message(FATAL_ERROR "Dynarmic x64 precise data fault adaptation did not apply")
+        endif()
+    endif()
+    get_filename_component(_parent "${_precise_output}/${_precise_relative}" DIRECTORY)
+    file(MAKE_DIRECTORY "${_parent}")
+    file(WRITE "${_precise_output}/${_precise_relative}.in" "${_source}")
+    configure_file("${_precise_output}/${_precise_relative}.in" "${_precise_output}/${_precise_relative}" COPYONLY)
+endforeach()
+set(_dyn_x64_interface "${_precise_output}/dynarmic/backend/x64/a32_interface.cpp")
+get_target_property(_precise_sources dynarmic SOURCES)
+set(_precise_found FALSE)
+foreach(_item IN LISTS _precise_sources)
+    if(_item MATCHES "backend/x64/a32_interface\\.cpp$")
+        list(REMOVE_ITEM _precise_sources "${_item}")
+        set(_precise_found TRUE)
+    endif()
+endforeach()
+if(NOT _precise_found)
+    message(FATAL_ERROR "Dynarmic x64 source missing for precise data faults")
+endif()
+list(APPEND _precise_sources "${_dyn_x64_interface}")
+set_property(TARGET dynarmic PROPERTY SOURCES "${_precise_sources}")
+target_include_directories(dynarmic BEFORE PUBLIC "$<BUILD_INTERFACE:${_precise_output}>")
+target_compile_definitions(dynarmic PUBLIC OGPLAY_DYNARMIC_PRECISE_FAULTS_ABI=1)
 endif()
 
 # ---- Windows x64 cache statistics ----
@@ -518,7 +612,7 @@ if(WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64)$")
 set(_dyn_src "${PROJECT_SOURCE_DIR}/third_party/dynarmic/src")
 set(_dyn_diag "${CMAKE_BINARY_DIR}/generated/dynarmic-diagnostics")
 file(READ "${_dyn_src}/dynarmic/interface/A32/a32.h" _dyn_header)
-file(READ "${_dyn_src}/dynarmic/backend/x64/a32_interface.cpp" _dyn_impl)
+file(READ "${_dyn_x64_interface}" _dyn_impl)
 foreach(_needle IN ITEMS "    void ClearCache();" "    struct Impl;")
     string(FIND "${_dyn_header}" "${_needle}" _found)
     if(_found LESS 0)

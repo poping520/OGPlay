@@ -70,6 +70,10 @@ public:
     [[nodiscard]] std::unique_ptr<dexvm::NativeCleanupScope> EnterResourceCleanup() override;
     void AttachThread(std::uint64_t guest_thread_id, std::uint64_t execution_token) override;
     void DetachThread(std::uint64_t guest_thread_id, std::uint64_t execution_token) noexcept override;
+    [[nodiscard]] bool AnySignalPending() const noexcept override;
+    [[nodiscard]] std::uint64_t SignalThread(std::uint64_t execution_token) const override;
+    [[nodiscard]] bool SignalDeliverable(std::uint64_t native_thread) const override;
+    void DeliverSignals(std::uint64_t execution_token) override;
 
 private:
     class Impl;

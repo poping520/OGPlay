@@ -2031,8 +2031,8 @@ note = "按打开冻结的 /proc/self/maps 及当前 PID 别名报告 guest 页�
 
 [runtime.guest_signals]
 status = "partial"
-test = "tests/runtime/syscall_signal_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/guest_clone_thread_runtime_tests.cpp; tests/cpu/futex_tests.cpp; tests/runtime/guest_cpu_environment_tests.cpp#BND-57"
-note = "ADR-0079：ARM legacy/RT 帧支持 ARM/Thumb/VFP、备用栈、嵌套及 ucontext 修改。tkill/tgkill 投递标准信号及默认忽略/终止。Cortex-A9 PL0 不可访问的 CP15、不存在的协处理器和非法编码同步 SIGILL，仅投未屏蔽的用户 handler。SA_RESTART 仅重启无超时 futex，nanosleep 可中断并返回剩余时间。访存 fault 到 SIGSEGV、CP14、TPIDRURW、实时队列及作业控制未实现。"
+test = "tests/runtime/syscall_signal_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/guest_clone_thread_runtime_tests.cpp; tests/cpu/futex_tests.cpp; tests/runtime/guest_cpu_environment_tests.cpp#BND-57; tests/dexvm/vm_monitor_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp"
+note = "ADR-0079：ARM legacy/RT 帧支持 ARM/Thumb/VFP、备用栈、嵌套及 ucontext 修改。tkill/tgkill 投递标准信号及默认忽略/终止。Cortex-A9 PL0 不可访问的 CP15、不存在的协处理器和非法编码同步 SIGILL，仅投未屏蔽的用户 handler。SA_RESTART 仅重启无超时 futex，nanosleep 可中断并返回剩余时间。可写可执行页代码的数据访存故障同步 SIGSEGV；执行或等待 Java 的线程也可投递；网络/管道等待中投递、其他访存/取指故障、CP14、TPIDRURW、实时队列及作业控制未实现。"
 
 [runtime.guest_cpu_facts]
 status = "partial"

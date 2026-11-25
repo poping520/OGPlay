@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include "ogplay/cpu/cpu.h"
 
@@ -20,7 +21,17 @@ public:
     void Bind(A32SyscallDispatcher&);
     void Deliver(cpu::Cpu&);
     [[nodiscard]] bool DeliverSynchronousSigill(cpu::Cpu&, memory::GuestAddress fault_address);
+    // Requires a precise data fault; pc is the faulting instruction.
+    [[nodiscard]] bool DeliverSynchronousSigsegv(cpu::Cpu&, memory::GuestAddress pc, const cpu::CpuFault& fault);
     [[nodiscard]] bool Pending(std::uint64_t thread_id) const;
+    // Lock-free hint: false means no thread has a pending signal.
+    [[nodiscard]] bool AnyPending() const noexcept;
+    // True only when Deliver would act now: a running thread with an unmasked signal.
+    [[nodiscard]] bool Deliverable(std::uint64_t thread_id) const;
+    // Called on the sender after each accepted signal, outside the signal
+    // state lock, so owners parked in host waits can be woken. Replacing the
+    // observer waits for a call in flight.
+    void SetSendObserver(std::function<void()> observer);
     void Inherit(std::uint64_t parent, std::uint64_t child);
     // Blocked-signal mask of a thread (bit n-1 for signal n). A vfork child
     // shares its parent's thread, so the parent's mask is saved and restored

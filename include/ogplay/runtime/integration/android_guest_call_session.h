@@ -366,6 +366,13 @@ public:
     [[nodiscard]] std::uint64_t CleanupDeadlineNs() const noexcept;
     // Join native workers before a callback may enter libc exit destructors.
     void QuiesceNativeWorkers();
+    // Pending guest signals of a thread that is not executing guest code. The
+    // owner thread runs the handlers at its current guest stack; the callback
+    // runs on the sender after each accepted signal.
+    [[nodiscard]] bool AnySignalPending() const noexcept;
+    [[nodiscard]] bool SignalDeliverable(std::uint64_t thread_id) const;
+    void DeliverSignals(std::uint64_t thread_id, std::uint64_t context_token);
+    void SetSignalObserver(std::function<void()> observer);
     [[nodiscard]] std::optional<std::int32_t> NativeExitCode() const;
     // Read-only process termination signal; does not change native exit admission.
     [[nodiscard]] std::optional<std::uint32_t> NativeTerminationSignal() const;

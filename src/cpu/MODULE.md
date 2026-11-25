@@ -21,7 +21,8 @@
   registers；`handled` 继续当前 JIT run，`unhandled` 保持 supervisor stop，`fault` 形成
   显式 host-call fault stop。CPU 不解释 SVC 的上层含义。
 - `CpuSnapshot`：带显式版本的可复制 CPU 状态。
-- `CpuFault`：将 memory fault 的地址、访问类型、原因和线程号保留到 CPU 边界。
+- `CpuFault`：将 memory fault 的地址、访问类型、原因和线程号保留到 CPU 边界；`precise_state`
+  表示停止 PC 是出错的数据访问指令且寄存器为该指令时的状态。
 - `InterpreterCpu`：确定性逐指令后端；当前覆盖 A32/T32 标量算术、条件、控制流及
   word/byte 单次 load/store 基础集。
 - `DynarmicCpu`：ARMv7 A32/T32 动态翻译后端；通过 `MemoryBus` 回调及其受保护数据页表
@@ -68,6 +69,10 @@
 - 普通全局 futex 唤醒只释放调用时已经等待的线程，不改变 guest 值，也不让后续等待伪成功；
   失败中断一旦发布不得复位，当前及未来匹配等待必须明确返回 interrupted。
 - 内存失败产生 Fault，不得返回零；CPU 只调用无上层语义的显式 HostCallHook。
+- 数据访问故障在该指令处停止，块内后续指令不执行，停止 PC 为该指令。只有起点位于可写可执行页
+  （guest 运行时生成的代码）的块保留完整寄存器现场并置 `precise_state`，其他块继续做寄存器读写消除，
+  寄存器可能滞后；取指故障不精确。检查只在回调 fallback 之后，直接页访问无额外开销。基址回写及同一指令
+  已完成的传输可能先于故障可见。Dynarmic 的精确停机与每块选择由受检构建扩展接入所有宿主。
 - CPU 后端只通过 `MemoryBus` 及其显式页表能力访存；ARM64 的独立读表允许 R/RX 数据
   读取，写入仍只使用 RW 非执行页表。observer、取指及跨页访问回退受检 bus；exclusive
   保持原有 monitor；inline 及其回调只在对应已发布页内借用 backing，跨页/对齐/权限不满足即回退，
@@ -85,7 +90,7 @@
 - Dynarmic 指令能力缺口返回 `unsupported_instruction`，不是 guest 非法指令；其 fallback
   保留原 PC，协处理器缺口保留当前 IT 及已执行效果，禁止当作 NOP。非法/不可预测编码
   返回 `undefined_instruction` 并保留故障 PC/IT，内部 DecodeError 返回 `backend_error`。
-  Thumb-2 指令字以首半字为高 16 位。CPU 层不投递 SIGILL，由上层按虚拟 CPU 模型决定。
+  Thumb-2 指令字以首半字为高 16 位。CPU 层不投递 SIGILL/SIGSEGV，由上层按虚拟 CPU 模型决定。
 - SVC/BKPT 返回陷阱 PC，同时 CPU 状态 PC 指向下一条指令。
 - A32/Thumb-2 `MRC p15,0,*,c13,c0,3` 只读取当前线程 TPIDRURO；其他 CP15 访问
   返回明确能力缺口。旧式非 MCR2 CP15 `c7,c10,5/4` 和 `c7,c5,4` 复用 DMB/DSB/ISB

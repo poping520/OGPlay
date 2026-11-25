@@ -21,6 +21,12 @@ Record* Find(RomActivityState& s, Ref token) {
     return i == s.stack.end() ? nullptr : &*i;
 }
 
+// ActivityStack.topRunningActivityLocked: finishing Activities are never on top.
+Record* TopRunning(RomActivityState& s) {
+    const auto i = std::ranges::find_if(s.stack.rbegin(), s.stack.rend(), [](const auto& r) { return !r.finishing; });
+    return i == s.stack.rend() ? nullptr : &*i;
+}
+
 void Send(dx::Interpreter& vm, RomActivityState& s, const char* name, const char* sig, std::vector<V> args) {
     if (!s.application_thread.IsValid())
         throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "application thread is not attached"};
@@ -162,9 +168,12 @@ void Launch(dx::Interpreter& vm, const Context& context, const DexVmAndroidConte
             reuse = std::ranges::find_if(s.stack, [&](const auto& r) {
                 return !r.finishing && r.task == task && r.descriptor == cmd.descriptor;
             });
-    } else if (cmd.launch_mode == 1 && !s.stack.empty() && s.stack.back().descriptor == cmd.descriptor &&
-               !s.stack.back().finishing)
-        reuse = std::prev(s.stack.end());
+    } else if (cmd.launch_mode == 1) {
+        if (const auto* top = TopRunning(s); top && top->descriptor == cmd.descriptor) {
+            reuse = std::ranges::find_if(s.stack, [&](const auto& r) { return r.token == top->token; });
+            task = reuse->task;
+        }
+    }
     if (reuse != s.stack.end()) {
         s.background_tasks.erase(task);
         if (cmd.request_code >= 0)
@@ -380,8 +389,8 @@ void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context)
             if (cmd) {
                 cmd->owner = c.arguments[4].ref;
                 const bool isolated = !s.stack.empty() && s.stack.back().mode == 3;
-                const bool top_reuse =
-                    !s.stack.empty() && s.stack.back().descriptor == cmd->descriptor && cmd->launch_mode == 1;
+                const auto* top = TopRunning(s);
+                const bool top_reuse = top && top->descriptor == cmd->descriptor && cmd->launch_mode == 1;
                 if ((cmd->request_code >= 0 && (cmd->launch_mode > 1 || isolated || top_reuse)) ||
                     (!cmd->package_affinity && (cmd->launch_mode == 2 || (isolated && cmd->launch_mode != 3)))) {
                     if (auto* ledger = c.vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_result", 0);

@@ -59,6 +59,7 @@ ApplicationLoaders 缓存，与 VM 应用类的 loader 同一对象。封存 APK
 Activity、PhoneWindow、WindowManagerGlobal 和 ViewRootImpl 执行 ROM。AMS 通过 IApplicationThread
 调度启动、暂停、停止、结果、恢复及销毁。当前 APK 的封存 Manifest 提供组件身份、主题和 alias。
 同包 Activity 由封存清单解析；task 与实例复用遵循四种 launchMode，支持本地 for-result。
+singleTop 按 API 19 topRunningActivity 判断栈顶，跳过正在结束的 Activity。
 token、Intent 与结果由 AMS 持有至对应确认。宿主关闭复用 suspend，等整栈 stop 确认与主队列空闲后结束进程；
 guest finish 保留实例销毁与最后一个实例销毁后的退出信号。关闭截止时间按宿主稳定 Clock 计。
 跨包解析、跨进程 Binder 及系统任务管理超出支持范围。

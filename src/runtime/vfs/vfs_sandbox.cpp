@@ -699,10 +699,13 @@ void VirtualFileSystem::Impl::Truncate(const std::int32_t descriptor, const std:
 
 void VirtualFileSystem::Impl::Flush(const std::int32_t descriptor) {
     std::shared_ptr<OpenFile> open;
+    std::vector<std::shared_ptr<const std::function<void()>>> mapped;
     {
         std::scoped_lock lock(mutex_);
         open = FindDescriptor(descriptor);
+        if (open->file) CollectMappedWritesLocked(*open->file, mapped);
     }
+    WriteBackMappings(mapped);
     if (open->pipe || open->endpoint) return;
     std::scoped_lock operation(open->mutex);
     if (open->directory) return;
@@ -714,6 +717,7 @@ void VirtualFileSystem::Impl::Flush(const std::int32_t descriptor) {
 
 void VirtualFileSystem::Impl::FlushAll() {
     std::vector<std::shared_ptr<File>> files;
+    std::vector<std::shared_ptr<const std::function<void()>>> mapped;
     {
         std::scoped_lock lock(mutex_);
         if (sandbox_ == nullptr) return;
@@ -721,8 +725,10 @@ void VirtualFileSystem::Impl::FlushAll() {
         for (const auto& [path, file] : files_) {
             static_cast<void>(path);
             files.push_back(file);
+            CollectMappedWritesLocked(*file, mapped);
         }
     }
+    WriteBackMappings(mapped);
     for (const auto& file : files) {
         std::scoped_lock file_lock(*file->mutex);
         std::scoped_lock lock(mutex_);

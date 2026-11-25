@@ -553,8 +553,10 @@ TEST_CASE("BND49 EGL minimum colors select distinct RGB storage with truthful al
     f.bus.Write32(attributes.Add(48), 0x3038, 1U);
     REQUIRE(FastBoundaryCall(f, "libEGL.so", "eglChooseConfig",
                             {1, attributes.Value(), configs.Value(), 2}) == 1U);
-    CHECK(f.bus.Read32(count, 1U) == 1U);
+    // Only its multisampled twin may follow the single sampled RGBA config.
+    REQUIRE(f.bus.Read32(count, 1U) <= 2U);
     CHECK(f.bus.Read32(configs, 1U) == rgba);
+    if (f.bus.Read32(count, 1U) == 2U) CHECK(query(f.bus.Read32(configs.Add(4), 1U), 0x3032) == 1U);
     CHECK(query(rgb, 0x3021) == 0U);
     const auto window = f.Call("libEGL.so", "eglCreateWindowSurface", {1, rgb, 3, 0}); REQUIRE(window != 0U);
     f.bus.Write32(attributes, 0x3098, 1U); f.bus.Write32(attributes.Add(4), 2, 1U); f.bus.Write32(attributes.Add(8), 0x3038, 1U);
@@ -577,6 +579,99 @@ TEST_CASE("BND49 EGL minimum colors select distinct RGB storage with truthful al
     REQUIRE(f.Call("libEGL.so", "eglMakeCurrent", {1, 0, 0, 0}) == 1U);
     REQUIRE(f.Call("libEGL.so", "eglDestroyContext", {1, context}) == 1U);
     REQUIRE(f.Call("libEGL.so", "eglDestroySurface", {1, window}) == 1U);
+}
+
+TEST_CASE("EGL publishes multisampled configs that antialias windows and pbuffers") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1, 0, 0}) == 1U);
+    const auto attrs = f.output.Add(256), configs = f.output.Add(384), count = f.output.Add(448);
+    const auto put = [&](const std::initializer_list<std::uint32_t> words) {
+        std::uint32_t offset{};
+        for (const auto word : words) {
+            f.bus.Write32(attrs.Add(offset), word, 1U);
+            offset += 4U;
+        }
+    };
+    const auto choose = [&] {
+        f.bus.Write32(f.stack, count.Value(), 1U);
+        REQUIRE(f.Call("libEGL.so", "eglChooseConfig", {1, attrs.Value(), configs.Value(), 8}) == 1U);
+        std::vector<std::uint32_t> result;
+        for (std::uint32_t i = 0; i < f.bus.Read32(count, 1U); ++i)
+            result.push_back(f.bus.Read32(configs.Add(i * 4U), 1U));
+        return result;
+    };
+    const auto query = [&](const std::uint32_t config, const std::uint32_t attribute) {
+        REQUIRE(f.Call("libEGL.so", "eglGetConfigAttrib", {1, config, attribute, count.Value()}) == 1U);
+        return f.bus.Read32(count, 1U);
+    };
+    // Single sampled configs come first when samples are not requested.
+    put({0x3024, 4, 0x3040, 4, 0x3038});
+    const auto all = choose();
+    CHECK(query(all.front(), 0x3032) == 0U);
+    CHECK(std::ranges::is_sorted(all, {}, [&](const auto config) { return query(config, 0x3032); }));
+    // RED/GREEN/BLUE >= 4, SAMPLES 4, SAMPLE_BUFFERS 1, ES2.
+    put({0x3024, 4, 0x3023, 4, 0x3022, 4, 0x3031, 4, 0x3032, 1, 0x3040, 4, 0x3038});
+    const auto multisampled = choose();
+#if defined(__APPLE__)
+    REQUIRE(multisampled.size() == 3U);
+#else
+    if (multisampled.empty()) return;
+#endif
+    put({0x3024, 4, 0x3031, 8, 0x3038});
+    CHECK(choose().empty());
+    put({0x3032, 1, 0x3040, 0x40, 0x3038});  // no multisampled ES3 config
+    CHECK(choose().empty());
+    for (const auto config : multisampled) {
+        CAPTURE(config);
+        CHECK(query(config, 0x3031) == 4U);
+        CHECK(query(config, 0x3032) == 1U);
+        CHECK(query(config, 0x3039) == 0U);
+        CHECK(query(config, 0x303A) == 0U);
+        const auto alpha = query(config, 0x3021);
+        put({0x3098, 3, 0x3038});
+        CHECK(f.Call("libEGL.so", "eglCreateContext", {1, config, 0, attrs.Value()}) == 0U);
+        CHECK(f.Call("libEGL.so", "eglGetError") == 0x3009U);
+        put({0x3098, 2, 0x3038});
+        const auto context = f.Call("libEGL.so", "eglCreateContext", {1, config, 0, attrs.Value()});
+        const auto window = f.Call("libEGL.so", "eglCreateWindowSurface", {1, config, 3, 0});
+        put({0x3057, 4, 0x3056, 4, 0x3038});
+        const auto pbuffer = f.Call("libEGL.so", "eglCreatePbufferSurface", {1, config, attrs.Value()});
+        REQUIRE(context != 0U);
+        REQUIRE(window != 0U);
+        REQUIRE(pbuffer != 0U);
+        put({0x3057, 4, 0x3056, 4, 0x3080, 0x305E, 0x3081, 0x305F, 0x3038});
+        CHECK(f.Call("libEGL.so", "eglCreatePbufferSurface", {1, config, attrs.Value()}) == 0U);
+        CHECK(f.Call("libEGL.so", "eglGetError") == 0x3009U);
+
+        AuditBind(f, context, pbuffer, pbuffer);
+        for (const auto [name, value] : {std::pair{0x80A9U, 4U}, {0x80A8U, 1U}, {0x0D55U, alpha}}) {
+            AuditGl(f, "glGetIntegerv", {name, count.Value()});
+            CHECK(f.bus.Read32(count, 1U) == value);
+        }
+        AuditGl(f, "glClearColor", {0x3f800000U, 0, 0, 0x3f800000U});
+        AuditGl(f, "glClear", {0x4000});
+        CHECK((AuditPixel(f) & 0x00ffffffU) == 0x000000ffU);
+        // Another context of the same thread must not lose the pbuffer image.
+        put({0x3098, 2, 0x3038});
+        const auto second = f.Call("libEGL.so", "eglCreateContext", {1, config, 0, attrs.Value()});
+        REQUIRE(second != 0U);
+        AuditBind(f, second, window, window);
+        AuditGl(f, "glClearColor", {0, 0x3f800000U, 0, 0x3f800000U});
+        AuditGl(f, "glClear", {0x4000});
+        REQUIRE(f.Call("libEGL.so", "eglSwapBuffers", {1, window}) == 1U);
+        const auto frame = f.boundary.TakeLatestFrame();
+        REQUIRE(frame);
+        CHECK(frame->rgba8[0] == 0);
+        CHECK(frame->rgba8[1] == 255);
+        AuditBind(f, context, pbuffer, pbuffer);
+        CHECK((AuditPixel(f) & 0x00ffffffU) == 0x000000ffU);
+        REQUIRE(f.Call("libEGL.so", "eglMakeCurrent", {1, 0, 0, 0}) == 1U);
+        for (const auto handle : {context, second})
+            REQUIRE(f.Call("libEGL.so", "eglDestroyContext", {1, handle}) == 1U);
+        for (const auto handle : {window, pbuffer})
+            REQUIRE(f.Call("libEGL.so", "eglDestroySurface", {1, handle}) == 1U);
+    }
 }
 
 TEST_CASE("BND53 EGL registry exposes RGB565 storage consistently and preserves current lifetime") {

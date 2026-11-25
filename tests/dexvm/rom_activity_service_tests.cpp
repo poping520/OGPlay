@@ -173,6 +173,36 @@ TEST_CASE("P3 AMS launch modes retain tokens and isolated tasks") {
     CHECK(x.f.On(x.am, "getRequestedOrientation", "(Landroid/os/IBinder;)I", {V::Ref(isolated)}).AsInt() == 0);
 }
 
+TEST_CASE("P3 AMS singleTop reuses the Activity below a finishing caller") {
+    Fixture x;
+    x.Start(1);
+    x.Resumed();
+    const auto game = x.Top();
+    x.Start(0);
+    x.Paused(game);
+    const auto video = x.Top();
+    REQUIRE(video != game);
+    x.Resumed();
+    x.trace->calls.clear();
+    // finish() then startActivity() before the pause completes.
+    x.f.On(x.am, "finishActivity", "(Landroid/os/IBinder;ILandroid/content/Intent;)Z",
+           {V::Ref(video), V::Int(0), null});
+    x.Start(1);
+    x.Paused(video);
+    const auto& stack = x.f.context->rom_activities->stack;
+    CHECK(std::ranges::find(x.trace->calls, "scheduleLaunchActivity") == x.trace->calls.end());
+    const auto intent = std::ranges::find(x.trace->calls, "scheduleNewIntent");
+    REQUIRE(intent != x.trace->calls.end());
+    CHECK(std::find(intent, x.trace->calls.end(), "scheduleResumeActivity") != x.trace->calls.end());
+    CHECK(x.Top() == game);
+    CHECK(stack.size() == 2);
+    x.Resumed();
+    x.f.On(x.am, "activityDestroyed", "(Landroid/os/IBinder;)V", {V::Ref(video)});
+    CHECK(stack.size() == 1);
+    CHECK(x.Top() == game);
+    CHECK_FALSE(x.f.context->exit_requested.load());
+}
+
 TEST_CASE("P3 AMS host shutdown waits for stop confirmation and keeps the Activity") {
     Fixture x;
     x.Start();

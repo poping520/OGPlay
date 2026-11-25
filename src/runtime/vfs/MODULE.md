@@ -51,6 +51,8 @@
   拒绝与保护登记在同一元数据锁下排序，回调记账且不得重入 VFS。弱 token 关联节点身份，
   最后读取源释放后自动解除；unlink 后旧节点仍受保护，同名新节点独立。
   syscall 负责区间生命周期与快照内存，VFS 不依赖 syscall 或其账本。
+  可写 fd 另得 VfsMappingWriter：按节点写回且不受自身保护拒绝，不得越过 EOF；其 read barrier 在
+  Read/ReadAt/read lease/Flush/FlushAll 取锁前、不持任何 VFS 锁时运行，随 writer 退役。
   私有快照复制期间也临时持有保护；不拦截宿主在 VFS 外对 backing 的修改。
 - `VfsReadLease` 固定节点来源版本与窗口，独立于 FD offset/Close/unlink/rename。只读
   backing 共享拥有状态，并将每次读取的取消 token 传到上层注入的区间 reader；lease

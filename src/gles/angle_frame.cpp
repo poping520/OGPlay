@@ -38,8 +38,8 @@ namespace {
 // ANGLE Metal reads its draw drawable even when EGL_READ names another
 // pbuffer. Bind the read drawable for default-framebuffer source operations;
 // user FBOs keep their own read binding. Restore EGL currency on every exit.
-template<class Operation>
-void WithDefaultReadSurface(EglLifecycle& lifecycle, Operation&& operation) {
+template <class Operation>
+void WithDefaultReadSurface(EglLifecycle& lifecycle, const bool multisampled, Operation&& operation) {
     const auto draw = lifecycle.DrawSurface(), read = lifecycle.ReadSurface();
     if (!draw || !read || draw == read ||
         lifecycle.Info().backend.renderer != AngleRenderer::metal) {
@@ -47,7 +47,8 @@ void WithDefaultReadSurface(EglLifecycle& lifecycle, Operation&& operation) {
         return;
     }
     GLint binding{};
-    glGetIntegerv(lifecycle.Info().client_version >= 3 ? 0x8CAAU : GL_FRAMEBUFFER_BINDING, &binding);
+    // A multisampled default framebuffer separates draw from read in ES2 too.
+    glGetIntegerv(lifecycle.Info().client_version >= 3 || multisampled ? 0x8CAAU : GL_FRAMEBUFFER_BINDING, &binding);
     if (binding != 0) { operation(); return; }
     lifecycle.BindSurfaces(read, read);
     try { operation(); }
@@ -180,12 +181,26 @@ AngleFrame AngleFrame::CreateContext(std::shared_ptr<EglDisplayResources> displa
     return AngleFrame(nullptr, std::move(lifecycle), 0U, 0U, family);
 }
 
-AngleFrame AngleFrame::CreateContext(std::shared_ptr<EglDisplayResources> display,
-    const int client_version,const EglHandle share_context,const EglColorFormat format,
-    const CompressedTextureFamily family) {
+AngleFrame AngleFrame::CreateContext(std::shared_ptr<EglDisplayResources> display, const int client_version,
+                                     const EglHandle share_context, const EglColorFormat format,
+                                     const CompressedTextureFamily family, const std::uint32_t samples) {
     const bool packed=format==EglColorFormat::rgb565 && display->UsesPackedRgbFramebuffer();
+    if (samples != 0U && (client_version > 2 || display->MultisampleCount(format) != samples))
+        throw EglLifecycleError(EglOperation::create_context, 0x3009U);  // EGL_BAD_MATCH
+    std::int32_t depth{}, stencil{};
+    if (samples != 0U) {
+        depth = display->ConfigAttribute(0x3025U, format);
+        stencil = display->ConfigAttribute(0x3026U, format);
+    }
     auto lifecycle=EglLifecycle::CreateContext(std::move(display),client_version,share_context,format);
-    AngleFrame result(nullptr,std::move(lifecycle),0,0,family);result.packed_default_=packed;return result;
+    AngleFrame result(nullptr, std::move(lifecycle), 0, 0, family);
+    result.packed_default_ = packed;
+    result.private_default_ = packed || samples != 0U;
+    result.multisample_samples_ = samples;
+    result.color_format_ = format;
+    result.depth_bits_ = depth;
+    result.stencil_bits_ = stencil;
+    return result;
 }
 
 void AngleFrame::BindSurfaces(std::shared_ptr<EglSurfaceResources> draw,
@@ -198,9 +213,11 @@ void AngleFrame::BindSurfaces(std::shared_ptr<EglSurfaceResources> draw,
     const auto previous_display=eglGetCurrentDisplay(), previous_draw=eglGetCurrentSurface(EGL_DRAW), previous_read=eglGetCurrentSurface(EGL_READ);
     const auto previous_context=eglGetCurrentContext();
 #endif
-    lifecycle_.BindSurfaces(std::move(draw), std::move(read));
+    if (old_draw && old_draw != draw) ResolveMultisample();
+    lifecycle_.BindSurfaces(draw, std::move(read));
     try {
         if (packed_default_) BindPackedDefault(draw_image,read_image,draw_depth,read_depth);
+        if (multisample_samples_ != 0U) BindMultisampleDefault(draw);
     } catch (...) {
         if (old_draw && old_read) lifecycle_.BindSurfaces(old_draw,old_read);
         else lifecycle_.MarkNotCurrent();
@@ -229,6 +246,7 @@ void AngleFrame::BindCurrentOnCallingThread() {
 }
 
 void AngleFrame::ReleaseCurrent() {
+    ResolveMultisample();
     lifecycle_.ReleaseCurrent();
 }
 
@@ -998,7 +1016,8 @@ void AngleFrame::CopyTextureImage2D(
     const std::int32_t y, const std::int32_t width,
     const std::int32_t height, const std::int32_t border) {
 #if OGPLAY_HAS_ANGLE
-    WithDefaultReadSurface(lifecycle_, [&] {
+    ResolveMultisampleForRead();
+    WithDefaultReadSurface(lifecycle_, multisample_samples_ != 0U, [&] {
         glCopyTexImage2D(target, level, internal_format, x, y, width, height, border);
         RequireNoError("glCopyTexImage2D");
     });
@@ -1101,7 +1120,8 @@ void AngleFrame::CopyTextureSubImage2D(
     const std::int32_t x, const std::int32_t y, const std::int32_t width,
     const std::int32_t height) {
 #if OGPLAY_HAS_ANGLE
-    WithDefaultReadSurface(lifecycle_, [&] {
+    ResolveMultisampleForRead();
+    WithDefaultReadSurface(lifecycle_, multisample_samples_ != 0U, [&] {
         glCopyTexSubImage2D(target, level, x_offset, y_offset, x, y, width, height);
         RequireNoError("glCopyTexSubImage2D");
     });
@@ -1228,7 +1248,8 @@ void AngleFrame::ReadPixels(
     const std::uint32_t format, const std::uint32_t type,
     const std::span<std::byte> output) {
 #if OGPLAY_HAS_ANGLE
-    WithDefaultReadSurface(lifecycle_, [&] {
+    ResolveMultisampleForRead();
+    WithDefaultReadSurface(lifecycle_, multisample_samples_ != 0U, [&] {
         glReadPixels(x, y, width, height, format, type, output.data());
         RequireNoError("glReadPixels");
     });
@@ -1248,6 +1269,7 @@ void AngleFrame::ReadRgba8(std::vector<std::uint8_t>& result) {
     }
     result.resize(static_cast<std::size_t>(pixels * kChannels));
 #if OGPLAY_HAS_ANGLE
+    ResolveMultisampleForRead();
     // Presentation uses host memory with a tight layout even when the guest
     // has a PBO and non-default pixel-store state bound.
     GLint pack_alignment{};

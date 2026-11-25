@@ -512,7 +512,7 @@ note = "ROM SharedPreferencesImpl/EditorImpl 使用同一沙盒 VFS 存储 XML�
 [runtime.syscall_anonymous_mapping]
 status = "partial"
 test = "tests/memory/address_space_tests.cpp; tests/runtime/syscall_tests.cpp; tests/dexvm/file_vfs_tests.cpp#ROM FileChannel maps"
-note = "非固定 mmap2 自顶向下原子选址，支持 MAP_FIXED 与空洞复用；宽域分配及动态模块避开会话固定布局窗口，MAP_FIXED 入窗 ENOMEM 并记账。窗口不提交 backing，窗口内有界 arena 与宿主显式 Map 可用；brk 串行化。Java/native 共用文件映射账本，支持 PRIVATE R/RW、只读 fd 的 SHARED R 快照及 msync 校验；共享节点变更 EBUSY。文件执行、共享回写、整页超 EOF、MS_INVALIDATE、文件区间 DONTNEED、SIGBUS/mremap 未支持。"
+note = "非固定 mmap2 自顶向下原子选址，支持 MAP_FIXED 与空洞复用；宽域分配及动态模块避开会话固定布局窗口，MAP_FIXED 入窗 ENOMEM 并记账。窗口不提交 backing，窗口内有界 arena 与宿主显式 Map 可用；brk 串行化。Java/native 共用文件映射账本，支持 PRIVATE R/RW、只读 fd 的 SHARED R 与写回文件的 SHARED RW；共享节点变更 EBUSY。文件执行、重叠可写共享、整页超 EOF、MS_INVALIDATE、文件区间 DONTNEED、SIGBUS/mremap 未支持。"
 
 [runtime.syscall_large_file_io]
 status = "complete"
@@ -626,8 +626,8 @@ note = "M4 已在三平台完成真实 pbuffer 生命周期、guest 边界、SDL
 
 [gles.egl_lifecycle]
 status = "partial"
-test = "tests/runtime/boundary/integration/android_egl_lifecycle_tests.cpp#APS-14; tests/gles/egl_lifecycle_tests.cpp; tests/gles/angle_frame_tests.cpp; tests/runtime/boundary/integration/android_egl_sharing_tests.cpp#BND49; tests/runtime/boundary/integration/android_egl_sharing_tests.cpp#BND53; tests/gles/angle_frame_tests.cpp#BND53"
-note = "Context/Surface 独立所有权，Display 引用计数，terminate 后可重新 initialize；KHR image/sync、texture pbuffer 与 RGB888/RGB565/D24S8 按真实 ANGLE backing 探测发布（Metal 用 IOSurface）。window 属性仅支持 RENDER_BUFFER=BACK_BUFFER，其他记账失败。限 GLES1/GLES2、MSAA0；texture binding/mipmap、fallback GLES3 与完整 Android 窗口系统未支持。"
+test = "tests/runtime/boundary/integration/android_egl_lifecycle_tests.cpp#APS-14; tests/gles/egl_lifecycle_tests.cpp; tests/gles/angle_frame_tests.cpp; tests/runtime/boundary/integration/android_egl_sharing_tests.cpp#BND49; tests/runtime/boundary/integration/android_egl_sharing_tests.cpp#BND53; tests/gles/angle_frame_tests.cpp#BND53; tests/runtime/boundary/integration/android_egl_sharing_tests.cpp#EGL publishes multisampled"
+note = "Context/Surface 独立所有权，Display 引用计数，terminate 后可重新 initialize；KHR image/sync、texture pbuffer 与 RGB888/RGB565/D24S8 按真实 ANGLE backing 探测发布（Metal 用 IOSurface）。window 属性仅支持 RENDER_BUFFER=BACK_BUFFER，其他记账失败。三种格式另有真实 4x MSAA（GLES1/2）。RGB565 fallback 的 texture binding/mipmap、其与 MSAA 的 GLES3 及完整窗口系统未支持。"
 
 [runtime.egl_api19_base_boundary]
 status = "complete"
@@ -2142,7 +2142,7 @@ note = "ROM Application 保存生命周期监听器；ROM Activity 的 base 回�
 [dexvm.activity_result]
 status = "partial"
 test = "tests/dexvm/rom_activity_service_tests.cpp; tests/runtime/rom_window_integration_tests.cpp#ROM ActivityThread; tests/runtime/rom_window_integration_tests.cpp#P3 orientation; tests/runtime/rom_window_integration_tests.cpp#P3 handled orientation; tests/runtime/boundary/integration/android_frame_presentation_tests.cpp#composed frame recycling"
-note = "当前 APK Activity 经本地 AMS 启动。ROM ActivityThread 派发结果与生命周期；每个可见 Activity 按自身配置快照的 diff/configChanges 走保存状态的 relaunch 或 onConfigurationChanged，恢复前核对配置。帧回收允许横竖屏及在途旧帧。AMS 处理实例退出、四种 launchMode 和任务查询。"
+note = "当前 APK Activity 经本地 AMS 启动。ROM ActivityThread 派发结果与生命周期；每个可见 Activity 按自身配置快照的 diff/configChanges 走保存状态的 relaunch 或 onConfigurationChanged，恢复前核对配置。帧回收允许横竖屏及在途旧帧。AMS 处理实例退出、四种 launchMode（singleTop 跳过结束中的 Activity）和任务查询。"
 
 [dexvm.surface_buffer_geometry]
 status = "partial"

@@ -31,10 +31,13 @@ execution 或 integration。
   guest MAP_FIXED 与任意保留窗口相交时，整次返回 ENOMEM 并以
   `memory.map_fixed_reserved_window` 记账，不提交或修改任何页；优先于文件快照读取。未注入窗口的独立 runner 保持原行为。
   brk 的宿主显式 Map 仍可在其保留窗口中扩展；munmap/mprotect/madvise 的语义不变。
-- 文件 mmap2 的 pgoff 单位为 4096 字节；支持 PRIVATE 的 R/RW 与只读 fd 的 SHARED R。
+- 文件 mmap2 的 pgoff 单位为 4096 字节；支持 PRIVATE 的 R/RW、只读 fd 的 SHARED R 与读写 fd 的 SHARED RW。
   读取 VFS 节点快照后一次发布内存，尾页补零；失败不消耗地址或破坏固定目标。
-  文件执行映射、整页超 EOF、共享回写与其他未支持组合返回 ENOSYS，由 dispatcher 记账；
-  SHARED WRITE 的只读 fd 返回 EACCES，非普通文件 ENODEV，坏 fd EBADF。
+  SHARED RW 在 msync、munmap、固定覆盖前，以及 VFS 读取或落盘该节点前，把改动写回节点；不扩展文件，
+  EOF 后的尾页字节不写回，PROT_NONE 页也写回。页面不做别名：同节点区间重叠且任一可写的共享映射返回 ENOSYS，
+  活跃期间经 fd 的写入、截断与 rename 仍为 EBUSY。
+  文件执行映射、整页超 EOF、读写 fd 的 SHARED R 与其他未支持组合返回 ENOSYS，由 dispatcher 记账；
+  SHARED WRITE 的只读 fd 及不可读 fd 返回 EACCES，非普通文件 ENODEV，坏 fd EBADF。
   文件绑定通过 dispatcher 共享间接状态提供同一个 VFS，先后绑定次序均支持。
   Java Posix.mmap/munmap/msync 和 native syscall 经同一进程映射入口使用相同地址空间、VFS fd 和区间账本。
   munmap/固定覆盖先准备拆分，再提交内存与区间账本；

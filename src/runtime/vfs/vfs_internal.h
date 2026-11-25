@@ -92,6 +92,8 @@ struct File final {
     std::string spelling;
     // Accessed only under the VFS metadata lock; weak tokens do not pin nodes.
     std::vector<std::weak_ptr<const std::function<void()>>> mapping_readers;
+    // Write-back of live writable mappings; same locking as mapping_readers.
+    std::vector<std::weak_ptr<const std::function<void()>>> mapping_writers;
     std::shared_ptr<VfsGeneratedFileState> generated;
     std::shared_ptr<VfsCharacterDeviceState> character_device;
     std::vector<std::byte> contents;
@@ -302,6 +304,12 @@ public:
 
     void Materialize(File& file);
     void RejectMappedMutationLocked(File& file) const;
+    // Collect under mutex_, then run with no VFS lock held.
+    static void CollectMappedWritesLocked(File& file,
+                                          std::vector<std::shared_ptr<const std::function<void()>>>& barriers);
+    static void WriteBackMappings(const std::vector<std::shared_ptr<const std::function<void()>>>& barriers);
+    void WriteMapped(File& file, std::uint64_t offset, std::span<const std::byte> source);
+    class MappingWriter;
 
     // Callers hold mutex_ for every helper below.
     [[nodiscard]] std::uint32_t AllocateNodeIdLocked() const;

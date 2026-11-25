@@ -821,10 +821,13 @@ VfsPipeDescriptors VirtualFileSystem::Impl::CreatePipe(const bool non_blocking) 
 
 std::size_t VirtualFileSystem::Impl::Read(const std::int32_t descriptor, const std::span<std::byte> destination) {
     std::shared_ptr<OpenFile> open;
+    std::vector<std::shared_ptr<const std::function<void()>>> mapped;
     {
         std::scoped_lock lock(mutex_);
         open = FindDescriptor(descriptor);
+        if (open->file) CollectMappedWritesLocked(*open->file, mapped);
     }
+    WriteBackMappings(mapped);
     // Pipe IO may block, so it never holds the open-state operation lock.
     if (open->pipe_state) return ReadPipe(*open, destination);
     if (open->endpoint) {
@@ -878,10 +881,13 @@ std::size_t VirtualFileSystem::Impl::Read(const std::int32_t descriptor, const s
 std::size_t VirtualFileSystem::Impl::ReadAt(const std::int32_t descriptor, const std::uint64_t offset,
                                             const std::span<std::byte> destination) {
     std::shared_ptr<OpenFile> open;
+    std::vector<std::shared_ptr<const std::function<void()>>> mapped;
     {
         std::scoped_lock lock(mutex_);
         open = FindDescriptor(descriptor);
+        if (open->file) CollectMappedWritesLocked(*open->file, mapped);
     }
+    WriteBackMappings(mapped);
     std::scoped_lock operation(open->mutex);
     if (open->directory) throw VfsError(kEisdir, "VFS descriptor is a directory");
     if (open->pipe || open->endpoint) throw VfsError(kEspipe, "VFS pipe does not support positioned IO");
@@ -1031,6 +1037,53 @@ void VirtualFileSystem::Impl::RejectMappedMutationLocked(File& file) const {
     }
 }
 
+void VirtualFileSystem::Impl::CollectMappedWritesLocked(
+    File& file, std::vector<std::shared_ptr<const std::function<void()>>>& barriers) {
+    if (file.mapping_writers.empty()) return;
+    std::erase_if(file.mapping_writers, [](const auto& writer) { return writer.expired(); });
+    for (const auto& writer : file.mapping_writers)
+        if (auto barrier = writer.lock()) barriers.push_back(std::move(barrier));
+}
+
+void VirtualFileSystem::Impl::WriteBackMappings(
+    const std::vector<std::shared_ptr<const std::function<void()>>>& barriers) {
+    for (const auto& barrier : barriers)
+        (*barrier)();
+}
+
+void VirtualFileSystem::Impl::WriteMapped(File& file, const std::uint64_t offset,
+                                          const std::span<const std::byte> source) {
+    std::scoped_lock file_lock(*file.mutex);
+    Materialize(file);
+    std::scoped_lock lock(mutex_);
+    if (offset > file.contents.size() || source.size() > file.contents.size() - offset)
+        throw VfsError(kEio, "VFS mapping write-back is past EOF");
+    using Difference = std::vector<std::byte>::difference_type;
+    std::copy(source.begin(), source.end(), file.contents.begin() + static_cast<Difference>(offset));
+    ++file.generation;
+    SetNodeSizeDirtyLocked(file, file.contents.size(), file.dirty || !file.overlay_path.empty());
+}
+
+class VirtualFileSystem::Impl::MappingWriter final : public VfsMappingWriter {
+public:
+    MappingWriter(Impl& owner, std::shared_ptr<File> file) : owner_(owner), file_(std::move(file)) {}
+
+    void WriteAt(const std::uint64_t offset, const std::span<const std::byte> source) override {
+        owner_.WriteMapped(*file_, offset, source);
+    }
+
+    void SetReadBarrier(std::function<void()> write_back) override {
+        barrier_ = std::make_shared<const std::function<void()>>(std::move(write_back));
+        std::scoped_lock lock(owner_.mutex_);
+        file_->mapping_writers.push_back(barrier_);
+    }
+
+private:
+    Impl& owner_;
+    std::shared_ptr<File> file_;
+    std::shared_ptr<const std::function<void()>> barrier_;
+};
+
 VfsMappingSource VirtualFileSystem::CaptureMappingSource(const std::int32_t descriptor,
                                                          std::function<void()> rejected) {
     if (!rejected) throw std::invalid_argument("mapping source requires rejection diagnostics");
@@ -1051,17 +1104,22 @@ VfsMappingSource VirtualFileSystem::CaptureMappingSource(const std::int32_t desc
     std::scoped_lock lock(impl_->mutex_);
     std::erase_if(file->mapping_readers, [](const auto& reader) { return reader.expired(); });
     file->mapping_readers.push_back(token);
-    return {std::move(lease), open->readable, open->writable};
+    std::shared_ptr<VfsMappingWriter> writer;
+    if (open->writable) writer = std::make_shared<Impl::MappingWriter>(*impl_, file);
+    return {std::move(lease), open->readable, open->writable, std::move(writer), file->node_id};
 }
 
 std::shared_ptr<const VfsReadLease> VirtualFileSystem::Impl::CaptureReadLease(const std::int32_t descriptor,
                                                                               const std::uint64_t offset,
                                                                               const std::uint64_t requested_length) {
     std::shared_ptr<OpenFile> open;
+    std::vector<std::shared_ptr<const std::function<void()>>> mapped;
     {
         std::scoped_lock lock(mutex_);
         open = FindDescriptor(descriptor);
+        if (open->file) CollectMappedWritesLocked(*open->file, mapped);
     }
+    WriteBackMappings(mapped);
     std::scoped_lock operation(open->mutex);
     if (open->directory) throw VfsError(kEisdir, "cannot lease a directory");
     if (open->pipe || open->endpoint) throw VfsError(kEspipe, "cannot lease a VFS pipe");

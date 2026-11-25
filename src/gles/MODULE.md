@@ -233,8 +233,13 @@ RGB565 扩展见 ADR-0106：精确 native config 优先；原生候选优先保�
 binding 查询归一化且不允许 guest 改写默认附件。存储独立于 Context/share group，
 临时导入成功后才提交，失败恢复 binding/currency；探测实际 bit/量化/alpha 后才发布。
 fallback 经真实导入探测可公开 D24S8（否则 D0/S0）；Surface 拥有独立 depth/stencil
-Metal texture/EGLImage，非共享 Context 私有 FBO 导入同一内容。无 MSAA、仅 GLES1
+Metal texture/EGLImage，非共享 Context 私有 FBO 导入同一内容。仅 GLES1
 compatibility/GLES2，不支持 GLES3、texture binding/mipmap；见 ADR-0130。
+
+`MultisampleCount(format)` 是 ANGLE_framebuffer_multisample/blit 的实际渲染、解析与读回探测结果。
+`CreateContext(samples)` 使 guest framebuffer 0 的 draw 落在同格式多重采样 FBO（含 D24S8），read 仍为单采样
+Surface；FBO 名称隔离与 RGB565 fallback 共用。`ResolveMultisample` 不受 scissor 影响并恢复绑定，
+读像素与 copy tex 自动解析，调用方在切换到其他 Context 前显式解析。仅 ES2 native Context。
 
 压缩纹理以 AngleFrame 首次 current 查询冻结的 CompressedTextureCapabilities 为事实：
 原生枚举与已实现软件解码形成 available，进程传入的 all/atc/pvrtc 策略只能收窄 published。

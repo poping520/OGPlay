@@ -373,6 +373,10 @@ public:
 
     void ValidateMapped(const GuestRange& range, const std::uint64_t thread_id) const {
         std::scoped_lock lock(mutex_);
+        ValidateMappedLocked(range, thread_id);
+    }
+
+    void ValidateMappedLocked(const GuestRange& range, const std::uint64_t thread_id) const {
         const auto first = range.Start().Value() / page_size_;
         const auto last = (range.EndExclusive() - 1U) / page_size_;
         for (auto page = first; page <= last; ++page) {
@@ -382,6 +386,14 @@ public:
             throw MemoryFault(GuestAddress{static_cast<std::uint32_t>(fault_address)}, AccessType::read,
                               FaultReason::unmapped, thread_id);
         }
+    }
+
+    void ReadMapped(const GuestAddress address, const std::span<std::byte> destination) const {
+        if (destination.empty()) return;
+        const GuestRange range(address, destination.size());
+        std::scoped_lock lock(mutex_);
+        ValidateMappedLocked(range, 0);
+        std::memcpy(destination.data(), reservation_->Base() + address.Value(), destination.size());
     }
 
     [[nodiscard]] bool IsWritableCode(const GuestAddress address) const {
@@ -882,6 +894,10 @@ void AddressSpace::Unmap(const GuestRange& range) {
 
 void AddressSpace::ValidateMapped(const GuestRange& range, const std::uint64_t thread_id) const {
     impl_->ValidateMapped(range, thread_id);
+}
+
+void AddressSpace::ReadMapped(const GuestAddress address, const std::span<std::byte> destination) const {
+    impl_->ReadMapped(address, destination);
 }
 
 bool AddressSpace::IsWritableCode(const GuestAddress address) const {

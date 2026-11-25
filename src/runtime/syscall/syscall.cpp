@@ -471,10 +471,22 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
     constexpr std::uint32_t kMapHints = 0x800U | 0x1000U | 0x2000U | 0x4000U | 0x8000U | 0x10000U | 0x20000U;
 
     struct State final {
+        // One shared file mapping; split intervals keep sharing it.
+        struct SharedSource final {
+            std::shared_ptr<const VfsReadLease> lease;
+            std::shared_ptr<VfsMappingWriter> writer;  // null for read-only mappings
+            std::uint64_t node_id{};
+            std::uint64_t file_offset{};
+            std::uint64_t address{};
+
+            [[nodiscard]] std::uint64_t FileOffset(const std::uint64_t mapped) const {
+                return file_offset + (mapped - address);
+            }
+        };
+
         struct Mapping final {
             std::uint64_t begin, end;
-            std::shared_ptr<const void> guard;
-            bool shared;
+            std::shared_ptr<const SharedSource> shared;  // null for private mappings
         };
 
         std::mutex mapping_mutex;
@@ -488,11 +500,38 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
                 if (m.end <= begin || m.begin >= end)
                     result.push_back(m);
                 else {
-                    if (m.begin < begin) result.push_back({m.begin, begin, m.guard, m.shared});
-                    if (m.end > end) result.push_back({end, m.end, m.guard, m.shared});
+                    if (m.begin < begin) result.push_back({m.begin, begin, m.shared});
+                    if (m.end > end) result.push_back({end, m.end, m.shared});
                 }
             }
             return result;
+        }
+
+        // Publishes changed bytes of writable shared pages to the file node. The
+        // mapping mutex is held; bytes past EOF never reach the file.
+        void WriteBack(const memory::AddressSpace& address_space, std::uint64_t begin, std::uint64_t end,
+                       std::optional<std::uint64_t> node = std::nullopt) const {
+            constexpr std::size_t kChunk = 64U * 1024U;
+            std::vector<std::byte> pages, stored;
+            for (const auto& m : mappings) {
+                if (!m.shared || !m.shared->writer || m.end <= begin || m.begin >= end) continue;
+                if (node && m.shared->node_id != *node) continue;
+                auto cursor = std::max(m.begin, begin);
+                const auto last = std::min(m.end, end);
+                while (cursor < last) {
+                    const auto offset = m.shared->FileOffset(cursor);
+                    if (offset >= m.shared->lease->Size()) break;
+                    const auto count = static_cast<std::size_t>(
+                        std::min({std::uint64_t{kChunk}, last - cursor, m.shared->lease->Size() - offset}));
+                    pages.resize(count);
+                    stored.resize(count);
+                    address_space.ReadMapped(memory::GuestAddress{static_cast<std::uint32_t>(cursor)}, pages);
+                    if (m.shared->lease->ReadAt(offset, stored) != count)
+                        throw VfsError(5, "short shared mapping read");
+                    if (pages != stored) m.shared->writer->WriteAt(offset, pages);
+                    cursor += count;
+                }
+            }
         }
 
         std::mutex break_mutex;
@@ -551,7 +590,7 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
                     return -kEnomem;
                 }
             }
-            std::shared_ptr<const void> guard;
+            std::shared_ptr<State::SharedSource> shared;
             std::shared_ptr<const VfsResourceReservation> reservation;
             std::vector<std::byte> snapshot;
             if ((flags & kMapAnonymous) != 0) {
@@ -562,15 +601,27 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
                 // Guard first, then inspect size/copy: VFS mutations serialize
                 // on its metadata lock. Private snapshots release at return.
                 const auto source = vfs->CaptureMappingSource(request.fd, rejected);
-                guard = source.lease;
-                if (kind == 1U && (prot & 2U) != 0) return source.writable ? -kLinuxEnosys : -13;
-                if (!source.readable) return -13;
+                const bool shared_write = kind == 1U && (prot & 2U) != 0;
+                if (!source.readable || (shared_write && !source.writable)) return -13;
                 if ((prot & 4U) != 0 || (prot != 1U && prot != 3U)) return -kLinuxEnosys;
-                if (kind == 1U && source.writable) return -kLinuxEnosys;
+                if (kind == 1U && source.writable && !shared_write) return -kLinuxEnosys;
                 const auto offset = std::uint64_t{request.page_offset} * kApi19MmapPageSize;
                 if (source.lease->Size() == 0 || offset + size - page_size >= source.lease->Size())
                     return -kLinuxEnosys;
                 const auto count = std::min<std::uint64_t>(size, source.lease->Size() - offset);
+                if (kind == 1U) {
+                    // Pages are never aliased: overlapping views of one file need that.
+                    for (const auto& m : state->mappings)
+                        if (m.shared && m.shared->node_id == source.node_id && (shared_write || m.shared->writer) &&
+                            m.shared->FileOffset(m.begin) < offset + size && offset < m.shared->FileOffset(m.end))
+                            return -kLinuxEnosys;
+                    shared = std::make_shared<State::SharedSource>();
+                    shared->lease = source.lease;
+                    if (shared_write) shared->writer = source.writer;
+                    shared->node_id = source.node_id;
+                    shared->file_offset = offset;
+                }
+                state->WriteBack(address_space, 0, UINT64_C(0x100000000), source.node_id);
                 reservation = vfs->ReserveResourceMemory(count);
                 snapshot.resize(static_cast<std::size_t>(count));
                 std::size_t copied{};
@@ -580,6 +631,7 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
                     copied += got;
                 }
             }
+            if (fixed) state->WriteBack(address_space, address, std::uint64_t{address} + size);
             auto next = fixed ? state->Without(address, std::uint64_t{address} + size) : state->mappings;
             next.reserve(next.size() + 1U);
             if (fixed) {
@@ -597,11 +649,17 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
                         address_space.MapAnywhere(guest_layout::kMmapFallback, size, permissions, snapshot).Value();
                 }
             }
-            if ((flags & kMapAnonymous) == 0)
-                next.push_back(
-                    {address, std::uint64_t{address} + size, kind == 1U ? std::move(guard) : nullptr, kind == 1U});
+            if (shared) shared->address = address;
+            if ((flags & kMapAnonymous) == 0) next.push_back({address, std::uint64_t{address} + size, shared});
             std::ranges::sort(next, {}, &State::Mapping::begin);
             state->mappings.swap(next);
+            if (shared && shared->writer)
+                shared->writer->SetReadBarrier([&address_space, weak = std::weak_ptr(state), node = shared->node_id] {
+                    const auto owner = weak.lock();
+                    if (!owner) return;
+                    std::scoped_lock barrier_lock(owner->mapping_mutex);
+                    owner->WriteBack(address_space, 0, UINT64_C(0x100000000), node);
+                });
             return address;
         } catch (const VfsError& error) {
             return -error.ErrorNumber();
@@ -621,10 +679,13 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
         try {
             if (!address.IsAligned(page_size)) return -kEinval;
             const memory::GuestRange range{address, aligned_size(count)};
+            state->WriteBack(address_space, range.Start().Value(), range.EndExclusive());
             auto next = state->Without(address.Value(), range.EndExclusive());
             address_space.Unmap(range);
             state->mappings.swap(next);
             return 0;
+        } catch (const VfsError& error) {
+            return -error.ErrorNumber();
         } catch (const memory::ProtectedMappingError&) {
             return -kEperm;
         } catch (const std::exception&) {
@@ -648,9 +709,14 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
                 if (mapping.end <= cursor) continue;
                 if (mapping.begin > cursor) break;
                 cursor = mapping.end;
-                if (cursor >= range.EndExclusive()) return 0;
+                if (cursor >= range.EndExclusive()) {
+                    state->WriteBack(address_space, range.Start().Value(), range.EndExclusive());
+                    return 0;
+                }
             }
             return -kLinuxEnosys;
+        } catch (const VfsError& error) {
+            return -error.ErrorNumber();
         } catch (const memory::MemoryFault&) {
             return -kEnomem;
         } catch (const std::overflow_error&) {
@@ -677,7 +743,8 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
                 const auto end = std::uint64_t{frame.arguments[0]} + aligned_size(frame.arguments[1]);
                 for (const auto& m : state->mappings)
                     if (m.begin < end && frame.arguments[0] < m.end &&
-                        ((frame.arguments[2] & 4U) != 0 || (m.shared && (frame.arguments[2] & 2U) != 0)))
+                        ((frame.arguments[2] & 4U) != 0 ||
+                         (m.shared && !m.shared->writer && (frame.arguments[2] & 2U) != 0)))
                         return -kLinuxEnosys;
                 address_space.Protect({memory::GuestAddress{frame.arguments[0]}, aligned_size(frame.arguments[1])},
                                       protection(frame.arguments[2]));

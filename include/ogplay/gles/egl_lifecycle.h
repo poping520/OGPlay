@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
@@ -102,6 +104,12 @@ public:
         std::unique_ptr<hal::RgbSurfaceStorage>& storage);
     bool HasPackedDepthStencil() const noexcept { return packed_depth_bits_ != 0; }
     bool SupportsRgbSurface() const noexcept { return rgb_config_ != 0; }
+
+    // Samples of a multisampled default framebuffer that a real ANGLE
+    // render/resolve probe accepted for this format; zero when unavailable.
+    std::uint32_t MultisampleCount(EglColorFormat format) const noexcept {
+        return multisample_counts_[static_cast<std::size_t>(format)];
+    }
     const EglContextInfo& Info() const noexcept { return info_; }
     std::string Extensions() const;
     std::int32_t ConfigAttribute(std::uint32_t name, bool rgb = false) const;
@@ -133,6 +141,8 @@ private:
     EglContextInfo info_{};
     bool initialized_{};
     void InitializePackedRgbSupport();
+    static void InitializeMultisampleSupport(const std::shared_ptr<EglDisplayResources>& display);
+    std::array<std::uint32_t, 3> multisample_counts_{};
 };
 
 class EglSurfaceResources final {
@@ -212,6 +222,13 @@ private:
     std::shared_ptr<EglSurfaceResources> draw_, read_;
 };
 
+// Private multisampled framebuffer of the current context; left bound.
+[[nodiscard]] std::uint32_t CreateMultisampleFramebuffer(EglColorFormat format, std::int32_t depth_bits,
+                                                         std::int32_t stencil_bits, std::uint32_t samples,
+                                                         std::uint32_t width, std::uint32_t height);
+// Resolves color into target and leaves source/target bound for read/draw.
+void ResolveMultisampleFramebuffer(std::uint32_t source, std::uint32_t target, std::uint32_t width,
+                                   std::uint32_t height);
 [[nodiscard]] bool IsNativeAngleEglAvailable() noexcept;
 [[nodiscard]] std::unique_ptr<EglApi> CreateNativeAngleEglApi(EglContextTrace trace = {});
 

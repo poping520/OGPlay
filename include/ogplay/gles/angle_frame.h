@@ -70,9 +70,13 @@ public:
                                    int client_version, EglHandle share_context = 0,
                                    bool rgb = false,
                                    CompressedTextureFamily family = CompressedTextureFamily::all);
-    static AngleFrame CreateContext(std::shared_ptr<EglDisplayResources> display,
-                                   int client_version, EglHandle share_context, EglColorFormat format,
-                                   CompressedTextureFamily family = CompressedTextureFamily::all);
+    static AngleFrame CreateContext(std::shared_ptr<EglDisplayResources> display, int client_version,
+                                    EglHandle share_context, EglColorFormat format,
+                                    CompressedTextureFamily family = CompressedTextureFamily::all,
+                                    std::uint32_t samples = 0);
+    // Publishes the multisampled default framebuffer to the single-sample
+    // draw surface. No-op for ordinary contexts or when not current.
+    void ResolveMultisample();
     void BindSurfaces(std::shared_ptr<EglSurfaceResources> draw,
                       std::shared_ptr<EglSurfaceResources> read);
     static AngleFrame CreatePbuffer(AngleBackend backend, std::uint32_t width, std::uint32_t height,
@@ -404,7 +408,22 @@ private:
     std::uint64_t readback_count_{};
     std::uint64_t shader_compile_count_{};
     std::uint64_t program_link_count_{};
+    void BindMultisampleDefault(const std::shared_ptr<EglSurfaceResources>& draw);
+    void ResolveMultisampleForRead();
+
+    struct MultisampleTarget final {
+        std::weak_ptr<EglSurfaceResources> surface;
+        std::uint32_t framebuffer{};
+    };
+
+    // Guest framebuffer 0 is a private FBO, so framebuffer names are mapped.
+    bool private_default_{};
     bool packed_default_{};
+    std::uint32_t multisample_samples_{};
+    EglColorFormat color_format_{EglColorFormat::rgba8888};
+    std::int32_t depth_bits_{}, stencil_bits_{};
+    std::vector<MultisampleTarget> multisample_targets_;
+    std::uint32_t multisample_framebuffer_{};
     std::array<std::uint32_t,2> packed_framebuffers_{};
     std::array<std::uint32_t,2> guest_framebuffer_bindings_{};
     std::unordered_map<std::uint32_t,std::uint32_t> framebuffer_names_;

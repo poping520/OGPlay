@@ -69,9 +69,23 @@ public:
                                              std::stop_token stop = {}) const = 0;
 };
 
+// Node access of a writable shared mapping. It outlives the descriptor, never
+// changes the file size and is not subject to the mapping's own mutation guard.
+class VfsMappingWriter {
+public:
+    virtual ~VfsMappingWriter() = default;
+    virtual void WriteAt(std::uint64_t offset, std::span<const std::byte> source) = 0;
+    // Runs without VFS locks before the node is read or flushed, so the owner
+    // can write its pages back first. Retires with the writer.
+    virtual void SetReadBarrier(std::function<void()> write_back) = 0;
+};
+
 struct VfsMappingSource final {
     std::shared_ptr<const VfsReadLease> lease;
     bool readable{}, writable{};
+    // Set for writable descriptors only.
+    std::shared_ptr<VfsMappingWriter> writer;
+    std::uint64_t node_id{};
 };
 
 struct VfsOpenOptions final {

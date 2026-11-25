@@ -3,6 +3,7 @@
 
 #include <array>
 #include <algorithm>
+#include <iterator>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
@@ -26,15 +27,30 @@ constexpr std::uint32_t kFakeDisplay = 1U;
 constexpr std::uint32_t kDefaultConfig = 2U;
 constexpr std::uint32_t kRgbConfig = 0x10000U;
 constexpr std::uint32_t kPackedRgbConfig = 0x10001U;
+// Multisampled twins; EGL sorts configs without sample buffers first.
+constexpr std::uint32_t kDefaultMultisampleConfig = 0x10002U;
+constexpr std::uint32_t kRgbMultisampleConfig = 0x10003U;
+constexpr std::uint32_t kPackedRgbMultisampleConfig = 0x10004U;
+constexpr std::array kConfigs{kDefaultConfig,        kRgbConfig,
+                              kPackedRgbConfig,      kDefaultMultisampleConfig,
+                              kRgbMultisampleConfig, kPackedRgbMultisampleConfig};
+
+bool IsMultisample(const std::uint32_t config) {
+    return config >= kDefaultMultisampleConfig && config <= kPackedRgbMultisampleConfig;
+}
 
 gles::EglColorFormat ColorFormat(std::uint32_t config) {
-    return config == kPackedRgbConfig ? gles::EglColorFormat::rgb565
-           : config == kRgbConfig     ? gles::EglColorFormat::rgb888
-                                      : gles::EglColorFormat::rgba8888;
+    switch (config) {
+    case kPackedRgbConfig:
+    case kPackedRgbMultisampleConfig: return gles::EglColorFormat::rgb565;
+    case kRgbConfig:
+    case kRgbMultisampleConfig: return gles::EglColorFormat::rgb888;
+    default: return gles::EglColorFormat::rgba8888;
+    }
 }
 
 std::uint32_t ConfigId(std::uint32_t config) {
-    return config == kDefaultConfig ? 1U : config == kRgbConfig ? 2U : 3U;
+    return static_cast<std::uint32_t>(std::ranges::find(kConfigs, config) - kConfigs.begin()) + 1U;
 }
 
 constexpr std::uint32_t kEglSuccess = 0x3000U;
@@ -324,11 +340,18 @@ void EglModule::ActivateStateForHostThread(const std::thread::id host_thread) {
 
 bool EglModule::IsConfig(const std::uint32_t handle) {
     if (handle == kDefaultConfig) return true;
-    if (handle != kRgbConfig && handle != kPackedRgbConfig) return false;
     std::scoped_lock lock(mutex_);
+    return IsConfigLocked(handle);
+}
+
+bool EglModule::IsConfigLocked(const std::uint32_t handle) {
+    if (std::ranges::find(kConfigs, handle) == kConfigs.end()) return false;
     EnsureNativeDisplayLocked();
-    return handle == kPackedRgbConfig ? native_display_->SupportsRgb565Surface()
-                                      : native_display_->SupportsRgbSurface();
+    const auto format = ColorFormat(handle);
+    if (IsMultisample(handle)) return native_display_->MultisampleCount(format) != 0U;
+    return format == gles::EglColorFormat::rgba8888 ||
+           (format == gles::EglColorFormat::rgb888 ? native_display_->SupportsRgbSurface()
+                                                   : native_display_->SupportsRgb565Surface());
 }
 
 void EglModule::EnsureNativeDisplayLocked() {
@@ -338,12 +361,22 @@ void EglModule::EnsureNativeDisplayLocked() {
 }
 
 std::uint32_t EglModule::ConfigAttributeLocked(const std::uint32_t handle, const std::uint32_t attribute) {
-    EnsureNativeDisplayLocked();
-    if (handle != kDefaultConfig && (handle != kRgbConfig || !native_display_->SupportsRgbSurface()) &&
-        (handle != kPackedRgbConfig || !native_display_->SupportsRgb565Surface()))
-        throw gles::EglLifecycleError(gles::EglOperation::choose_config, kEglBadConfig);
+    if (!IsConfigLocked(handle)) throw gles::EglLifecycleError(gles::EglOperation::choose_config, kEglBadConfig);
     if (attribute == kEglConfigId) return ConfigId(handle);
     if (attribute == kEglSurfaceType) return kEglWindowBit | kEglPbufferBit;
+    if (IsMultisample(handle)) {
+        switch (attribute) {
+        case kEglSamples: return native_display_->MultisampleCount(ColorFormat(handle));
+        case kEglSampleBuffers: return 1U;
+        case 0x3039U:  // EGL_BIND_TO_TEXTURE_RGB
+        case 0x303AU:  // EGL_BIND_TO_TEXTURE_RGBA
+            return 0U;
+        // The private default framebuffer serves ES2 contexts and the GLES1 path built on them.
+        case kEglRenderableType:
+        case kEglConformant: return kEglOpenGlEsBit | kEglOpenGlEs2Bit;
+        default: break;
+        }
+    }
     auto value = static_cast<std::uint32_t>(native_display_->ConfigAttribute(attribute, ColorFormat(handle)));
     // GLES1 uses the existing GLES2 compatibility implementation.
     if ((attribute == kEglRenderableType || attribute == kEglConformant) && (value & kEglOpenGlEs2Bit))
@@ -524,9 +557,8 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             const auto attributes = ReadAttributes(call.Pointer<std::int32_t>(1), tid);
             EnsureNativeDisplayLocked();
             std::vector<std::uint32_t> matches;
-            for (const auto config : {kDefaultConfig, kRgbConfig, kPackedRgbConfig}) {
-                if (config == kRgbConfig && !native_display_->SupportsRgbSurface()) continue;
-                if (config == kPackedRgbConfig && !native_display_->SupportsRgb565Surface()) continue;
+            for (const auto config : kConfigs) {
+                if (!IsConfigLocked(config)) continue;
                 bool match = true;
                 for (std::size_t index = 0; index + 1U < attributes.size(); index += 2U) {
                     const auto attribute = static_cast<std::uint32_t>(attributes[index]);
@@ -740,7 +772,8 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             const auto share_native = args[2] == 0U ? 0U : contexts_.at(args[2]).frame->NativeContext();
             state.frame = std::make_unique<gles::AngleFrame>(gles::AngleFrame::CreateContext(
                 native_display_, static_cast<int>(version == 1U ? 2U : version), share_native, ColorFormat(args[1]),
-                graphics.compressed_texture_family));
+                graphics.compressed_texture_family,
+                IsMultisample(args[1]) ? native_display_->MultisampleCount(ColorFormat(args[1])) : 0U));
         } catch (const gles::EglLifecycleError& error) {
             threads_[tid].error = error.NativeError();
             return 0U;
@@ -818,6 +851,9 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
                                 surface.height * graphics.layout.factor, surface.texture_format, surface.mipmap,
                                 ColorFormat(surface.config));
                     }
+                    // The native switch unbinds the previous context; publish its samples first.
+                    if (thread.context != 0U && thread.context != args[3])
+                        contexts_.at(thread.context).frame->ResolveMultisample();
                     target.frame->BindSurfaces(surfaces_.at(args[1]).backing, surfaces_.at(args[2]).backing);
                 } catch (const gles::EglLifecycleError& error) {
                     threads_[tid].error = error.NativeError();
@@ -984,6 +1020,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
                 frame->BindFramebuffer(target, binding);
                 frame->BindSurfaces(draw, read);
             };
+            frame->ResolveMultisample();
             frame->BindSurfaces(draw, draw);
             try {
                 frame->BindFramebuffer(target, 0U);
@@ -1198,9 +1235,9 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         std::scoped_lock lock(mutex_);
         try {
             EnsureNativeDisplayLocked();
-            std::vector<std::uint32_t> configs{kDefaultConfig};
-            if (native_display_->SupportsRgbSurface()) configs.push_back(kRgbConfig);
-            if (native_display_->SupportsRgb565Surface()) configs.push_back(kPackedRgbConfig);
+            std::vector<std::uint32_t> configs;
+            std::ranges::copy_if(kConfigs, std::back_inserter(configs),
+                                 [this](const std::uint32_t config) { return IsConfigLocked(config); });
             const auto available = static_cast<std::uint32_t>(configs.size());
             const auto count = args[1] == 0U ? available : std::min(available, static_cast<std::uint32_t>(size));
             if (args[1] != 0U)
@@ -1391,7 +1428,8 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             SetError(tid, kEglBadAttribute);
             return 0U;
         }
-        if ((texture_format == 0x305CU) != (texture_target == 0x305CU)) {
+        if ((texture_format == 0x305CU) != (texture_target == 0x305CU) ||
+            (texture_format != 0x305CU && IsMultisample(args[1]))) {
             SetError(tid, kEglBadMatch);
             return 0U;
         }
@@ -1414,7 +1452,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             EnsureNativeDisplayLocked();
             surface.backing = gles::EglSurfaceResources::Create(native_display_, width * graphics.layout.factor,
                                                                 height * graphics.layout.factor, texture_format, mipmap,
-                                                                args[1] == kRgbConfig);
+                                                                ColorFormat(args[1]));
         } catch (const gles::EglLifecycleError& error) {
             threads_[tid].error = error.NativeError();
             return 0U;

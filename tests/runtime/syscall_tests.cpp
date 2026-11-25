@@ -603,8 +603,8 @@ TEST_CASE("SBX-16 file mapping errors are explicit accounted and preserve addres
 
     const std::array errors{
         Error{static_cast<std::uint32_t>(ro), 3, 1, 0, 4096, -13},
-        Error{static_cast<std::uint32_t>(rw), 3, 1, 0, 4096, -38},
-        Error{static_cast<std::uint32_t>(wo), 3, 1, 0, 4096, -38},
+        Error{static_cast<std::uint32_t>(rw), 7, 1, 0, 4096, -38},
+        Error{static_cast<std::uint32_t>(wo), 3, 1, 0, 4096, -13},
         Error{static_cast<std::uint32_t>(ro), 5, 2, 0, 4096, -38},
         Error{static_cast<std::uint32_t>(ro), 1, 2, 0, 12288, -38},
         Error{static_cast<std::uint32_t>(ro), 1, 2, 2, 4096, -38},
@@ -648,6 +648,99 @@ TEST_CASE("SBX-16 file mapping errors are explicit accounted and preserve addres
     memory.Read(ogplay::memory::GuestAddress{0x60000000}, actual);
     CHECK(std::equal(actual.begin(), actual.end(), contents.begin()));
     CHECK(vfs.WriteAt(rw, 0, std::span{contents}.first(1)) == 1);
+}
+
+TEST_CASE("writable shared file mapping writes back and stays coherent with its file") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::memory::AddressSpace memory;
+    ogplay::runtime::VirtualFileSystem vfs;
+    // Three and a bit pages: the tail page is zero filled and never grows the file.
+    std::vector<std::byte> contents(12290, std::byte{0x11});
+    vfs.PutFile("/pool", contents, true);
+    vfs.PutFile("/other", contents, true);
+    const auto fd = vfs.Open("/pool", {.read = true, .write = true});
+    const auto reader = vfs.Open("/pool", {.read = true});
+    ogplay::runtime::BindAndroidMemorySyscalls(dispatcher, memory);
+    ogplay::runtime::BindAndroidFileSyscalls(dispatcher, vfs, memory);
+    ogplay::runtime::A32SyscallFrame frame;
+    const auto call = [&](const std::uint32_t number, const std::array<std::uint32_t, 6> arguments) {
+        frame.number = number;
+        std::ranges::copy(arguments, frame.arguments.begin());
+        return dispatcher.Dispatch(frame);
+    };
+    const auto store = [&](const std::uint32_t address, const std::uint8_t value) {
+        memory.Write8(ogplay::memory::GuestAddress{address}, value);
+    };
+    const auto file = [&](const std::uint64_t offset) {
+        std::array<std::byte, 1> byte{};
+        REQUIRE(vfs.ReadAt(reader, offset, byte) == 1);
+        return std::to_integer<int>(byte[0]);
+    };
+    const auto base = std::bit_cast<std::uint32_t>(call(192, {0, 12290, 3, 1, static_cast<std::uint32_t>(fd), 0}));
+    REQUIRE(base == 0xb6ffc000U);
+    vfs.Close(fd);  // the mapping keeps its own node access
+    CHECK(memory.Read8(ogplay::memory::GuestAddress{base + 12289}) == 0x11);
+    CHECK(memory.Read8(ogplay::memory::GuestAddress{base + 12290}) == 0);
+
+    // A later read of the file sees the stores, like one Linux page cache.
+    store(base, 0x22);
+    store(base + 8191, 0x33);
+    store(base + 12290, 0x44);  // past EOF
+    CHECK(file(0) == 0x22);
+    CHECK(file(8191) == 0x33);
+    CHECK(vfs.DescriptorInfo(reader).size == 12290);
+    store(base + 1, 0x55);
+    CHECK(call(144, {base, 4096, 4, 0, 0, 0}) == 0);
+    CHECK(file(1) == 0x55);
+    // Protection does not stop write-back; write permission may return.
+    store(base + 2, 0x66);
+    CHECK(call(125, {base, 4096, 0, 0, 0, 0}) == 0);
+    CHECK(file(2) == 0x66);
+    CHECK(call(125, {base, 4096, 3, 0, 0, 0}) == 0);
+    CHECK(call(125, {base, 4096, 5, 0, 0, 0}) == -38);
+
+    // A private copy starts from the mapped state and stays private.
+    store(base + 3, 0x77);
+    const auto copy = std::bit_cast<std::uint32_t>(call(192, {0, 4096, 3, 2, static_cast<std::uint32_t>(reader), 0}));
+    REQUIRE(copy < 0xfffff001U);
+    CHECK(memory.Read8(ogplay::memory::GuestAddress{copy + 3}) == 0x77);
+    store(copy + 3, 0x12);
+    CHECK(file(3) == 0x77);
+
+    // Descriptor writes and overlapping shared views would need page aliasing.
+    const auto writer = vfs.Open("/pool", {.read = true, .write = true});
+    const std::array one{std::byte{1}};
+    CHECK_THROWS_AS((void)vfs.WriteAt(writer, 0, one), ogplay::runtime::VfsError);
+    CHECK(call(192, {0, 4096, 3, 1, static_cast<std::uint32_t>(writer), 1}) == -38);
+    CHECK(call(192, {0, 4096, 1, 1, static_cast<std::uint32_t>(reader), 0}) == -38);
+
+    // Partial unmap and a fixed replacement publish only what they retire.
+    store(base + 4096, 0x21);
+    CHECK(call(91, {base + 4096, 4096, 0, 0, 0, 0}) == 0);
+    CHECK(file(4096) == 0x21);
+    store(base + 4, 0x23);
+    CHECK(call(192, {base, 4096, 3, 0x32, UINT32_MAX, 0}) == std::bit_cast<std::int32_t>(base));
+    store(base + 4, 0x24);  // anonymous now
+    CHECK(file(4) == 0x23);
+    // The freed range may be mapped again while the rest stays shared.
+    const auto again = std::bit_cast<std::uint32_t>(call(192, {0, 4096, 3, 1, static_cast<std::uint32_t>(writer), 1}));
+    REQUIRE(again < 0xfffff001U);
+    CHECK(memory.Read8(ogplay::memory::GuestAddress{again}) == 0x21);
+    CHECK(call(91, {again, 4096, 0, 0, 0, 0}) == 0);
+
+    // Unlinking keeps the node; a new file of that name is unrelated.
+    vfs.RemoveFile("/pool");
+    vfs.PutFile("/pool", contents, true);
+    store(base + 8192, 0x31);
+    CHECK(file(8192) == 0x31);
+    CHECK(call(91, {base + 8192, 8192, 0, 0, 0, 0}) == 0);
+    CHECK(file(8192) == 0x31);
+    const auto fresh = vfs.Open("/pool", {.read = true});
+    std::array<std::byte, 1> byte{};
+    CHECK(vfs.ReadAt(fresh, 8192, byte) == 1);
+    CHECK(byte[0] == std::byte{0x11});
+    CHECK(vfs.WriteAt(writer, 0, one) == 1);  // the last interval released the node
 }
 
 TEST_CASE("Android madvise validates hints and discards writable pages") {

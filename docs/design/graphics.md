@@ -66,6 +66,8 @@ Display 与 Config 描述可用显示及存储配置。每个 Context 对应一�
 
 这种结构能表达 Context 切换、不同 draw/read Surface 和共享对象。
 如果把 Context 与 Surface 合成一个进程唯一图形对象，这些合法关系就会丢失。
+多重采样配置不改变 Surface 存储：Context 用私有多重采样 FBO 充当默认 framebuffer，
+在呈现、读取或切换前解析到单采样 Surface，后续读回与发布路径因此保持同一条。
 代价是绑定、销毁和共享组退役都要按各自身份处理，而不是销毁一个总对象即可完成清理。
 精确关系见 [EGL 契约](../../src/runtime/boundary/modules/egl/MODULE.md)。
 

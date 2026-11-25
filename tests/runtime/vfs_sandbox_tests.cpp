@@ -825,3 +825,27 @@ TEST_CASE("VFS directory listing survives children whose own stat fails") {
     CHECK(vfs.ReadDirectory(fd, entries.size() + 1) == entries);
     vfs.Close(fd);
 }
+
+TEST_CASE("sandbox flush persists pages of a live writable mapping") {
+    TemporaryRoot root("mapping-flush");
+    {
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
+        VirtualFileSystem vfs;
+        vfs.AttachSandbox(*store, kWritableRoots);
+        WriteThrough(vfs, "/sdcard/pool", "abcd");
+        const auto fd = vfs.Open("/sdcard/pool", {.read = true, .write = true});
+        const auto source = vfs.CaptureMappingSource(fd, [] {});
+        REQUIRE(source.writer != nullptr);
+        vfs.Close(fd);
+        const auto page = Bytes("X");
+        source.writer->SetReadBarrier([&] { source.writer->WriteAt(1, page); });
+        CHECK_THROWS_AS(source.writer->WriteAt(4, page), VfsError);
+        vfs.FlushAll();
+        const auto reader = vfs.Open("/sdcard/pool", {.read = true});
+        CHECK(vfs.CaptureMappingSource(reader, [] {}).writer == nullptr);
+    }
+    auto reopened = SandboxStore::Open(root.path, kPackage, kPackage);
+    VirtualFileSystem vfs;
+    vfs.AttachSandbox(*reopened, kWritableRoots);
+    CHECK(ReadAll(vfs, "/sdcard/pool") == "aXcd");
+}

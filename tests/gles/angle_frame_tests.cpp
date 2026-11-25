@@ -662,6 +662,134 @@ TEST_CASE("BND53 RGB565 uses real storage across contexts and isolates framebuff
     first.ReleaseCurrent();second.ReleaseCurrent();
 }
 
+TEST_CASE("multisampled default framebuffers antialias and resolve to the single sample surface") {
+    using namespace ogplay::gles;
+    if (!IsNativeAngleEglAvailable()) return;
+    auto display = EglDisplayResources::Create({kNativeRenderer, AngleDevice::hardware});
+    for (const auto format : {EglColorFormat::rgba8888, EglColorFormat::rgb888, EglColorFormat::rgb565}) {
+        CAPTURE(static_cast<int>(format));
+        const auto samples = display->MultisampleCount(format);
+#if defined(__APPLE__)
+        REQUIRE(samples == 4U);
+#else
+        if (samples == 0U) continue;
+#endif
+        CHECK_THROWS_AS(
+            static_cast<void>(AngleFrame::CreateContext(display, 3, 0, format, CompressedTextureFamily::all, samples)),
+            EglLifecycleError);
+        CHECK_THROWS_AS(static_cast<void>(AngleFrame::CreateContext(display, 2, 0, format, CompressedTextureFamily::all,
+                                                                    samples + 1U)),
+                        EglLifecycleError);
+        constexpr std::uint32_t kSize = 32;
+        auto surface = EglSurfaceResources::Create(display, kSize, kSize, 0x305CU, false, format);
+        auto other = EglSurfaceResources::Create(display, 8, 8, 0x305CU, false, format);
+        auto frame = AngleFrame::CreateContext(display, 2, 0, format, CompressedTextureFamily::all, samples);
+        frame.BindSurfaces(surface, surface);
+        CHECK(frame.GetIntegers(0x80A9U, 1)[0] == 4);  // GL_SAMPLES
+        CHECK(frame.GetIntegers(0x80A8U, 1)[0] == 1);  // GL_SAMPLE_BUFFERS
+        CHECK(frame.GetIntegers(0x0D55U, 1)[0] == (format == EglColorFormat::rgba8888 ? 8 : 0));
+        CHECK(frame.GetIntegers(0x0D52U, 1)[0] == (format == EglColorFormat::rgb565 ? 5 : 8));
+        CHECK(frame.GetIntegers(0x0D56U, 1)[0] == display->ConfigAttribute(0x3025U, format));
+        CHECK(frame.GetIntegers(0x8CA6U, 1)[0] == 0);
+        CHECK(frame.CheckFramebufferStatus(0x8D40U) == 0x8CD5U);
+        CHECK_THROWS_AS(frame.FramebufferRenderbuffer(0x8D40U, 0x8CE0U, 0x8D41U, 0), GlesApiError);
+
+        const auto vertex = frame.CreateShader(0x8B31U), fragment = frame.CreateShader(0x8B30U);
+        const std::string vs = "attribute vec3 p; void main(){gl_Position=vec4(p,1.0);}";
+        const std::string fs = "precision mediump float; void main(){gl_FragColor=vec4(1.0);}";
+        frame.ShaderSource(vertex, {&vs, 1});
+        frame.CompileShader(vertex);
+        frame.ShaderSource(fragment, {&fs, 1});
+        frame.CompileShader(fragment);
+        const auto program = frame.CreateProgram();
+        frame.AttachShader(program, vertex);
+        frame.AttachShader(program, fragment);
+        frame.BindAttribLocation(program, 0, "p");
+        frame.LinkProgram(program);
+        REQUIRE(frame.GetProgramParameter(program, 0x8B82U) != 0);
+        frame.UseProgram(program);
+        // A shallow diagonal: every row crosses the edge inside some pixel.
+        const std::array triangle{-1.F, -1.F, 0.F, 1.F, -.37F, 0.F, -1.F, .91F, 0.F};
+        const auto buffer = frame.GenerateBuffers(1).front();
+        frame.BindBuffer(0x8892U, buffer);
+        frame.BufferData(0x8892U, sizeof(triangle), std::as_bytes(std::span(triangle)), 0x88E4U);
+        frame.VertexAttributePointer(0, 3, 0x1406U, false, 0, 0);
+        frame.SetVertexAttributeEnabled(0, true);
+        frame.Viewport(0, 0, kSize, kSize);
+        frame.SetCapability(0x0BD0U, false);  // GL_DITHER
+        frame.SetCapability(0x0B71U, true);
+        frame.ClearColor(0, 0, 0, 1);
+        frame.ClearDepth(1.F);
+        frame.Clear(0x4500U);
+        frame.DrawArrays(4, 0, 3);
+        const auto pixels = frame.ReadRgba8();
+        std::size_t black{}, white{}, partial{};
+        for (std::size_t i = 0; i < pixels.size(); i += 4)
+            ++(pixels[i] == 0 ? black : pixels[i] >= 248 ? white : partial);
+        CHECK(black > 0);
+        CHECK(white > 0);
+        CHECK(partial >= kSize / 2);
+
+        // Depth belongs to the multisampled target.
+        if (display->ConfigAttribute(0x3025U, format) > 0) {
+            frame.ClearColor(0, 0, 0, 1);
+            frame.ClearDepth(.25F);
+            frame.Clear(0x4500U);
+            frame.DrawArrays(4, 0, 3);
+            CHECK(std::ranges::all_of(frame.ReadRgba8(), [](const auto value) { return value == 0 || value == 255; }));
+            frame.ClearDepth(1.F);
+        }
+        // The scissor limits drawing but not the resolve, and stays enabled.
+        frame.Clear(0x4500U);
+        frame.SetScissorEnabled(true);
+        frame.Scissor(0, 0, 1, 1);
+        frame.DrawArrays(4, 0, 3);
+        auto scissored = frame.ReadRgba8();
+        CHECK(std::ranges::count_if(scissored, [](const auto value) { return value > 0; }) >= 1);
+        CHECK(frame.GetIntegers(0x0C11U, 1)[0] == 1);
+        frame.Clear(0x4000U);
+        frame.SetScissorEnabled(false);
+
+        // Guest framebuffers stay separate, and the default image survives surface changes.
+        frame.Clear(0x4500U);
+        frame.DrawArrays(4, 0, 3);
+        const auto names = frame.GenerateFramebuffers(1);
+        frame.BindFramebuffer(0x8D40U, names[0]);
+        CHECK(frame.GetIntegers(0x8CA6U, 1)[0] == static_cast<int>(names[0]));
+        frame.DeleteFramebuffers(names);
+        CHECK(frame.GetIntegers(0x80A9U, 1)[0] == 4);
+        CHECK(frame.ReadRgba8() == pixels);
+        frame.BindSurfaces(other, other);
+        frame.ClearColor(1, 0, 0, 1);
+        frame.Clear(0x4500U);
+        frame.BindSurfaces(surface, surface);
+        CHECK(frame.ReadRgba8() == pixels);
+        // Separate read surface: the other surface was published on the switch.
+        frame.BindSurfaces(surface, other);
+        std::array<std::byte, 4> red{};
+        frame.ReadPixels(1, 1, 1, 1, 0x1908U, 0x1401U, red);
+        CHECK(red[0] == std::byte{255});
+        CHECK(red[1] == std::byte{0});
+        frame.BindSurfaces(surface, surface);
+        frame.ReleaseCurrent();
+
+        // Another context of the format sees the resolved image.
+        auto reader = AngleFrame::CreateContext(display, 2, 0, format);
+        reader.BindSurfaces(surface, surface);
+        CHECK(reader.GetIntegers(0x80A9U, 1)[0] == 0);
+        CHECK(reader.ReadRgba8() == pixels);
+        reader.ReleaseCurrent();
+        frame.BindSurfaces(surface, surface);
+        other.reset();
+        frame.BindSurfaces(surface, surface);
+        frame.DeleteBuffers(std::array{buffer});
+        frame.DeleteProgram(program);
+        frame.DeleteShader(vertex);
+        frame.DeleteShader(fragment);
+        frame.ReleaseCurrent();
+    }
+}
+
 TEST_CASE("BND54 compressed policy preserves reported GLES3 core formats") {
     using namespace ogplay::gles;
     const std::array<std::int32_t, 5> native{0x9270, 0x9278, 0x9278, 0x83f0, 0x8c00};

@@ -400,6 +400,7 @@ std::shared_ptr<EglDisplayResources> EglDisplayResources::Create(const AngleBack
     }
 #endif
     if (!result->rgb565_config_) result->InitializePackedRgbSupport();
+    InitializeMultisampleSupport(result);
     return result;
 }
 
@@ -484,6 +485,81 @@ void CheckEgl(const EGLBoolean result, EglApi& api) {
 }
 }
 #endif
+
+std::uint32_t CreateMultisampleFramebuffer(const EglColorFormat format, const std::int32_t depth_bits,
+                                           const std::int32_t stencil_bits, const std::uint32_t samples,
+                                           const std::uint32_t width, const std::uint32_t height) {
+#if OGPLAY_HAS_ANGLE
+    const auto storage =
+        EglExtension<void (*)(GLenum, GLsizei, GLenum, GLsizei, GLsizei)>("glRenderbufferStorageMultisampleANGLE");
+    GLint old_renderbuffer{};
+    glGetIntegerv(GL_RENDERBUFFER_BINDING, &old_renderbuffer);
+    std::array<GLuint, 2> renderbuffers{};
+    GLuint framebuffer{};
+    glGenRenderbuffers(2, renderbuffers.data());
+    glGenFramebuffers(1, &framebuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    const auto attach = [&](const GLuint renderbuffer, const GLenum internal_format) {
+        glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
+        storage(GL_RENDERBUFFER, static_cast<GLsizei>(samples), internal_format, static_cast<GLsizei>(width),
+                static_cast<GLsizei>(height));
+    };
+    attach(renderbuffers[0], format == EglColorFormat::rgb565   ? GL_RGB565
+                             : format == EglColorFormat::rgb888 ? 0x8051U /* GL_RGB8 */
+                                                                : 0x8058U /* GL_RGBA8 */);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, renderbuffers[0]);
+    if (depth_bits > 0 || stencil_bits > 0) {
+        attach(renderbuffers[1], 0x88F0U /* GL_DEPTH24_STENCIL8 */);
+        if (depth_bits > 0)
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, renderbuffers[1]);
+        if (stencil_bits > 0)
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, renderbuffers[1]);
+    }
+    const bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    // Attachments keep the storage; the names must never meet guest renderbuffer names.
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindRenderbuffer(GL_RENDERBUFFER, static_cast<GLuint>(old_renderbuffer));
+    glDeleteRenderbuffers(2, renderbuffers.data());
+    const auto error = glGetError();
+    if (!complete || error != GL_NO_ERROR) {
+        glDeleteFramebuffers(1, &framebuffer);
+        throw EglLifecycleError(EglOperation::create_surface,
+                                error == GL_OUT_OF_MEMORY ? EGL_BAD_ALLOC : EGL_BAD_MATCH);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    return framebuffer;
+#else
+    static_cast<void>(format);
+    static_cast<void>(depth_bits);
+    static_cast<void>(stencil_bits);
+    static_cast<void>(samples);
+    static_cast<void>(width);
+    static_cast<void>(height);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void ResolveMultisampleFramebuffer(const std::uint32_t source, const std::uint32_t target, const std::uint32_t width,
+                                   const std::uint32_t height) {
+#if OGPLAY_HAS_ANGLE
+    const auto blit =
+        EglExtension<void (*)(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum)>(
+            "glBlitFramebufferANGLE");
+    const bool scissor = glIsEnabled(GL_SCISSOR_TEST) == GL_TRUE;
+    if (scissor) glDisable(GL_SCISSOR_TEST);
+    glBindFramebuffer(0x8CA8U /* GL_READ_FRAMEBUFFER */, source);
+    glBindFramebuffer(0x8CA9U /* GL_DRAW_FRAMEBUFFER */, target);
+    const auto right = static_cast<GLint>(width), top = static_cast<GLint>(height);
+    blit(0, 0, right, top, 0, 0, right, top, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    if (scissor) glEnable(GL_SCISSOR_TEST);
+#else
+    static_cast<void>(source);
+    static_cast<void>(target);
+    static_cast<void>(width);
+    static_cast<void>(height);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
 
 EglHandle EglDisplayResources::Config(EglColorFormat format) const noexcept {
     if (format == EglColorFormat::rgb888) return rgb_config_;
@@ -584,6 +660,76 @@ void EglDisplayResources::InitializePackedRgbSupport() {
     if (surface) api_->DestroySurface(display_,surface);
     if (context) api_->DestroyContext(display_,context);
     packed_rgb_framebuffer_=supported;
+#endif
+}
+
+void EglDisplayResources::InitializeMultisampleSupport(const std::shared_ptr<EglDisplayResources>& display) {
+#if OGPLAY_HAS_ANGLE
+    constexpr GLsizei kSamples = 4;
+    constexpr GLsizei kSize = 4;
+    auto& api = display->Api();
+    for (const auto format : {EglColorFormat::rgba8888, EglColorFormat::rgb888, EglColorFormat::rgb565}) {
+        if ((format == EglColorFormat::rgb888 && !display->SupportsRgbSurface()) ||
+            (format == EglColorFormat::rgb565 && !display->SupportsRgb565Surface()))
+            continue;
+        const auto old_display = eglGetCurrentDisplay();
+        const auto old_context = eglGetCurrentContext();
+        const auto old_draw = eglGetCurrentSurface(EGL_DRAW), old_read = eglGetCurrentSurface(EGL_READ);
+        EglHandle context{};
+        std::shared_ptr<EglSurfaceResources> surface;
+        bool supported{};
+        try {
+            surface = EglSurfaceResources::Create(display, kSize, kSize, EGL_NO_TEXTURE, false, format);
+            context = api.CreateContext(display->Display(), display->Config(format), 2, 0);
+            if (!context || !api.MakeCurrent(display->Display(), surface->Surface(), surface->Surface(), context))
+                throw EglLifecycleError(EglOperation::make_current, api.GetError());
+            const auto* extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+            if (!extensions || !std::strstr(extensions, "GL_ANGLE_framebuffer_multisample") ||
+                !std::strstr(extensions, "GL_ANGLE_framebuffer_blit") ||
+                !std::strstr(extensions, "GL_OES_rgb8_rgba8") ||
+                !std::strstr(extensions, "GL_OES_packed_depth_stencil"))
+                throw EglLifecycleError(EglOperation::unavailable, EGL_BAD_MATCH);
+            GLuint target{}, imported{};
+            if (surface->PackedRgbImage()) {
+                glGenFramebuffers(1, &target);
+                glGenRenderbuffers(1, &imported);
+                glBindFramebuffer(GL_FRAMEBUFFER, target);
+                glBindRenderbuffer(GL_RENDERBUFFER, imported);
+                EglExtension<void (*)(GLenum, void*)>("glEGLImageTargetRenderbufferStorageOES")(
+                    GL_RENDERBUFFER, reinterpret_cast<void*>(surface->PackedRgbImage()));
+                glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, imported);
+            }
+            const auto multisampled = CreateMultisampleFramebuffer(
+                format, display->ConfigAttribute(EGL_DEPTH_SIZE, format),
+                display->ConfigAttribute(EGL_STENCIL_SIZE, format), kSamples, kSize, kSize);
+            GLint samples{};
+            glGetIntegerv(GL_SAMPLES, &samples);
+            glDisable(GL_DITHER);
+            glClearColor(.1f, .2f, .3f, .2f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+            ResolveMultisampleFramebuffer(multisampled, target, kSize, kSize);
+            glBindFramebuffer(GL_FRAMEBUFFER, target);
+            std::array<GLubyte, 4> pixel{};
+            glReadPixels(1, 1, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel.data());
+            supported = glGetError() == GL_NO_ERROR && samples == kSamples && pixel[0] >= 24 && pixel[0] <= 27 &&
+                        pixel[1] >= 50 && pixel[1] <= 53 && pixel[2] >= 73 && pixel[2] <= 78 &&
+                        (format == EglColorFormat::rgba8888 ? pixel[3] >= 50 && pixel[3] <= 52 : pixel[3] == 255);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glDeleteFramebuffers(1, &multisampled);
+            glDeleteFramebuffers(1, &target);
+            glDeleteRenderbuffers(1, &imported);
+        } catch (const std::exception&) {
+            supported = false;
+        }
+        if (old_context != EGL_NO_CONTEXT)
+            eglMakeCurrent(old_display, old_draw, old_read, old_context);
+        else
+            api.MakeCurrent(display->Display(), 0, 0, 0);
+        if (context) api.DestroyContext(display->Display(), context);
+        display->multisample_counts_[static_cast<std::size_t>(format)] = supported ? kSamples : 0U;
+    }
+#else
+    static_cast<void>(display);
 #endif
 }
 

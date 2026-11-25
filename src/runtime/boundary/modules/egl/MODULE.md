@@ -21,6 +21,10 @@ per-thread native error 槽，禁止 Java 层返回失败却让 eglGetError 仍�
 RGB565 仅在真实存储探测通过后发布；Metal fallback 为 5/6/5/0，depth/stencil 经真实
 Surface 图像导入探测可为 D24S8（否则 D0/S0），GLES1 compatibility/GLES2；
 纹理 binding/mipmap 与 fallback GLES3 失败，完整驱动配置集合未发布。
+三种颜色格式各有一个 4x 多重采样配置，经真实渲染与解析探测通过才发布，排在单采样配置之后；
+只支持 GLES1/GLES2，不支持 texture binding。绘制进入 Context 私有的多重采样 FBO，swap、读取默认
+framebuffer、切换 Surface 或 Context 以及解绑前解析到单采样 Surface。采样缓冲按 Context+Surface 保存，
+另一 Context 绑定同一 Surface 时看到解析结果，但不继承采样缓冲。
 依据 [ADR-0106](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/media.md#adr-0106)；Java/native 共用格式事实。实现依据 [ADR-0090](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/media.md#adr-0090)。
 
 每个 native/managed Context 的 GL_DITHER 初始启用；创建时继承进程已冻结的压缩纹理策略；share 参数不覆盖策略。

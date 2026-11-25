@@ -411,7 +411,7 @@ std::vector<std::int32_t> AngleFrame::GetIntegers(const std::uint32_t parameter,
     std::vector<std::int32_t> values(count);
     glGetIntegerv(parameter, values.data());
     RequireNoError("glGetIntegerv");
-    if (packed_default_ && (parameter == 0x8CA6U || parameter == 0x8CAAU))
+    if (private_default_ && (parameter == 0x8CA6U || parameter == 0x8CAAU))
         for (auto& value : values)
             value = GuestFramebufferBinding(value);
     return values;
@@ -422,7 +422,7 @@ std::vector<std::int32_t> AngleFrame::GetIntegers(const std::uint32_t parameter,
 }
 
 std::vector<std::uint8_t> AngleFrame::GetBooleans(const std::uint32_t parameter, const std::size_t count) {
-    if (packed_default_ && (parameter == 0x8CA6U || parameter == 0x8CAAU)) {
+    if (private_default_ && (parameter == 0x8CA6U || parameter == 0x8CAAU)) {
         const auto integers = GetIntegers(parameter, count);
         std::vector<std::uint8_t> result;
         for (const auto value : integers)
@@ -451,7 +451,7 @@ std::vector<std::uint8_t> AngleFrame::GetBooleans(const std::uint32_t parameter,
 }
 
 std::vector<float> AngleFrame::GetFloats(const std::uint32_t parameter, const std::size_t count) {
-    if (packed_default_ && (parameter == 0x8CA6U || parameter == 0x8CAAU)) {
+    if (private_default_ && (parameter == 0x8CA6U || parameter == 0x8CAAU)) {
         const auto integers = GetIntegers(parameter, count);
         std::vector<float> result;
         for (const auto value : integers)

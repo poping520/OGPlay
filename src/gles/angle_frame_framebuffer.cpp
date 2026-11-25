@@ -83,8 +83,60 @@ void AngleFrame::BindPackedDefault(EglHandle draw_image, EglHandle read_image, E
 #endif
 }
 
+void AngleFrame::BindMultisampleDefault(const std::shared_ptr<EglSurfaceResources>& draw) {
+#if OGPLAY_HAS_ANGLE
+    multisample_framebuffer_ = 0U;
+    std::erase_if(multisample_targets_, [&](const MultisampleTarget& target) {
+        if (!target.surface.expired()) return false;
+        glDeleteFramebuffers(1, &target.framebuffer);
+        return true;
+    });
+    // The samples live with this context: rebinding a surface keeps its image.
+    for (const auto& target : multisample_targets_)
+        if (target.surface.lock() == draw) multisample_framebuffer_ = target.framebuffer;
+    if (multisample_framebuffer_ == 0U) {
+        try {
+            multisample_framebuffer_ = CreateMultisampleFramebuffer(
+                color_format_, depth_bits_, stencil_bits_, multisample_samples_, draw->Width(), draw->Height());
+        } catch (...) {
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER,
+                              ResolveFramebuffer(GL_DRAW_FRAMEBUFFER, guest_framebuffer_bindings_[0], false));
+            glBindFramebuffer(GL_READ_FRAMEBUFFER,
+                              ResolveFramebuffer(GL_READ_FRAMEBUFFER, guest_framebuffer_bindings_[1], false));
+            throw;
+        }
+        multisample_targets_.push_back({draw, multisample_framebuffer_});
+    }
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER,
+                      ResolveFramebuffer(GL_DRAW_FRAMEBUFFER, guest_framebuffer_bindings_[0], false));
+    glBindFramebuffer(GL_READ_FRAMEBUFFER,
+                      ResolveFramebuffer(GL_READ_FRAMEBUFFER, guest_framebuffer_bindings_[1], false));
+    RequireNoError("multisample framebuffer bind");
+#else
+    static_cast<void>(draw);
+    throw EglLifecycleError(EglOperation::unavailable, 0);
+#endif
+}
+
+void AngleFrame::ResolveMultisample() {
+#if OGPLAY_HAS_ANGLE
+    if (multisample_framebuffer_ == 0U || !IsCurrentOnCallingThread()) return;
+    ResolveMultisampleFramebuffer(multisample_framebuffer_, packed_framebuffers_[0], width_, height_);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER,
+                      ResolveFramebuffer(GL_DRAW_FRAMEBUFFER, guest_framebuffer_bindings_[0], false));
+    glBindFramebuffer(GL_READ_FRAMEBUFFER,
+                      ResolveFramebuffer(GL_READ_FRAMEBUFFER, guest_framebuffer_bindings_[1], false));
+    RequireNoError("multisample resolve");
+#endif
+}
+
+void AngleFrame::ResolveMultisampleForRead() {
+    if (multisample_framebuffer_ != 0U && guest_framebuffer_bindings_[1] == 0U) ResolveMultisample();
+}
+
 std::uint32_t AngleFrame::ResolveFramebuffer(std::uint32_t target,std::uint32_t guest,bool create) {
-    if (!packed_default_) return guest;
+    if (!private_default_) return guest;
+    if (!guest && target != 0x8CA8U && multisample_framebuffer_) return multisample_framebuffer_;
     if (!guest) return packed_framebuffers_[target==0x8CA8U ? 1U : 0U];
     if (const auto found=framebuffer_names_.find(guest);found!=framebuffer_names_.end()) return found->second;
     if (!create) return 0;
@@ -96,21 +148,23 @@ std::uint32_t AngleFrame::ResolveFramebuffer(std::uint32_t target,std::uint32_t 
 #endif
 }
 std::int32_t AngleFrame::GuestFramebufferBinding(std::int32_t native) const {
-    if (!packed_default_) return native;
-    if (!native || static_cast<std::uint32_t>(native)==packed_framebuffers_[0] ||
-        static_cast<std::uint32_t>(native)==packed_framebuffers_[1]) return 0;
+    if (!private_default_) return native;
+    if (!native || static_cast<std::uint32_t>(native) == multisample_framebuffer_ ||
+        static_cast<std::uint32_t>(native) == packed_framebuffers_[0] ||
+        static_cast<std::uint32_t>(native) == packed_framebuffers_[1])
+        return 0;
     for (const auto& [guest,host]:framebuffer_names_) if (host==static_cast<std::uint32_t>(native)) return static_cast<std::int32_t>(guest);
     throw std::logic_error("unowned native framebuffer binding");
 }
 bool AngleFrame::IsDefaultFramebufferTarget(std::uint32_t target) const {
-    return packed_default_ && guest_framebuffer_bindings_[target==0x8CA8U ? 1U : 0U]==0;
+    return private_default_ && guest_framebuffer_bindings_[target == 0x8CA8U ? 1U : 0U] == 0;
 }
 
 std::vector<std::uint32_t> AngleFrame::GenerateFramebuffers(
     const std::size_t count) {
     ValidateCount(count, "framebuffer");
 #if OGPLAY_HAS_ANGLE
-    if (packed_default_) {
+    if (private_default_) {
         std::vector<std::uint32_t> names;
         names.reserve(count);
         for (std::size_t i=0;i<count;++i) {
@@ -132,14 +186,15 @@ void AngleFrame::DeleteFramebuffers(
     const std::span<const std::uint32_t> framebuffers) {
     ValidateCount(framebuffers.size(), "framebuffer");
 #if OGPLAY_HAS_ANGLE
-    if (packed_default_) {
+    if (private_default_) {
         for (const auto guest:framebuffers) {
             const auto found=framebuffer_names_.find(guest);
             if (!guest || found==framebuffer_names_.end()) continue;
             glDeleteFramebuffers(1,&found->second);framebuffer_names_.erase(found);
             for (std::size_t i=0;i<2;++i) if (guest_framebuffer_bindings_[i]==guest) {
                 guest_framebuffer_bindings_[i]=0;
-                glBindFramebuffer(i ? GL_READ_FRAMEBUFFER : GL_DRAW_FRAMEBUFFER,packed_framebuffers_[i]);
+                const GLenum binding = i ? GL_READ_FRAMEBUFFER : GL_DRAW_FRAMEBUFFER;
+                glBindFramebuffer(binding, ResolveFramebuffer(binding, 0, false));
             }
         }
         RequireNoError("glDeleteFramebuffers");return;
@@ -157,12 +212,13 @@ void AngleFrame::BindFramebuffer(const std::uint32_t target,
 #if OGPLAY_HAS_ANGLE
     if (target!=GL_FRAMEBUFFER && target!=GL_READ_FRAMEBUFFER && target!=GL_DRAW_FRAMEBUFFER)
         throw GlesApiError("glBindFramebuffer",GL_INVALID_ENUM);
-    if (packed_default_ && target==GL_FRAMEBUFFER) {
+    if (private_default_ && target == GL_FRAMEBUFFER) {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER,ResolveFramebuffer(GL_DRAW_FRAMEBUFFER,framebuffer,true));
         glBindFramebuffer(GL_READ_FRAMEBUFFER,ResolveFramebuffer(GL_READ_FRAMEBUFFER,framebuffer,true));
-    } else glBindFramebuffer(target,ResolveFramebuffer(target,framebuffer,true));
+    } else
+        glBindFramebuffer(target, ResolveFramebuffer(target, framebuffer, true));
     RequireNoError("glBindFramebuffer");
-    if (packed_default_) {
+    if (private_default_) {
         if (target!=GL_READ_FRAMEBUFFER) guest_framebuffer_bindings_[0]=framebuffer;
         if (target!=GL_DRAW_FRAMEBUFFER) guest_framebuffer_bindings_[1]=framebuffer;
     }
@@ -185,7 +241,7 @@ std::uint32_t AngleFrame::CheckFramebufferStatus(const std::uint32_t target) {
 
 bool AngleFrame::IsFramebuffer(const std::uint32_t framebuffer) {
 #if OGPLAY_HAS_ANGLE
-    if (packed_default_ && (!framebuffer || !framebuffer_names_.contains(framebuffer))) return false;
+    if (private_default_ && (!framebuffer || !framebuffer_names_.contains(framebuffer))) return false;
     const auto result = glIsFramebuffer(ResolveFramebuffer(GL_FRAMEBUFFER,framebuffer,false)) == GL_TRUE;
     RequireNoError("glIsFramebuffer");
     return result;

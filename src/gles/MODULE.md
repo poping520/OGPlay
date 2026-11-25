@@ -92,6 +92,8 @@
 - PVRTC1 上传优先使用 ANGLE 原生 `GL_IMG_texture_compression_pvrtc`；无原生扩展时，
   在兼容策略允许且官方 2bpp/4bpp 软件解码器真实可用时向 guest 发布该扩展，并转为 RGBA8 调用
   `glTexImage2D`。未知压缩枚举不走该回退。
+- `glCompressedTexImage2D` 的 `data` 为 NULL 时按驱动惯例只分配该级存储：以 `imageSize` 字节的
+  零块走同一上传路径，格式与大小校验不变；`glCompressedTexSubImage2D` 的 `data` 仍为必填。
 - IDL 标量不得携带搬运元数据；所有指针必须具有 direction/nullable/count，禁止生成器
   猜测 guest 内存长度。
 - GLES1.1/GLES2 core 目录必须分别与固定 ANGLE 头文件的 145/142 个入口完全一致；

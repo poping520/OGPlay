@@ -100,6 +100,59 @@ TEST_CASE("BND50 ATC queries agree across APIs and reject invalid updates") {
     }
 }
 
+TEST_CASE("Compressed image NULL data allocates the level for a later upload") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+
+    struct Format final {
+        std::uint32_t value, block_bytes;
+        bool sub_image;
+    };
+
+    for (const auto version : {1U, 2U}) {
+        BoundaryFixture f;
+        REQUIRE(f.Call("libEGL.so", "eglInitialize", {1}) == 1U);
+        const auto context = AuditContext(f, version), surface = AuditSurface(f);
+        AuditBind(f, context, surface);
+        const std::string_view library = version == 1U ? "libGLESv1_CM.so" : "libGLESv2.so";
+        CAPTURE(library);
+        const auto gl = [&](const std::string_view name, const std::initializer_list<std::uint32_t> args = {}) {
+            const auto entry = f.boundary.Symbols().Lookup(library, name);
+            REQUIRE(entry.has_value());
+            return BoundaryCallAddress(f, entry->Value(), {args.begin(), args.size()});
+        };
+        const auto data = f.output.Add(64);
+        const std::array<std::byte, 128> bytes{};
+        f.memory.Write(data, bytes, 1);
+        // PVRTC RGBA 4bpp, ETC1 and ATC explicit alpha cover native and decoded uploads.
+        for (const auto& format : {Format{0x8C02U, 8U, true}, Format{0x8D64U, 8U, true}, Format{0x8C93U, 16U, false}}) {
+            CAPTURE(format.value);
+            gl("glGenTextures", {1, f.output.Value()});
+            gl("glBindTexture", {0x0DE1, f.bus.Read32(f.output, 1)});
+            const auto base = 4U * format.block_bytes;
+            // PVRTC1 stores at least 2x2 blocks per level.
+            const auto mip = format.value == 0x8C02U ? base : format.block_bytes;
+            CHECK(gl("glCompressedTexImage2D", {0x0DE1, 0, format.value, 8, 8, 0, base, 0}) == 0U);
+            CHECK(gl("glCompressedTexImage2D", {0x0DE1, 1, format.value, 4, 4, 0, mip, 0}) == 0U);
+            CHECK(gl("glGetError") == 0U);
+            if (format.sub_image) {
+                CHECK(gl("glCompressedTexSubImage2D", {0x0DE1, 0, 0, 0, 8, 8, format.value, base, data.Value()}) == 0U);
+                CHECK(gl("glGetError") == 0U);
+                CHECK_THROWS_AS(gl("glCompressedTexSubImage2D", {0x0DE1, 0, 0, 0, 8, 8, format.value, base, 0}),
+                                ogplay::gles::GuestTransferError);
+            }
+            CHECK(gl("glCompressedTexImage2D", {0x0DE1, 0, format.value, 8, 8, 0, base, data.Value()}) == 0U);
+            CHECK(gl("glGetError") == 0U);
+        }
+        // NULL skips the guest copy only: imageSize and format checks still apply.
+        gl("glCompressedTexImage2D", {0x0DE1, 0, 0x8C93, 8, 8, 0, 63, 0});
+        CHECK(gl("glGetError") == 0x0501U);
+        gl("glCompressedTexImage2D", {0x0DE1, 0, 0xFFFF, 8, 8, 0, 64, 0});
+        CHECK(gl("glGetError") == 0x0500U);
+        CHECK_THROWS_AS(gl("glCompressedTexImage2D", {0x0DE1, 0, 0x8C93, 8, 8, 0, 0x7FFFFFFFU, 0}),
+                        ogplay::gles::GuestTransferError);
+    }
+}
+
 TEST_CASE("BND50 ATC PBO upload retains shared texture format metadata") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
     BoundaryFixture f;

@@ -90,10 +90,15 @@ std::uint32_t Gles2Module::CompressedTexImage2D(const A32CallFrame& call) {
         return 0U;
     }
     auto prepared = Prepare(calls_, graphics_, 21U, call);
-    graphics_.RequireFrame("glCompressedTexImage2D")
-        .CompressedTextureImage2D(arguments[0], Signed(arguments[1]), arguments[2],
-                                  Signed(arguments[3]), Signed(arguments[4]), Signed(arguments[5]),
-                                  OnlyPointer(prepared).Bytes());
+    const auto& data = OnlyPointer(prepared);
+    auto& frame = graphics_.RequireFrame("glCompressedTexImage2D");
+    if (data.IsNull())
+        frame.AllocateCompressedTextureImage2D(arguments[0], Signed(arguments[1]), arguments[2], Signed(arguments[3]),
+                                               Signed(arguments[4]), Signed(arguments[5]),
+                                               static_cast<std::size_t>(data.Size()));
+    else
+        frame.CompressedTextureImage2D(arguments[0], Signed(arguments[1]), arguments[2], Signed(arguments[3]),
+                                       Signed(arguments[4]), Signed(arguments[5]), data.Bytes());
     if (Signed(arguments[1]) == 0) {
         graphics_.gl_context.Shared().SetTextureBaseFormat(arguments[0], arguments[2]);
         graphics_.gl_context.Shared().SetTextureSize(arguments[0], Signed(arguments[3]), Signed(arguments[4]));

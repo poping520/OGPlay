@@ -209,6 +209,10 @@ public:
                                   std::int32_t width, std::int32_t height,
                                   std::int32_t border,
                                   std::span<const std::byte> data);
+    // Guest data == NULL: drivers allocate the level and leave its contents undefined.
+    void AllocateCompressedTextureImage2D(std::uint32_t target, std::int32_t level, std::uint32_t internal_format,
+                                          std::int32_t width, std::int32_t height, std::int32_t border,
+                                          std::size_t image_size);
     void CopyTextureImage2D(std::uint32_t target, std::int32_t level,
                             std::uint32_t internal_format, std::int32_t x,
                             std::int32_t y, std::int32_t width,

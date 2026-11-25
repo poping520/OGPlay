@@ -980,6 +980,18 @@ void AngleFrame::CompressedTextureImage2D(
 #endif
 }
 
+void AngleFrame::AllocateCompressedTextureImage2D(const std::uint32_t target, const std::int32_t level,
+                                                  const std::uint32_t internal_format, const std::int32_t width,
+                                                  const std::int32_t height, const std::int32_t border,
+                                                  const std::size_t image_size) {
+    if (image_size > kDefaultGuestTransferLimit)
+        throw GuestTransferError("compressed image exceeds configured size limit");
+    // Zeroed blocks make the undefined contents deterministic and share the native, decoded
+    // and size-checked paths of a real upload instead of relying on host null handling.
+    const std::vector<std::byte> blocks(image_size);
+    CompressedTextureImage2D(target, level, internal_format, width, height, border, blocks);
+}
+
 void AngleFrame::CopyTextureImage2D(
     const std::uint32_t target, const std::int32_t level,
     const std::uint32_t internal_format, const std::int32_t x,

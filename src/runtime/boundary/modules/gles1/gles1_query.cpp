@@ -767,15 +767,19 @@ void BindAndroidBoundaryGles1Textures(
             if (image_size < 0) {
                 throw gles::GlesApiError("glCompressedTexImage2D", 0x0501U);
             }
-            auto data = gles::GuestBuffer::Prepare(
-                address_space, memory::GuestAddress{arguments[7]},
-                static_cast<std::uint32_t>(image_size),
-                gles::GuestTransferDirection::input, false, thread_id);
+            auto data = gles::GuestBuffer::Prepare(address_space, memory::GuestAddress{arguments[7]},
+                                                   static_cast<std::uint32_t>(image_size),
+                                                   gles::GuestTransferDirection::input, true, thread_id);
             auto& frame = require_frame("glCompressedTexImage2D");
-            frame.CompressedTextureImage2D(
-                arguments[0], SignedTextureValue(arguments[1]), arguments[2],
-                SignedTextureValue(arguments[3]), SignedTextureValue(arguments[4]),
-                SignedTextureValue(arguments[5]), data.Bytes());
+            if (data.IsNull())
+                frame.AllocateCompressedTextureImage2D(
+                    arguments[0], SignedTextureValue(arguments[1]), arguments[2], SignedTextureValue(arguments[3]),
+                    SignedTextureValue(arguments[4]), SignedTextureValue(arguments[5]),
+                    static_cast<std::size_t>(data.Size()));
+            else
+                frame.CompressedTextureImage2D(arguments[0], SignedTextureValue(arguments[1]), arguments[2],
+                                               SignedTextureValue(arguments[3]), SignedTextureValue(arguments[4]),
+                                               SignedTextureValue(arguments[5]), data.Bytes());
             GenerateAutomaticMipmap(state, frame, arguments[0],
                                     SignedTextureValue(arguments[1]));
             if (SignedTextureValue(arguments[1]) == 0) {

@@ -416,7 +416,7 @@
           "type": "void",
           "pointer": true,
           "direction": "in",
-          "nullable": false,
+          "nullable": true,
           "count": "imageSize"
         }
       ]

@@ -462,6 +462,32 @@ TEST_CASE("guest first fit crosses adjacent and partially overlapped reserved wi
     CHECK(space.MapAnywhere({GuestAddress{0x14000}, 0x2000}, 4096, none).Value() == 0x14000);
 }
 
+TEST_CASE("guest highest placement abuts existing mappings and skips reserved windows") {
+    using namespace ogplay::memory;
+    AddressSpace space;
+    space.ReserveWindow({GuestAddress{0x14000}, 0x2000});
+    space.ReserveWindow({GuestAddress{0x1c000}, 0x4000});
+    const auto none = PageProtection::none;
+    const auto highest = [&](const GuestRange& bounds, const std::uint64_t size) {
+        return space.MapAnywhere(bounds, size, none, {}, MapPlacement::highest).Value();
+    };
+    // Bounds start inside the low guard and end inside the last window.
+    const GuestRange bounds{GuestAddress{0xe000}, 0x10000};
+    CHECK(highest(bounds, 0x2000) == 0x1a000);
+    CHECK(highest(bounds, 0x1000) == 0x19000);
+    CHECK(highest(bounds, 0x4000) == 0x10000);
+    space.Unmap({GuestAddress{0x1a000}, 0x2000});
+    CHECK(highest(bounds, 0x1000) == 0x1b000);
+    CHECK(highest(bounds, 0x3000) == 0x16000);
+    CHECK_THROWS_AS(static_cast<void>(highest(bounds, 0x2000)), std::bad_alloc);
+    CHECK(highest(bounds, 0x1000) == 0x1a000);
+    CHECK_THROWS_AS(static_cast<void>(highest(bounds, 0x1000)), std::bad_alloc);
+    CHECK_THROWS_AS(static_cast<void>(highest(bounds, 1)), std::invalid_argument);
+    // Bounds contained by one window may allocate within it.
+    CHECK(highest({GuestAddress{0x14000}, 0x2000}, 0x1000) == 0x15000);
+    CHECK(highest({GuestAddress{0xfffff000}, 4096}, 4096) == 0xfffff000);
+}
+
 TEST_CASE("protected payload placement honors reserved windows and contained bounds") {
     using namespace ogplay::memory;
     AddressSpace space;

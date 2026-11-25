@@ -512,7 +512,7 @@ note = "ROM SharedPreferencesImpl/EditorImpl 使用同一沙盒 VFS 存储 XML�
 [runtime.syscall_anonymous_mapping]
 status = "partial"
 test = "tests/memory/address_space_tests.cpp; tests/runtime/syscall_tests.cpp; tests/dexvm/file_vfs_tests.cpp#ROM FileChannel maps"
-note = "匿名私有 mmap2 支持原子 first-fit/MAP_FIXED 与空洞复用；宽域分配及动态模块避开会话固定布局窗口，MAP_FIXED 入窗 ENOMEM 并记账。窗口不提交 backing，窗口内有界 arena 与宿主显式 Map 可用；brk 串行化。Java/native 共用文件映射账本，支持 PRIVATE R/RW、只读 fd 的 SHARED R 快照及 msync 校验；共享节点变更 EBUSY。文件执行、共享回写、整页超 EOF、MS_INVALIDATE、文件区间 DONTNEED、SIGBUS/mremap 未支持。"
+note = "非固定 mmap2 自顶向下原子选址，支持 MAP_FIXED 与空洞复用；宽域分配及动态模块避开会话固定布局窗口，MAP_FIXED 入窗 ENOMEM 并记账。窗口不提交 backing，窗口内有界 arena 与宿主显式 Map 可用；brk 串行化。Java/native 共用文件映射账本，支持 PRIVATE R/RW、只读 fd 的 SHARED R 快照及 msync 校验；共享节点变更 EBUSY。文件执行、共享回写、整页超 EOF、MS_INVALIDATE、文件区间 DONTNEED、SIGBUS/mremap 未支持。"
 
 [runtime.syscall_large_file_io]
 status = "complete"

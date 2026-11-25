@@ -60,6 +60,10 @@ namespace guest_layout {
 inline constexpr memory::GuestRange kHostWindow{memory::GuestAddress{0x6a000000U}, 0x15000000U};
 inline constexpr memory::GuestRange kBrkWindow{memory::GuestAddress{0x50000000U}, 0x08000000U};
 inline constexpr std::array kReservedWindows{kBrkWindow, kHostWindow};
+// mmap placement: ARM TASK_SIZE 0xbf000000 minus the kernel's 128 MiB minimum stack gap.
+inline constexpr memory::GuestRange kMmapArea{memory::GuestAddress{0x60000000U}, 0xb7000000U - 0x60000000U};
+inline constexpr memory::GuestRange kMmapFallback{memory::GuestAddress{0x60000000U},
+                                                  UINT64_C(0x100000000) - 0x60000000U};
 inline constexpr memory::GuestRange kOpaqueHandles{memory::GuestAddress{0x6e000000U}, 0x01000000U};
 inline constexpr std::uint32_t kConfigurationHandleBegin = 0x6e003000U;
 inline constexpr std::uint32_t kLogFormatHandleBegin = 0x6e004000U;

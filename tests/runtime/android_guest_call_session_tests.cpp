@@ -870,8 +870,8 @@ TEST_CASE("Android guest process owns reusable DexVM native thread contexts") {
         ogplay::runtime::AndroidGuestProcess::Start({19, std::span{&module, 1}, {}, 64, 36, 1000, 1, &filesystem, {}});
 
     const ogplay::memory::GuestAddress mmap_entry{0x10011000U};
-    CHECK(process->Invoke({mmap_entry, {0, 0x0a000000U, 0, 0x22}, {}}).return_value == 0x60000000U);
-    CHECK(process->Invoke({mmap_entry, {0, 4096, 0, 0x22}, {}}).return_value == 0x7f000000U);
+    CHECK(process->Invoke({mmap_entry, {0, 0x38000000U, 0, 0x22}, {}}).return_value == 0x7f000000U);
+    CHECK(process->Invoke({mmap_entry, {0, 4096, 0, 0x22}, {}}).return_value == 0x69fff000U);
 
     CHECK_THROWS(process->PrepareDexVmThread(UINT64_C(0x40000004), 0U));
     CHECK_THROWS(process->PrepareDexVmThread(UINT64_C(0x4004), 31U));

@@ -260,28 +260,28 @@ TEST_CASE("Android memory syscalls map protect unmap and grow brk safely") {
     frame.arguments[2] = 3;
     frame.arguments[3] = 0x22;
     frame.arguments[4] = UINT32_MAX;
-    CHECK(dispatcher.Dispatch(frame) == 0x60000000);
+    CHECK(std::bit_cast<std::uint32_t>(dispatcher.Dispatch(frame)) == 0xb6ffe000U);
     const std::array marker{std::byte{0x5a}};
-    CHECK_NOTHROW(memory.Write(ogplay::memory::GuestAddress{0x60000000}, marker));
+    CHECK_NOTHROW(memory.Write(ogplay::memory::GuestAddress{0xb6ffe000}, marker));
 
     frame.number = 125;
-    frame.arguments[0] = 0x60000000;
+    frame.arguments[0] = 0xb6ffe000;
     frame.arguments[1] = 5000;
     frame.arguments[2] = 5;
     CHECK(dispatcher.Dispatch(frame) == 0);
-    CHECK_THROWS_AS(memory.Write(ogplay::memory::GuestAddress{0x60000000}, marker), ogplay::memory::MemoryFault);
+    CHECK_THROWS_AS(memory.Write(ogplay::memory::GuestAddress{0xb6ffe000}, marker), ogplay::memory::MemoryFault);
     frame.arguments[2] = 6;
     CHECK(dispatcher.Dispatch(frame) == 0);
-    CHECK_NOTHROW(memory.Write(ogplay::memory::GuestAddress{0x60000000}, marker));
+    CHECK_NOTHROW(memory.Write(ogplay::memory::GuestAddress{0xb6ffe000}, marker));
     std::array<std::byte, 1> fetched{};
-    CHECK_NOTHROW(memory.Fetch(ogplay::memory::GuestAddress{0x60000000}, fetched));
+    CHECK_NOTHROW(memory.Fetch(ogplay::memory::GuestAddress{0xb6ffe000}, fetched));
 
     frame.number = 91;
-    frame.arguments[0] = 0x60000000;
+    frame.arguments[0] = 0xb6ffe000;
     frame.arguments[1] = 5000;
     CHECK(dispatcher.Dispatch(frame) == 0);
     std::array<std::byte, 1> output{};
-    CHECK_THROWS_AS(memory.Read(ogplay::memory::GuestAddress{0x60000000}, output), ogplay::memory::MemoryFault);
+    CHECK_THROWS_AS(memory.Read(ogplay::memory::GuestAddress{0xb6ffe000}, output), ogplay::memory::MemoryFault);
 
     frame.number = 45;
     frame.arguments[0] = 0;
@@ -296,27 +296,27 @@ TEST_CASE("Android mmap avoids occupied regions and reuses released space") {
     auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
     ogplay::memory::AddressSpace memory;
     ogplay::runtime::BindAndroidMemorySyscalls(dispatcher, memory);
-    memory.Map({ogplay::memory::GuestAddress{0x60001000}, 4096}, ogplay::memory::PageProtection::none);
+    memory.Map({ogplay::memory::GuestAddress{0xb6ffe000}, 4096}, ogplay::memory::PageProtection::none);
     ogplay::runtime::A32SyscallFrame frame{};
     frame.number = 192;
     frame.arguments = {0, 8192, 3, 0x22, 0xffffffff, 0};
-    CHECK(dispatcher.Dispatch(frame) == 0x60002000);
+    CHECK(std::bit_cast<std::uint32_t>(dispatcher.Dispatch(frame)) == 0xb6ffc000U);
     frame.arguments[2] = 8;
     CHECK(dispatcher.Dispatch(frame) == -22);
     frame.arguments[2] = 3;
     frame.arguments[1] = 4096;
-    CHECK(dispatcher.Dispatch(frame) == 0x60000000);
+    CHECK(std::bit_cast<std::uint32_t>(dispatcher.Dispatch(frame)) == 0xb6fff000U);
     frame.number = 91;
-    frame.arguments[0] = 0x60002000;
+    frame.arguments[0] = 0xb6ffc000;
     frame.arguments[1] = 8192;
     CHECK(dispatcher.Dispatch(frame) == 0);
     frame.number = 192;
     frame.arguments[0] = 0;
-    CHECK(dispatcher.Dispatch(frame) == 0x60002000);
+    CHECK(std::bit_cast<std::uint32_t>(dispatcher.Dispatch(frame)) == 0xb6ffc000U);
     frame.arguments[1] = 0xa0001000;
     CHECK(dispatcher.Dispatch(frame) == -12);
     frame.arguments[1] = 4096;
-    CHECK(dispatcher.Dispatch(frame) == 0x60004000);
+    CHECK(std::bit_cast<std::uint32_t>(dispatcher.Dispatch(frame)) == 0xb6ffb000U);
 }
 
 TEST_CASE("SBX-15 mmap fixed anonymously replaces reserved BSS pages") {
@@ -420,17 +420,17 @@ TEST_CASE("SBX-16 file mmap snapshots offsets EOF and package windows") {
         ogplay::runtime::A32SyscallFrame frame;
         frame.number = 192;
         frame.arguments = {0, 5000, 1, flags, static_cast<std::uint32_t>(fd), 1};
-        REQUIRE(dispatcher.Dispatch(frame) == 0x60000000);
+        REQUIRE(std::bit_cast<std::uint32_t>(dispatcher.Dispatch(frame)) == 0xb6ffe000U);
         CHECK(vfs.Seek(fd, 0, ogplay::runtime::VfsSeekWhence::current) == 23);
         vfs.Close(fd);
         std::vector<std::byte> actual(8192);
-        memory.Read(ogplay::memory::GuestAddress{0x60000000}, actual);
+        memory.Read(ogplay::memory::GuestAddress{0xb6ffe000}, actual);
         auto expected = std::vector(contents.begin() + 4096, contents.end());
         expected.resize(8192);
         CHECK(actual == expected);
         // OBB-style unaligned window: offset=4321, aligned mapping at 4096.
         CHECK(std::equal(actual.begin() + 225, actual.begin() + 1225, contents.begin() + 4321));
-        CHECK_THROWS_AS(memory.Write(ogplay::memory::GuestAddress{0x60000000}, std::span{contents}.first(1)),
+        CHECK_THROWS_AS(memory.Write(ogplay::memory::GuestAddress{0xb6ffe000}, std::span{contents}.first(1)),
                         ogplay::memory::MemoryFault);
         CHECK(ledger.Unimplemented().empty());
     }
@@ -450,7 +450,7 @@ TEST_CASE("SBX-16 anonymous hint flags map and madvise never zeroes file snapsho
     // bionic pthread_create: MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE.
     for (const auto flags : {0x4022U, 0x20022U, 0x2022U, 0x8022U}) {
         frame.arguments = {0, 8192, 3, flags, UINT32_MAX, 0};
-        CHECK(dispatcher.Dispatch(frame) > 0);
+        CHECK(std::bit_cast<std::uint32_t>(dispatcher.Dispatch(frame)) < 0xfffff001U);
     }
     CHECK(ledger.Unimplemented().empty());
     frame.arguments = {0, 8192, 3, 0x122U, UINT32_MAX, 0};  // MAP_GROWSDOWN
@@ -511,7 +511,7 @@ TEST_CASE("SBX-16 private writable fixed mapping preserves file and reuses holes
     REQUIRE(dispatcher.Dispatch(frame) == 0);
     frame.number = 192;
     frame.arguments = {0, 4096, 1, 2, static_cast<std::uint32_t>(fd), 0};
-    CHECK(dispatcher.Dispatch(frame) == 0x60000000);
+    CHECK(std::bit_cast<std::uint32_t>(dispatcher.Dispatch(frame)) == 0xb6fff000U);
     CHECK(ledger.Unimplemented().empty());
 }
 
@@ -540,7 +540,7 @@ TEST_CASE("SBX-16 shared snapshots block node mutations until the last interval 
         ogplay::runtime::A32SyscallFrame frame;
         frame.number = 192;
         frame.arguments = {0, 12288, 1, 1, static_cast<std::uint32_t>(fd), 0};
-        REQUIRE(dispatcher.Dispatch(frame) == 0x60000000);
+        REQUIRE(std::bit_cast<std::uint32_t>(dispatcher.Dispatch(frame)) == 0xb6ffd000U);
         CHECK(ledger.Unimplemented().empty());
         vfs.Close(fd);
         rejected([&] { (void)vfs.Write(writer, std::span{contents}.first(1)); });
@@ -553,24 +553,24 @@ TEST_CASE("SBX-16 shared snapshots block node mutations until the last interval 
         CHECK(ledger.Unimplemented()[0].id == "vfs.shared_mapping_mutation");
         CHECK(ledger.Unimplemented()[0].count == 6);
         frame.number = 125;
-        frame.arguments = {0x60000000, 4096, 3, 0, 0, 0};
+        frame.arguments = {0xb6ffd000, 4096, 3, 0, 0, 0};
         CHECK(dispatcher.Dispatch(frame) == -38);
         // A partial fixed overwrite splits the interval and retains its node pin.
         frame.number = 192;
-        frame.arguments = {0x60001000, 4096, 3, 0x32, UINT32_MAX, 0};
-        REQUIRE(dispatcher.Dispatch(frame) == 0x60001000);
+        frame.arguments = {0xb6ffe000, 4096, 3, 0x32, UINT32_MAX, 0};
+        REQUIRE(dispatcher.Dispatch(frame) == std::bit_cast<std::int32_t>(0xb6ffe000U));
         frame.number = 91;
-        frame.arguments = {0x60000000, 4096, 0, 0, 0, 0};
+        frame.arguments = {0xb6ffd000, 4096, 0, 0, 0, 0};
         REQUIRE(dispatcher.Dispatch(frame) == 0);
         rejected([&] { vfs.Truncate(writer, 1); });
-        frame.arguments[0] = 0x60002000;
+        frame.arguments[0] = 0xb6fff000;
         REQUIRE(dispatcher.Dispatch(frame) == 0);
         CHECK(vfs.WriteAt(writer, 0, std::span{contents}.first(1)) == 1);
         // A second pin retires with the process dispatcher.
         const auto again = vfs.Open("/file", {.read = true});
         frame.number = 192;
         frame.arguments = {0, 4096, 1, 1, static_cast<std::uint32_t>(again), 0};
-        REQUIRE(dispatcher.Dispatch(frame) == 0x60000000);
+        REQUIRE(std::bit_cast<std::uint32_t>(dispatcher.Dispatch(frame)) == 0xb6fff000U);
         vfs.Close(again);
     }
     CHECK_NOTHROW(vfs.Truncate(writer, 1));
@@ -626,9 +626,9 @@ TEST_CASE("SBX-16 file mapping errors are explicit accounted and preserve addres
         const auto hits = ledger.Unimplemented();
         CHECK((hits.empty() ? 0 : hits[0].count) == enosys);
         frame.arguments = {0, 4096, 3, 0x22, UINT32_MAX, 0};
-        REQUIRE(dispatcher.Dispatch(frame) == 0x60000000);
+        REQUIRE(std::bit_cast<std::uint32_t>(dispatcher.Dispatch(frame)) == 0xb6fff000U);
         frame.number = 91;
-        frame.arguments[0] = 0x60000000;
+        frame.arguments[0] = 0xb6fff000;
         REQUIRE(dispatcher.Dispatch(frame) == 0);
     }
     CHECK(ledger.Unimplemented()[0].id == "syscall.mmap2");
@@ -1988,10 +1988,13 @@ TEST_CASE("Android mmap placement skips host windows and fixed rejection preserv
     runtime::A32SyscallFrame frame;
     frame.number = 192;
     frame.arguments = {0, 0x01000000U, 0, 0x22, 0xffffffffU, 0};
-    for (std::uint32_t i = 0; i < 10; ++i)
-        REQUIRE(dispatcher.Dispatch(frame) == 0x60000000U + i * 0x01000000U);
+    // Top-down placement fills [0x7f000000, 0xb7000000), skips the host window, then falls back above mmap_base.
+    for (std::uint32_t top = 0xb7000000U; top != 0x7f000000U; top -= 0x01000000U)
+        REQUIRE(std::bit_cast<std::uint32_t>(dispatcher.Dispatch(frame)) == top - 0x01000000U);
+    for (std::uint32_t top = 0x6a000000U; top != 0x60000000U; top -= 0x01000000U)
+        REQUIRE(std::bit_cast<std::uint32_t>(dispatcher.Dispatch(frame)) == top - 0x01000000U);
     frame.arguments[1] = 4096;
-    CHECK(dispatcher.Dispatch(frame) == 0x7f000000U);
+    CHECK(std::bit_cast<std::uint32_t>(dispatcher.Dispatch(frame)) == 0xb7000000U);
     const auto rw = memory::PageProtection::read | memory::PageProtection::write;
     const memory::GuestAddress edge{0x6a000000U};
     space.Map({edge, 4096}, rw);

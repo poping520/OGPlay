@@ -22,6 +22,8 @@ enum class PageProtection : std::uint8_t {
     execute = 1U << 2U,
 };
 
+enum class MapPlacement : std::uint8_t { lowest, highest };
+
 [[nodiscard]] constexpr PageProtection operator|(const PageProtection left, const PageProtection right) noexcept {
     return static_cast<PageProtection>(static_cast<std::uint8_t>(left) | static_cast<std::uint8_t>(right));
 }
@@ -157,10 +159,11 @@ public:
     // memory. Optional initial bytes are copied before final protection publishes;
     // the remaining bytes are zero. Outside pages and Map overlap checks survive.
     void ReplaceAnonymous(const GuestRange& range, PageProtection protection, std::span<const std::byte> initial = {});
-    // Atomically first-fit and map inside bounds; PROT_NONE is occupied.
-    // Throws bad_alloc when no contiguous free range exists.
+    // Atomically first-fit and map inside bounds, searching from the given end;
+    // PROT_NONE is occupied. Throws bad_alloc when no contiguous free range exists.
     [[nodiscard]] GuestAddress MapAnywhere(const GuestRange& bounds, std::uint64_t size, PageProtection protection,
-                                           std::span<const std::byte> initial = {});
+                                           std::span<const std::byte> initial = {},
+                                           MapPlacement placement = MapPlacement::lowest);
     // Diagnostics run under the mapping lock and must not reenter AddressSpace.
     [[nodiscard]] ProtectedMappingOwner RegisterProtectedOwner(std::function<void(std::string_view)> diagnostic);
     [[nodiscard]] GuestAddress MapProtectedAnywhere(const ProtectedMappingOwner& owner, const GuestRange& bounds,

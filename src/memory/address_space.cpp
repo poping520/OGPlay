@@ -161,7 +161,7 @@ public:
     }
 
     GuestAddress MapAnywhere(const GuestRange& bounds, const std::uint64_t size, const PageProtection protection,
-                             const std::span<const std::byte> initial) {
+                             const std::span<const std::byte> initial, const MapPlacement placement) {
         if (initial.size() > size) throw std::invalid_argument("mapping initializer exceeds range");
         ValidateProtection(protection);
         ValidatePageRange(bounds);
@@ -170,9 +170,33 @@ public:
         }
         if (size > bounds.Size()) throw std::bad_alloc();
         std::scoped_lock lock(mutex_);
-        const auto address = FindFreeLocked(bounds, size);
+        const auto address =
+            placement == MapPlacement::highest ? FindHighestFreeLocked(bounds, size) : FindFreeLocked(bounds, size);
         ReplaceAnonymousLocked({address, size}, protection, initial);
         return address;
+    }
+
+    GuestAddress FindHighestFreeLocked(const GuestRange& bounds, const std::uint64_t size) const {
+        const auto [first, last] = PageIndexes(bounds);
+        const auto needed = size / page_size_;
+        std::uint64_t run{};
+        auto window = reserved_windows_.rbegin();
+        for (auto page = last; page > first;) {
+            --page;
+            while (window != reserved_windows_.rend() &&
+                   (page < PageIndexes(*window).first || window->Contains(bounds)))
+                ++window;
+            if (window != reserved_windows_.rend() && page < PageIndexes(*window).second) {
+                page = std::max(PageIndexes(*window).first, first);
+                run = 0;
+            } else if (mapped_[static_cast<std::size_t>(page)] ||
+                       static_cast<std::uint64_t>(page) * page_size_ < kGuestLowGuardSize) {
+                run = 0;
+            } else if (++run == needed) {
+                return GuestAddress{static_cast<std::uint32_t>(static_cast<std::uint64_t>(page) * page_size_)};
+            }
+        }
+        throw std::bad_alloc();
     }
 
     GuestAddress FindFreeLocked(const GuestRange& bounds, const std::uint64_t size,
@@ -788,8 +812,9 @@ void AddressSpace::ReplaceAnonymous(const GuestRange& range, const PageProtectio
 }
 
 GuestAddress AddressSpace::MapAnywhere(const GuestRange& bounds, const std::uint64_t size,
-                                       const PageProtection protection, const std::span<const std::byte> initial) {
-    const auto start = impl_->MapAnywhere(bounds, size, protection, initial);
+                                       const PageProtection protection, const std::span<const std::byte> initial,
+                                       const MapPlacement placement) {
+    const auto start = impl_->MapAnywhere(bounds, size, protection, initial, placement);
     impl_->PublishMappingChange({start, size});
     return start;
 }

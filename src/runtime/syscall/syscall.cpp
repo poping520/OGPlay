@@ -585,10 +585,17 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
             if (fixed) {
                 address_space.ReplaceAnonymous({memory::GuestAddress{address}, size}, permissions, snapshot);
             } else {
-                address = address_space
-                              .MapAnywhere({memory::GuestAddress{0x60000000U}, UINT64_C(0xa0000000)}, size, permissions,
-                                           snapshot)
-                              .Value();
+                // Linux ARM places mappings downward from mmap_base, so a new mapping normally
+                // ends against an existing one; exhausting that area falls back to a bottom-up search.
+                try {
+                    address = address_space
+                                  .MapAnywhere(guest_layout::kMmapArea, size, permissions, snapshot,
+                                               memory::MapPlacement::highest)
+                                  .Value();
+                } catch (const std::bad_alloc&) {
+                    address =
+                        address_space.MapAnywhere(guest_layout::kMmapFallback, size, permissions, snapshot).Value();
+                }
             }
             if ((flags & kMapAnonymous) == 0)
                 next.push_back(

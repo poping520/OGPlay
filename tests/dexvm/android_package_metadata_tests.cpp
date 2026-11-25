@@ -1097,10 +1097,23 @@ TEST_CASE("PackageManager exposes user-disabled system package metadata through 
         REQUIRE(f.On(manager, "getApplicationInfo", "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;",
                      {VmValue::Ref(vending), VmValue::Int(0)})
                     .ref.IsValid());
-        const auto store_signatures =
-            f.OnOutcome(manager, "getPackageInfo", package_info, {VmValue::Ref(vending), VmValue::Int(0x40)});
-        CHECK(store_signatures.exception_class ==
-              f.linker.ResolveDescriptor("Ljava/lang/UnsupportedOperationException;"));
+        CHECK_FALSE(PackageRef(f, store, "signatures", "[Landroid/content/pm/Signature;").IsValid());
+        // Play services clients ask for GET_SIGNATURES | GET_UNINSTALLED_PACKAGES, then report the missing GMS.
+        const auto signed_store =
+            f.On(manager, "getPackageInfo", package_info, {VmValue::Ref(vending), VmValue::Int(0x2040)}).ref;
+        REQUIRE(signed_store.IsValid());
+        const auto signed_store_root = f.vm.ProtectReferences(std::array{signed_store});
+        const auto store_signatures = PackageRef(f, signed_store, "signatures", "[Landroid/content/pm/Signature;");
+        REQUIRE(store_signatures.IsValid());
+        REQUIRE(f.model.ArrayLength(store_signatures) == 1);
+        const auto store_der = f.On(f.model.GetObjectElement(store_signatures, 0), "toByteArray", "()[B").ref;
+        CHECK(ogplay::core::Sha256(f.model.ReadByteRegion(store_der, 0, f.model.ArrayLength(store_der))) ==
+              "f0fd6c5b410f25cb25c3b53346c8972fae30f8ee7411df910480ad6b2d60db83");
+        const auto play_services =
+            f.OnOutcome(manager, "getPackageInfo", package_info,
+                        {VmValue::Ref(f.vm.NewStringUtf8("com.google.android.gms")), VmValue::Int(0x40)});
+        CHECK(play_services.exception_class ==
+              f.linker.ResolveDescriptor("Landroid/content/pm/PackageManager$NameNotFoundException;"));
         constexpr auto get_meta_data = 0x80;
         for (const auto name : {package, vending}) {
             const auto with_metadata =
@@ -1120,8 +1133,11 @@ TEST_CASE("PackageManager exposes user-disabled system package metadata through 
 
             const auto with_signatures =
                 f.OnOutcome(manager, "getPackageInfo", package_info, {VmValue::Ref(name), VmValue::Int(0xC0)});
-            CHECK(with_signatures.exception_class ==
-                  f.linker.ResolveDescriptor("Ljava/lang/UnsupportedOperationException;"));
+            if (name == vending)
+                CHECK_FALSE(with_signatures.exception.IsValid());
+            else
+                CHECK(with_signatures.exception_class ==
+                      f.linker.ResolveDescriptor("Ljava/lang/UnsupportedOperationException;"));
         }
         f.context->package_inventory_known = true;
         f.context->package_resource_path = "/data/app/org.example.game-1.apk";

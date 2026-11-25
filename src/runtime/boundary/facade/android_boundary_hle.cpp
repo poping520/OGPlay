@@ -151,7 +151,7 @@ public:
           libc_override_module_(call_services_), libdl_override_module_(call_services_, options.dynamic_link) {
         graphics_context_.compressed_texture_family = options.compressed_texture_family;
         graphics_context_.logger = options.logger;
-        graphics_context_.submit_implicit_surface = &ServiceSubmitImplicitManagedSurface;
+        graphics_context_.submit_unswapped_work = &ServiceSubmitUnswappedWork;
         detail::BindAndroidBoundaryGles1Core(
             gles1_dispatch_, gles1_state_, address_space_, layout_.factor,
             [this](const std::string_view operation) -> gles::AngleFrame& { return RequireFrame(operation); });
@@ -618,15 +618,18 @@ private:
         static_cast<Impl*>(owner)->ReleaseManagedSurfaceFromCallingThread();
     }
 
-    static void ServiceSubmitImplicitManagedSurface(void* owner, const A32CallFrame& call) noexcept {
+    static void ServiceSubmitUnswappedWork(void* owner, const A32CallFrame& call) noexcept {
         auto& self = *static_cast<Impl*>(owner);
-        if (self.backend_.renderer != gles::AngleRenderer::metal || !self.implicit_managed_current_ ||
-            self.gl_owner_ != std::this_thread::get_id() || !self.angle_frame_->IsCurrentOnCallingThread())
-            return;
-        // This fallback can be left current on a thread that never swaps. Submit before
-        // another context can enter ANGLE and wait on this display's command buffer.
+        if (self.backend_.renderer != gles::AngleRenderer::metal) return;
+        const bool implicit = self.implicit_managed_current_ && self.gl_owner_ == std::this_thread::get_id() &&
+                              self.angle_frame_->IsCurrentOnCallingThread();
+        // The managed fallback and pbuffer contexts can stay current on a thread that never swaps.
+        // Submit before another context can enter ANGLE and wait on this display's command buffer.
+        auto* frame =
+            implicit ? &*self.angle_frame_ : self.egl_module_.UnswappedFrameForHostThread(std::this_thread::get_id());
+        if (frame == nullptr || !frame->IsCurrentOnCallingThread()) return;
         try {
-            self.angle_frame_->Flush();
+            frame->Flush();
         } catch (const gles::GlesApiError& error) {
             self.graphics_context_.SetGuestError(call, error.Code());
         }

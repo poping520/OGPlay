@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
 #include <limits>
 #include <span>
@@ -355,6 +356,72 @@ TEST_CASE("BND34 EGL separates context state surface content and read surface") 
     CHECK(f.Call("libEGL.so", "eglGetCurrentSurface", {0x305A}) == x);
     AuditGl(f, "glBindFramebuffer", {0x8D40, framebuffer});
     CHECK(AuditPixel(f) == 0xFF0000FFU);
+}
+
+TEST_CASE("EGL pbuffer contexts submit work before another thread waits for the GPU") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1}) == 1U);
+    const auto context = AuditContext(f, 3), surface = AuditSurface(f);
+    const auto loader_context = AuditContext(f, 3, context), loader_surface = AuditSurface(f);
+    const auto address = [&](const char* library, const char* name) {
+        const auto entry = f.boundary.Symbols().Lookup(library, name);
+        REQUIRE(entry.has_value());
+        return entry->Value();
+    };
+    const auto make_current = address("libEGL.so", "eglMakeCurrent");
+    const auto release = address("libEGL.so", "eglReleaseThread");
+    const auto bind_texture = address("libGLESv2.so", "glBindTexture");
+    const auto generate_mipmap = address("libGLESv2.so", "glGenerateMipmap");
+    const auto get_error = address("libGLESv2.so", "glGetError");
+    AuditBind(f, context, surface);
+    const auto texture = AuditName(f, "glGenTextures");
+    AuditGl(f, "glBindTexture", {0x0DE1U, texture});
+    const std::array<std::byte, 64> pixels{};
+    f.memory.Write(f.output, pixels, 1U);
+    AuditGl(f, "glTexImage2D", {0x0DE1U, 0U, 0x1908U, 4U, 4U, 0U, 0x1908U, 0x1401U, f.output.Value()});
+    AuditGl(f, "glFinish");
+    const auto hook = f.boundary.FastHostCallHook();
+    std::array<std::uint32_t, 4> results{};
+    std::atomic<bool> drawn{}, finished{};
+    std::thread loader([&] {
+        const auto invoke = [&](const std::uint32_t target, const std::array<std::uint32_t, 4>& arguments) {
+            std::array<std::uint32_t, 16> registers{};
+            std::copy(arguments.begin(), arguments.end(), registers.begin());
+            ogplay::cpu::A32HostCallContext call{registers, 33U, ogplay::memory::GuestAddress{target & ~UINT32_C(1)}};
+            return hook.invoke(hook.userdata, 2U, call) == ogplay::cpu::HostCallResult::handled ? registers[0]
+                                                                                                : UINT32_MAX;
+        };
+        // Like a texture loader: GPU work, no swap and no glFlush.
+        results = {invoke(make_current, {1U, loader_surface, loader_surface, loader_context}),
+                   invoke(bind_texture, {0x0DE1U, texture}), invoke(generate_mipmap, {0x0DE1U}), invoke(get_error, {})};
+        drawn.store(true, std::memory_order_release);
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+        while (!finished.load(std::memory_order_acquire)) {
+            if (std::chrono::steady_clock::now() > deadline) {
+                MESSAGE("GPU wait is blocked by unsubmitted pbuffer work");
+                std::abort();
+            }
+            std::this_thread::yield();
+        }
+        invoke(release, {});
+    });
+    while (!drawn.load(std::memory_order_acquire))
+        std::this_thread::yield();
+    CHECK(results == std::array<std::uint32_t, 4>{1U, 0U, 0U, 0U});
+    AuditGl(f, "glClearColor", {0U, 0x3F800000U, 0U, 0x3F800000U});
+    AuditGl(f, "glClear", {0x4000U});
+    // Mapping a buffer the GPU still writes waits on the display's oldest command buffer.
+    const auto buffer = AuditName(f, "glGenBuffers");
+    AuditGl(f, "glBindBuffer", {0x88EBU, buffer});
+    AuditGl(f, "glBufferData", {0x88EBU, 4U, 0U, 0x88E1U});
+    AuditGl(f, "glReadPixels", {0U, 0U, 1U, 1U, 0x1908U, 0x1401U, 0U});
+    const ogplay::memory::GuestAddress mapped{AuditGl(f, "glMapBufferRange", {0x88EBU, 0U, 4U, 1U})};
+    REQUIRE_FALSE(mapped.IsNull());
+    CHECK(f.bus.Read32(mapped, 1U) == 0xFF00FF00U);
+    CHECK(AuditGl(f, "glUnmapBuffer", {0x88EBU}) == 1U);
+    finished.store(true, std::memory_order_release);
+    loader.join();
 }
 
 TEST_CASE("BND34 EGL share group survives reverse bind order and source deletion") {

@@ -53,7 +53,7 @@ public:
     }
     template <gles::GlesThunkId FunctionId>
     std::uint32_t Invoke(const A32CallFrame& call) {
-        std::scoped_lock execution_lock(graphics_.execution_mutex);
+        const GraphicsBoundaryContext::GlesExecutionScope execution(graphics_, call);
         graphics_.ActivateCurrentContext();
         const auto version = graphics_.api_routing.CurrentVersion(call.ThreadId());
         if (!version.has_value() || *version != 3U) {

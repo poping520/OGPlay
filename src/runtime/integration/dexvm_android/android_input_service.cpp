@@ -633,6 +633,34 @@ Decl Declare_local_InputService_Class(const Context& context) {
                                              static_cast<unsigned>(context->input_devices[i].id));
         return V::Ref(ids);
     });
+    b.VirtualMethod("hasKeys", "(II[I[Z)Z", [context](dx::IntrinsicContext& c) {
+        auto& model = c.vm.Model();
+        const auto codes = c.arguments[2].ref, flags = c.arguments[3].ref;
+        if (!codes.IsValid())
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "keyCodes must not be null."};
+        if (!flags.IsValid() || model.ArrayLength(flags) < model.ArrayLength(codes))
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                  "keyExists must not be null and must be at least as large as keyCodes."};
+        // API19 nativeHasKeys only fills arrays of equal length.
+        const auto count = model.ArrayLength(codes);
+        if (model.ArrayLength(flags) != count) return V::Int(0);
+        for (JniSize i = 0; i < count; ++i)
+            model.SetPrimitiveElement(flags, i, 0U);
+        // EventHub's virtual keyboard has a layout but an empty scan code mask, so it answers without any key.
+        // The touch panel owns this phone's HOME, BACK and MENU keys (hasNavigationBar is false).
+        const auto id = c.arguments[0].AsInt(), mask = c.arguments[1].AsInt();
+        bool answered = false;
+        for (const auto& device : context->input_devices) {
+            if ((id >= 0 && device.id != id) || (device.sources & mask & ~0xFF) == 0) continue;
+            answered = true;
+            if (device.sources != kAndroidTouchSource) continue;
+            for (JniSize i = 0; i < count; ++i) {
+                const auto code = static_cast<std::int32_t>(model.GetPrimitiveElement(codes, i));
+                if (code == 3 || code == 4 || code == 82) model.SetPrimitiveElement(flags, i, 1U);
+            }
+        }
+        return V::Int(answered ? 1 : 0);
+    });
     b.VirtualMethod("registerInputDevicesChangedListener", "(Landroid/hardware/input/IInputDevicesChangedListener;)V",
                     [](dx::IntrinsicContext&) { return V::Void(); });
     RejectUnsupportedServiceMethod(b, "android.hardware.input.IInputManager", "addKeyboardLayoutForInputDevice",
@@ -647,7 +675,6 @@ Decl Declare_local_InputService_Class(const Context& context) {
                                    "()[Landroid/hardware/input/KeyboardLayout;");
     RejectUnsupportedServiceMethod(b, "android.hardware.input.IInputManager", "getKeyboardLayoutsForInputDevice",
                                    "(Ljava/lang/String;)[Ljava/lang/String;");
-    RejectUnsupportedServiceMethod(b, "android.hardware.input.IInputManager", "hasKeys", "(II[I[Z)Z");
     RejectUnsupportedServiceMethod(b, "android.hardware.input.IInputManager", "injectInputEvent",
                                    "(Landroid/view/InputEvent;I)Z");
     RejectUnsupportedServiceMethod(b, "android.hardware.input.IInputManager", "removeKeyboardLayoutForInputDevice",

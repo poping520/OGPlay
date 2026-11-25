@@ -287,6 +287,10 @@ TEST_CASE("Google Play market links resolve and launch without changing the Acti
         }
     }
     x.f.context->google_play = true;
+    // The user leaves the store without a result.
     const auto for_result = start(7);
-    CHECK(for_result.exception_class == x.f.linker.ResolveDescriptor("Ljava/lang/UnsupportedOperationException;"));
+    CHECK_FALSE(for_result.exception.IsValid());
+    CHECK(x.Top() == caller);
+    REQUIRE(x.trace->calls.size() == calls.size() + 1U);
+    CHECK(x.trace->calls.back() == "scheduleSendResult");
 }

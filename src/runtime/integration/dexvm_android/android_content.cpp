@@ -102,11 +102,6 @@ ResolveAndroidActivity(dx::IntrinsicContext& call, const Context& context, const
     if (IsGooglePlayStoreIntent(call.vm, intent, true)) {
         if (!context->google_play)
             throw dx::VmJavaThrow{"Landroid/content/ActivityNotFoundException;", "Play Store is not installed"};
-        if (request_code >= 0) {
-            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_result", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  "external Activity results are unavailable"};
-        }
         const auto data = CallAndroidMethod(call.vm, intent, "getData", "()Landroid/net/Uri;").ref;
         const auto data_root = call.vm.ProtectReferences(std::array{data});
         const auto host_ref = CallAndroidMethod(call.vm, data, "getHost", "()Ljava/lang/String;").ref;
@@ -1154,10 +1149,11 @@ std::int32_t GooglePlaySystemPackageEnabledSetting(dx::IntrinsicContext& call) {
     return PackageIntConstant(call, kPackageManager, "COMPONENT_ENABLED_STATE_DISABLED_USER");
 }
 
-void CheckGooglePlaySystemPackageFlags(dx::IntrinsicContext& call, std::int32_t raw_flags, std::int32_t mask,
-                                       std::string_view method) {
+void CheckGooglePlaySystemPackageFlags(dx::IntrinsicContext& call, const GooglePlaySystemPackage& package,
+                                       std::int32_t raw_flags, std::int32_t mask, std::string_view method) {
     const auto effective = raw_flags & mask;
-    const auto allowed = PackageIntConstant(call, kPackageManager, "GET_DISABLED_COMPONENTS") |
+    const auto allowed = (package.signing_certificate.empty() ? 0 : kGetSignatures) |
+                         PackageIntConstant(call, kPackageManager, "GET_DISABLED_COMPONENTS") |
                          PackageIntConstant(call, kPackageManager, "GET_UNINSTALLED_PACKAGES") |
                          PackageIntConstant(call, kPackageManager, "GET_DISABLED_UNTIL_USED_COMPONENTS") |
                          PackageIntConstant(call, kPackageManager, "GET_INTENT_FILTERS") |
@@ -1592,6 +1588,17 @@ dx::VmObjectRef MakePackageGids(dx::IntrinsicContext& call, const Context& conte
     return result;
 }
 
+template <typename Certificates>
+dx::VmObjectRef MakeSignatureArray(dx::IntrinsicContext& call, const Certificates& certificates) {
+    return MakeInfoArray(call, "[Landroid/content/pm/Signature;", certificates, [&](const auto& der) {
+        const auto bytes = call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[B"),
+                                                             JniPrimitiveKind::byte, static_cast<JniSize>(der.size()));
+        const auto root = call.vm.ProtectReferences(std::array{bytes});
+        call.vm.Model().WriteByteRegion(bytes, 0, der);
+        return NewPlatformObject(call.vm, "Landroid/content/pm/Signature;", "([B)V", {dx::VmValue::Ref(bytes)});
+    });
+}
+
 dx::VmObjectRef MakePackageSignatures(dx::IntrinsicContext& call, const Context& context, std::string_view method) {
     std::call_once(context->package_signatures_once, [&] {
         try {
@@ -1605,13 +1612,7 @@ dx::VmObjectRef MakePackageSignatures(dx::IntrinsicContext& call, const Context&
         UnsupportedPackageQuery(call, "dexvm.package_signatures",
                                 std::string(method) + ": GET_SIGNATURES: " + context->package_signature_error);
 
-    return MakeInfoArray(call, "[Landroid/content/pm/Signature;", context->package_signatures, [&](const auto& der) {
-        const auto bytes = call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[B"),
-                                                             JniPrimitiveKind::byte, static_cast<JniSize>(der.size()));
-        const auto root = call.vm.ProtectReferences(std::array{bytes});
-        call.vm.Model().WriteByteRegion(bytes, 0, der);
-        return NewPlatformObject(call.vm, "Landroid/content/pm/Signature;", "([B)V", {dx::VmValue::Ref(bytes)});
-    });
+    return MakeSignatureArray(call, context->package_signatures);
 }
 
 dx::VmObjectRef MakeGooglePlaySystemApplicationInfo(dx::IntrinsicContext& call,
@@ -1636,7 +1637,8 @@ dx::VmObjectRef MakeGooglePlaySystemApplicationInfo(dx::IntrinsicContext& call,
     return info;
 }
 
-dx::VmObjectRef MakeGooglePlaySystemPackageInfo(dx::IntrinsicContext& call, const GooglePlaySystemPackage& package) {
+dx::VmObjectRef MakeGooglePlaySystemPackageInfo(dx::IntrinsicContext& call, const GooglePlaySystemPackage& package,
+                                                std::int32_t flags) {
     // The install and update times default to zero, as in the current APK projection.
     const auto info = NewQueryObject(call, "Landroid/content/pm/PackageInfo;");
     const auto root = call.vm.ProtectReferences(std::array{info});
@@ -1646,6 +1648,9 @@ dx::VmObjectRef MakeGooglePlaySystemPackageInfo(dx::IntrinsicContext& call, cons
     if (!package.shared_user_id.empty())
         SetRef(call, info, "sharedUserId", "Ljava/lang/String;", call.vm.NewStringUtf8(package.shared_user_id));
     SetRef(call, info, "applicationInfo", kApplicationInfo, MakeGooglePlaySystemApplicationInfo(call, package));
+    if (flags & kGetSignatures)
+        SetRef(call, info, "signatures", "[Landroid/content/pm/Signature;",
+               MakeSignatureArray(call, std::array{std::as_bytes(package.signing_certificate)}));
     return info;
 }
 
@@ -1797,7 +1802,7 @@ dx::VmValue InstalledApplications(dx::IntrinsicContext& call, const Context& con
     static_cast<void>(
         CallAndroidMethod(call.vm, list, "add", "(Ljava/lang/Object;)Z", {dx::VmValue::Ref(application)}));
     for (const auto& package : GooglePlaySystemPackages(context)) {
-        CheckGooglePlaySystemPackageFlags(call, flags, kApplicationFlags, "getInstalledApplications");
+        CheckGooglePlaySystemPackageFlags(call, package, flags, kApplicationFlags, "getInstalledApplications");
         const auto info = MakeGooglePlaySystemApplicationInfo(call, package);
         const auto root = call.vm.ProtectReferences(std::array{info});
         static_cast<void>(CallAndroidMethod(call.vm, list, "add", "(Ljava/lang/Object;)Z", {dx::VmValue::Ref(info)}));
@@ -2182,8 +2187,10 @@ Decl Declare_local_PackageService_Class(const Context& context) {
             const auto package = RequiredString(call, 0U, "packageName");
             if (package != context->package_name) {
                 if (const auto* system_package = FindGooglePlaySystemPackage(context, package)) {
-                    CheckGooglePlaySystemPackageFlags(call, call.arguments[1].AsInt(), kPackageFlags, "getPackageInfo");
-                    return dx::VmValue::Ref(MakeGooglePlaySystemPackageInfo(call, *system_package));
+                    CheckGooglePlaySystemPackageFlags(call, *system_package, call.arguments[1].AsInt(), kPackageFlags,
+                                                      "getPackageInfo");
+                    return dx::VmValue::Ref(
+                        MakeGooglePlaySystemPackageInfo(call, *system_package, call.arguments[1].AsInt()));
                 }
                 return dx::VmValue::Ref(dx::VmObjectRef{});
             }
@@ -2204,8 +2211,8 @@ Decl Declare_local_PackageService_Class(const Context& context) {
             const auto package = RequiredString(call, 0U, "packageName");
             if (package != context->package_name) {
                 if (const auto* system_package = FindGooglePlaySystemPackage(context, package)) {
-                    CheckGooglePlaySystemPackageFlags(call, call.arguments[1].AsInt(), kApplicationFlags,
-                                                      "getApplicationInfo");
+                    CheckGooglePlaySystemPackageFlags(call, *system_package, call.arguments[1].AsInt(),
+                                                      kApplicationFlags, "getApplicationInfo");
                     return dx::VmValue::Ref(MakeGooglePlaySystemApplicationInfo(call, *system_package));
                 }
                 return dx::VmValue::Ref(dx::VmObjectRef{});
@@ -2278,8 +2285,8 @@ Decl Declare_local_PackageService_Class(const Context& context) {
             const auto list = MakeComponentQueryList(call, info);
             const auto list_root = call.vm.ProtectReferences(std::array{list.ref});
             for (const auto& package : GooglePlaySystemPackages(context)) {
-                CheckGooglePlaySystemPackageFlags(call, flags, kPackageFlags, "getInstalledPackages");
-                const auto system_info = MakeGooglePlaySystemPackageInfo(call, package);
+                CheckGooglePlaySystemPackageFlags(call, package, flags, kPackageFlags, "getInstalledPackages");
+                const auto system_info = MakeGooglePlaySystemPackageInfo(call, package, flags);
                 const auto root = call.vm.ProtectReferences(std::array{system_info});
                 static_cast<void>(CallAndroidMethod(call.vm, list.ref, "add", "(Ljava/lang/Object;)Z",
                                                     {dx::VmValue::Ref(system_info)}));

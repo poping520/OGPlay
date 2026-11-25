@@ -392,6 +392,12 @@ void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context)
                     throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Activity command budget exhausted"};
                 s.pending.push_back(*cmd);
                 Drain(c.vm, context);
+            } else if (c.arguments[6].AsInt() >= 0) {
+                // The ignored store launch behaves like the user leaving the store at once.
+                Record store;
+                store.caller = c.arguments[4].ref;
+                store.request = c.arguments[6].AsInt();
+                Result(c.vm, s, store);
             }
             return V::Int(0);
         });

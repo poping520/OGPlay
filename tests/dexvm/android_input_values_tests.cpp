@@ -95,6 +95,25 @@ TEST_CASE("InputDevice queries use BootDex values and the process input director
         const auto invalid = fixture.OnOutcome(keyboard, "hasKeys", "([I)[Z", {VmValue::Ref(VmObjectRef{})});
         REQUIRE(invalid.exception.IsValid());
         CHECK(fixture.linker.Class(invalid.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        // A phone without a gamepad only has its touch panel's HOME, BACK and MENU keys.
+        const std::array<std::pair<int, bool>, 6> keys{
+            {{3, true}, {4, true}, {82, true}, {19, false}, {29, false}, {96, false}}};
+        const auto codes = fixture.model.NewPrimitiveArray(fixture.linker.ResolveDescriptor("[I"),
+                                                           JniPrimitiveKind::integer, keys.size());
+        const auto codes_root = fixture.vm.ProtectReferences(std::array{codes, keyboard});
+        for (std::size_t i = 0; i < keys.size(); ++i) {
+            fixture.model.SetPrimitiveElement(codes, static_cast<JniSize>(i), static_cast<unsigned>(keys[i].first));
+            CHECK(
+                (fixture.Static("Landroid/view/KeyCharacterMap;", "deviceHasKey", "(I)Z", {VmValue::Int(keys[i].first)})
+                     .AsInt() != 0) == keys[i].second);
+        }
+        // API19 reads a negative device id as every device, so the virtual keyboard answers like the phone.
+        for (const auto owner : {touch, keyboard}) {
+            const auto has = fixture.On(owner, "hasKeys", "([I)[Z", {VmValue::Ref(codes)}).ref;
+            REQUIRE(fixture.model.ArrayLength(has) == static_cast<JniSize>(keys.size()));
+            for (std::size_t i = 0; i < keys.size(); ++i)
+                CHECK((fixture.model.GetPrimitiveElement(has, static_cast<JniSize>(i)) != 0U) == keys[i].second);
+        }
         const auto event = android_intrinsics::MakeInputEvent(
             fixture.vm, fixture.context,
             NormalizeAndroidInput(

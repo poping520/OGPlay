@@ -61,6 +61,8 @@ public:
     void RetireGuestGraphics() noexcept;
     [[nodiscard]] gles::AngleFrame* CurrentFrameForHostThread(std::thread::id host_thread,
                                                               std::string_view operation = {});
+    // A context bound to a pbuffer beside another guest context never reaches a swap that submits its work.
+    [[nodiscard]] gles::AngleFrame* UnswappedFrameForHostThread(std::thread::id host_thread);
     void ActivateStateForHostThread(std::thread::id host_thread);
     [[nodiscard]] std::string QueryStringValue(std::uint32_t name);
     void LatchError(std::uint64_t thread_id, std::uint32_t error);
@@ -164,6 +166,7 @@ private:
     [[nodiscard]] std::uint32_t PublishQueryString(std::uint32_t name, std::uint64_t thread_id);
     [[nodiscard]] std::uint32_t ResolveProcAddress(GuestCString name, std::uint64_t thread_id) const;
     void CollectRetiredObjectsLocked();
+    void UpdateUnswappedLocked();
     void SaveActiveStateLocked();
     void RestoreStateLocked(std::uint32_t handle);
     [[nodiscard]] bool IsConfig(std::uint32_t handle);
@@ -188,6 +191,7 @@ private:
     std::uint32_t next_context_{4U};
     std::uint32_t active_shadow_context_{};
     std::atomic<bool> guest_graphics_retired_{false};
+    std::atomic<bool> has_unswapped_context_{false};
 };
 
 }  // namespace ogplay::runtime

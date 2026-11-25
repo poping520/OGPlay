@@ -75,6 +75,7 @@ struct GooglePlaySystemPackage final {
     std::int32_t target_sdk_version;
     std::string_view source_dir;
     bool enabled;
+    std::span<const std::uint8_t> signing_certificate{};  // Public DER; empty rejects GET_SIGNATURES.
 };
 
 struct GooglePlayService final {

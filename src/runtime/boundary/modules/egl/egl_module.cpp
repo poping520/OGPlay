@@ -279,6 +279,19 @@ gles::AngleFrame* EglModule::CurrentFrameForHostThread(const std::thread::id hos
     return nullptr;
 }
 
+gles::AngleFrame* EglModule::UnswappedFrameForHostThread(const std::thread::id host_thread) {
+    if (!has_unswapped_context_.load(std::memory_order_acquire)) return nullptr;
+    std::scoped_lock lock(mutex_);
+    for (auto& [handle, context] : contexts_) {
+        static_cast<void>(handle);
+        if (context.current_host_thread != host_thread) continue;
+        const auto surface = surfaces_.find(context.current_draw_surface);
+        return surface != surfaces_.end() && surface->second.kind == SurfaceKind::pbuffer ? context.frame.get()
+                                                                                          : nullptr;
+    }
+    return nullptr;
+}
+
 void EglModule::SaveActiveStateLocked() {
     const auto old = contexts_.find(active_shadow_context_);
     if (old == contexts_.end()) return;
@@ -373,6 +386,15 @@ void EglModule::CollectRetiredObjectsLocked() {
         if (!alive && context_.graphics.retire_share_group != nullptr)
             context_.graphics.retire_share_group(context_.graphics.owner, group);
     }
+    UpdateUnswappedLocked();
+}
+
+void EglModule::UpdateUnswappedLocked() {
+    const auto unswapped = contexts_.size() > 1U && std::ranges::any_of(contexts_, [&](const auto& entry) {
+                               const auto surface = surfaces_.find(entry.second.current_draw_surface);
+                               return surface != surfaces_.end() && surface->second.kind == SurfaceKind::pbuffer;
+                           });
+    has_unswapped_context_.store(unswapped, std::memory_order_release);
 }
 
 std::uint32_t EglModule::PublishQueryString(const std::uint32_t name, const std::uint64_t thread_id) {
@@ -724,6 +746,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             return 0U;
         }
         contexts_.emplace(handle, std::move(state));
+        UpdateUnswappedLocked();
         return handle;
     }
     if constexpr (FunctionId == 6U) {

@@ -116,12 +116,14 @@ GET_SIGNATURES 从 package_resource_path 对应的封存 APK 字节惰性提取�
 
 Google Play 系统包的元数据查询接受空有效位和 GET_DISABLED_COMPONENTS、GET_UNINSTALLED_PACKAGES、
 GET_DISABLED_UNTIL_USED_COMPONENTS、GET_INTENT_FILTERS、GET_META_DATA 范围内的有效位；启用状态取系统包表。
+表中登记了公开签名证书的包另接受 GET_SIGNATURES。
 系统包表未声明应用级 meta-data，ApplicationInfo.metaData 为 null。
 其他有效位按 `dexvm.disabled_system_packages` 记账并抛出 UnsupportedOperationException。
 getApplicationEnabledSetting 对 vending 返回 DEFAULT、对 gsf 返回 DISABLED_USER；getPackageUid 返回预留的应用 UID，isPackageAvailable 返回 true。
 这些查询限 user 0，跨用户查询及 setApplicationEnabledSetting 抛出 SecurityException。
 getPackagesForUid、getNameForUid 和 checkSignatures 的事实范围仍为当前 APK。
-系统包的 APK 与数据路径仅作元数据发布，GET_SIGNATURES 明确失败，不伪造 Google 证书。
+系统包的 APK 与数据路径仅作元数据发布。vending 的 GET_SIGNATURES 返回 Google 商店的真实公开证书，
+Play 服务客户端据此继续查询缺席的 GMS；gsf 未登记证书，GET_SIGNATURES 明确失败。不伪造证书。
 
 显式查询优先使用 Intent 的 component，其次取 selector 的 component；按对应组件 getter 投影，
 MATCH_DEFAULT_ONLY 和 GET_RESOLVED_FILTER 在显式路径无效果。命中时 ResolveInfo 仅填对应组件；
@@ -198,14 +200,14 @@ Google Services Framework（`com.google.android.gsf`）只在 `google_play` 开�
 | com.google.android.gsf | 已安装、用户停用 | 不存在，单包查询 NameNotFound |
 | com.google.android.gms | 不存在，GooglePlayServicesUtil 得到 SERVICE_MISSING；不实现 GMS Binder（Play 游戏、广告 ID、GCM via GMS、定位） | 同左 |
 | LVL / IAB v3 / IAB v2 | queryIntentServices/resolveService 发布 vending 已声明服务，绑定本地失败响应服务 | 查询为空、绑定失败，LVL 客户端走 RETRY |
-| market: VIEW | 解析为 exported/enabled 的 LaunchUrlHandlerActivity（DEFAULT/BROWSABLE）；启动记录 kind=play_store、scheme/host 后静默成功，不切换 Activity；for-result 记账拒绝 | 解析为空，启动抛 ActivityNotFoundException |
+| market: VIEW | 解析为 exported/enabled 的 LaunchUrlHandlerActivity（DEFAULT/BROWSABLE）；启动记录 kind=play_store、scheme/host 后静默成功，不切换 Activity；for-result 随即回送 RESULT_CANCELED | 解析为空，启动抛 ActivityNotFoundException |
 | Google 账户 / 安装来源 | 零账户 / 当前 APK 的 installer 为 null | 同左 |
 
 商店的三个 exported/enabled 服务组件为 LicensingService、InAppBillingService 和 MarketBillingService，
 action 分别为 com.android.vending.licensing.ILicensingService、com.android.vending.billing.InAppBillingService.BIND、
 com.android.vending.billing.MarketBillingService.BIND。隐式服务 Intent 不含 data/type/category/selector；
 服务过滤器无 DEFAULT，MATCH_DEFAULT_ONLY 隐式查询为空。商店链接的 http(s) 及其他 data Intent 既有行为不变。
-无真实授权、购买、推送或 Google 证书。
+无真实授权、购买或推送。
 
 本包启用的同进程 provider 由 ROM ActivityThread 按 initOrder 安装，AMS 按 authority 登记。
 本地 IContentService 按 authority 与路径匹配观察者，使用 ROM ContentObserver transport 分发。
@@ -274,6 +276,8 @@ ROM Surface 和 SurfaceControl 的 native 使用分型句柄。Skia 软件 Canva
 和窗口 alpha；满足条件的全屏不透明图层可直接借用像素。SurfaceView、GLSurfaceView、NativeActivity
 与 MediaPlayer 经同一窗口标识发布生产端图层。View 树和输入分发在 ROM 内，合成器仅读图层快照。
 
+IInputManager.hasKeys 按会话的逻辑设备回答：触屏拥有 HOME、BACK、MENU 键（与 hasNavigationBar 为 false 一致），
+虚拟键盘按 EventHub 语义没有扫描码，不报告任何按键。
 WMS 分发触摸 DOWN 并锁定手势目标，按窗口 flags 交付 OUTSIDE，按键交给焦点窗口。InputEventReceiver
 消费排队的事件和批次，MotionEvent 与 NDK AInputQueue 共用输入样本；mNativePtr 指向的不可变快照供
 NDK getter 跨线程读取，修改时发布新快照。IMMS 使用活跃 IInputContext

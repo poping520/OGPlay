@@ -1,4 +1,5 @@
 #include "catalog.h"
+#include "google_play_certificate.h"
 
 #include <array>
 #include <algorithm>
@@ -16,7 +17,8 @@ constexpr auto kPlayLicensingResponse = "Lorg/ogplay/framework/LocalPlayLicensin
 constexpr GooglePlaySystemPackage kSystemPackages[]{
     {"com.google.android.gsf", 10001, 19, "4.4.4", "com.google.uid.shared", 19,
      "/system/app/GoogleServicesFramework.apk", false},
-    {kPlayStorePackage, 10002, 80290013, "4.9.13", "", 19, "/system/priv-app/Phonesky.apk", true},
+    {kPlayStorePackage, 10002, 80290013, "4.9.13", "", 19, "/system/priv-app/Phonesky.apk", true,
+     kGooglePlayStoreCertificate},
 };
 constexpr GooglePlayService kServices[]{
     {"com.android.vending.licensing.LicensingService", "com.android.vending.licensing.ILicensingService",

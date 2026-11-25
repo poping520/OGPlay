@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-11-23。
+更新：2026-11-25。
 
 本文件是项目当前状态的快照：只写“现在怎样”，不写过程。修改时覆盖对应行，不追加流水；
 跨会话在办事项写入任务单，完成后的过程、验证明细及证据留在提交说明中。能力见 [capabilities.toml](../../capabilities.toml)，
@@ -23,6 +23,7 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
 | --- | --- | --- | --- | --- |
 | My Boy! 1.8.0 | macOS | 浏览器、240p 菜单/短音、hello、设置/文本/存档/横竖屏；basic 场景三轮通过 | ARM 自动核心 test 225、SRAM test 004 与同 APK API25 真机一致；并发下偶发半帧；长时音频未验 | P4-myboy |
 | Island Castaway 1.3 / 1.5（72） | macOS | 1.3 的 CG 带字幕，PLAY 进入第一关，菜单与第一关音效已验证非零 PCM。1.5 在同一新沙盒连续三次各约 60 秒，呈现 4,262 / 4,350 / 4,352 帧，SIGTERM 均退出 0 | 1.5 的 JNI 上下文错误与沙盒墓碑冲突均未重现，未触发下一阻断首错。旧损坏沙盒需手动恢复，交互待验。1.3 既有 OpenSL、SurfaceView 闪烁、磁盘空间弹窗及 `runFinalizersOnExit` 修复待外验 | BND-56、SBX-16 |
+| Island Castaway 2 1.2 | macOS | 触摸即崩溃已修（NDK getter 读取 Java MotionEvent.mNativePtr）；原 APK 临时沙盒建档并进入第 1 章开场对白，对白可轻点继续，呈现 3,272 帧，SIGTERM 退出 0 | 本次未见新的阻断错误；游戏内操作、声音与长时待验 | — |
 | TML 1.0 | macOS | 标题；三点击 survey 零命中；基础场景退出 0 | 正式交互/稳定性待验 | LUI-18、DVM-257 |
 | Lili 1.06 | macOS | 两段开场影片、CONTINUE 存档菜单，纹理正常 | 音频、按钮退出未验收 | DVM-247..249、BND-54 |
 | Wild Blood 1.0.4 | Win / macOS | 中文菜单/教学；macOS 安装器 Large ProgressBar 已封存，原命令 120 秒 5550 帧退出 0 | 进关 MyVideoView 的 setText(NORMAL) 崩溃已修（DVM-372），手测正常；GAThread `ContentValues$1.<init>` 未实现；CG/Win 待验 | DVM-257、DVM-372 |

@@ -159,16 +159,29 @@ AndroidModule::InputQueueState& AndroidModule::InputQueue(std::uint32_t handle) 
     return managed_activity_seen_ ? Queue(handle).input : standalone_input_;
 }
 
-const AndroidBoundaryInput& AndroidModule::InputEvent(memory::GuestAddress handle) const {
-    if (!managed_activity_seen_) {
-        const auto found = standalone_input_.inflight.find(handle.Value());
-        if (found != standalone_input_.inflight.end()) return found->second.event;
+void AndroidModule::SetMotionEventLookup(AndroidMotionEventLookup lookup) {
+    std::scoped_lock lock(mutex_);
+    motion_event_lookup_ = std::move(lookup);
+}
+
+std::shared_ptr<const AndroidBoundaryInput> AndroidModule::InputEvent(memory::GuestAddress handle) const {
+    AndroidMotionEventLookup lookup;
+    {
+        std::scoped_lock lock(mutex_);
+        if (!managed_activity_seen_) {
+            const auto found = standalone_input_.inflight.find(handle.Value());
+            if (found != standalone_input_.inflight.end()) return found->second.event;
+        }
+        for (const auto& [_, resource] : resources_) {
+            if (!resource.input_active) continue;
+            const auto found = resource.input.inflight.find(handle.Value());
+            if (found != resource.input.inflight.end()) return found->second.event;
+        }
+        lookup = motion_event_lookup_;
     }
-    for (const auto& [_, resource] : resources_) {
-        if (!resource.input_active) continue;
-        const auto found = resource.input.inflight.find(handle.Value());
-        if (found != resource.input.inflight.end()) return found->second.event;
-    }
+    // API 19 MotionEvent.mNativePtr is itself an AInputEvent*.
+    if (lookup)
+        if (auto event = lookup(handle)) return event;
     throw std::invalid_argument("AInputEvent is stale or unregistered");
 }
 
@@ -188,7 +201,7 @@ void AndroidModule::PushInput(const AndroidBoundaryInput& input) {
         }
         if (target->pending.size() + target->inflight.size() >= 4096)
             throw std::runtime_error("input queue event budget exhausted");
-        target->pending.push_back({std::move(snapshot), {}});
+        target->pending.push_back({std::make_shared<const AndroidBoundaryInput>(std::move(snapshot)), {}});
     }
     ready_.notify_all();
 }
@@ -201,7 +214,8 @@ void AndroidModule::PushQueueInput(memory::GuestAddress queue, const AndroidBoun
         auto& target = Queue(queue.Value()).input;
         if (target.pending.size() + target.inflight.size() >= 4096)
             throw std::runtime_error("input queue event budget exhausted");
-        target.pending.push_back({std::move(snapshot), std::move(finish)});
+        target.pending.push_back(
+            {std::make_shared<const AndroidBoundaryInput>(std::move(snapshot)), std::move(finish)});
     }
     ready_.notify_all();
 }

@@ -220,6 +220,10 @@ public:
 
     void SetSurfaceHooks(AndroidSurfaceHooks hooks) { android_module_.SetSurfaceHooks(hooks); }
 
+    void SetMotionEventLookup(AndroidMotionEventLookup lookup) {
+        android_module_.SetMotionEventLookup(std::move(lookup));
+    }
+
     memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface) {
         return android_module_.AcquireSurfaceWindow(surface);
     }
@@ -1311,6 +1315,10 @@ void AndroidBoundaryHle::SetBitmapHooks(AndroidBitmapHooks hooks) {
 
 void AndroidBoundaryHle::SetSurfaceHooks(AndroidSurfaceHooks hooks) {
     impl_->SetSurfaceHooks(hooks);
+}
+
+void AndroidBoundaryHle::SetMotionEventLookup(AndroidMotionEventLookup lookup) {
+    impl_->SetMotionEventLookup(std::move(lookup));
 }
 
 memory::GuestAddress AndroidBoundaryHle::AcquireSurfaceWindow(const AndroidSurfaceWindow& surface) {

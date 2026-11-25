@@ -162,6 +162,11 @@ struct AndroidLooperHooks final {
     std::function<void(std::int32_t, bool)> signal_pipe{};
 };
 
+// Immutable snapshot of the Java MotionEvent that owns this mNativePtr, or null.
+// Callable from any guest thread without the VM lock.
+using AndroidMotionEventLookup =
+    std::function<std::shared_ptr<const AndroidBoundaryInput>(memory::GuestAddress native_ptr)>;
+
 struct AndroidObbHooks final {
     void* owner{};
     // Reads up to output.size() bytes from the end of one guest file, in file order.
@@ -201,6 +206,7 @@ public:
     void MapThunks();
     void SetBitmapHooks(AndroidBitmapHooks hooks);
     void SetSurfaceHooks(AndroidSurfaceHooks hooks);
+    void SetMotionEventLookup(AndroidMotionEventLookup lookup);
     void RetireSurfaceWindow(memory::GuestAddress identity);
     memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface);
     void UpdateSurfaceWindow(const AndroidSurfaceWindow& surface);

@@ -277,6 +277,7 @@ public:
     void SetBitmapHooks(AndroidBitmapHooks hooks);
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks);
     void SetSurfaceHooks(AndroidSurfaceHooks hooks);
+    void SetMotionEventLookup(AndroidMotionEventLookup lookup);
     void RetireSurfaceWindow(memory::GuestAddress identity);
     memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface);
     void UpdateSurfaceWindow(const AndroidSurfaceWindow& surface);

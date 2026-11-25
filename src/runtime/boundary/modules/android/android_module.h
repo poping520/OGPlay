@@ -55,6 +55,7 @@ public:
     void DisconnectEglWindow(memory::GuestAddress window, const AndroidSurfaceWindow& geometry);
     bool PublishSurfacePixels(memory::GuestAddress window, const AndroidSurfaceWindow& expected,
                               std::shared_ptr<video::VideoFrame> pixels);
+    void SetMotionEventLookup(AndroidMotionEventLookup lookup);
     void PushInput(const AndroidBoundaryInput& input);
     void PushQueueInput(memory::GuestAddress queue, const AndroidBoundaryInput& input,
                         std::function<void(bool)> finish);
@@ -114,7 +115,7 @@ private:
 
     struct InputQueueState {
         struct Entry {
-            AndroidBoundaryInput event;
+            std::shared_ptr<const AndroidBoundaryInput> event;
             std::function<void(bool)> finish{};
         };
 
@@ -125,9 +126,10 @@ private:
     };
 
     InputQueueState& InputQueue(std::uint32_t handle);
-    const AndroidBoundaryInput& InputEvent(memory::GuestAddress handle) const;
-    const AndroidBoundaryInput& KeyEvent(const A32CallFrame& call) const;
-    const AndroidBoundaryInput& MotionEvent(const A32CallFrame& call) const;
+    // Takes mutex_; callers must not hold it.
+    std::shared_ptr<const AndroidBoundaryInput> InputEvent(memory::GuestAddress handle) const;
+    std::shared_ptr<const AndroidBoundaryInput> KeyEvent(const A32CallFrame& call) const;
+    std::shared_ptr<const AndroidBoundaryInput> MotionEvent(const A32CallFrame& call) const;
     BoundaryResult ReadMotionAxis(const A32CallFrame& call, std::uint32_t axis, bool raw);
     BoundaryResult ReadHistoricalMotionAxis(const A32CallFrame& call, std::uint32_t axis, bool raw);
 
@@ -257,8 +259,9 @@ private:
     void BuildSensorList(std::uint64_t thread);
     SensorQueue& RequireSensorQueue(std::uint32_t key, std::uint64_t thread);
     [[noreturn]] void SensorFailure(std::string_view message, std::uint64_t thread);
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::condition_variable ready_;
+    AndroidMotionEventLookup motion_event_lookup_;
     InputQueueState standalone_input_;
     memory::GuestAddress next_input_{guest_layout::kInputHandleBegin};
 };

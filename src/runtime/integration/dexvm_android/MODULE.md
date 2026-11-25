@@ -275,7 +275,8 @@ ROM Surface 和 SurfaceControl 的 native 使用分型句柄。Skia 软件 Canva
 与 MediaPlayer 经同一窗口标识发布生产端图层。View 树和输入分发在 ROM 内，合成器仅读图层快照。
 
 WMS 分发触摸 DOWN 并锁定手势目标，按窗口 flags 交付 OUTSIDE，按键交给焦点窗口。InputEventReceiver
-消费排队的事件和批次，MotionEvent 与 NDK AInputQueue 共用输入样本。IMMS 使用活跃 IInputContext
+消费排队的事件和批次，MotionEvent 与 NDK AInputQueue 共用输入样本；mNativePtr 指向的不可变快照供
+NDK getter 跨线程读取，修改时发布新快照。IMMS 使用活跃 IInputContext
 提交 SDL 文本与 composing，通知前端开启和关闭文本输入。Toast 经本地 INotificationManager 排队，
 调用 ROM ITransientNotification.show/hide，LENGTH_SHORT 为 2000 ms，LENGTH_LONG 为 3500 ms。
 

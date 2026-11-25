@@ -462,6 +462,56 @@ TEST_CASE("BND46 input snapshots expose API19 axes history and wide time on both
     CHECK_THROWS(scalar("AInputEvent_getType"));
 }
 
+TEST_CASE("BND46 NDK getters resolve a Java MotionEvent native pointer") {
+    using namespace ogplay;
+    BoundaryFixture f;
+    runtime::AndroidBoundaryInput input;
+    input.type = runtime::AndroidBoundaryInputType::pointer_motion;
+    input.action = 2;
+    input.source = 0x1002;
+    input.event_time_ns = 0x200000001LL;
+    input.x_offset = 11;
+    runtime::AndroidInputPointer pointer;
+    pointer.id = 3;
+    pointer.axes[0] = 20;
+    input.pointers = {pointer};
+    pointer.axes[0] = 90;
+    input.history = {{1, {pointer}}};
+    constexpr std::uint32_t native_ptr = 0xb;
+    const auto call = [&](const char* name, auto... arguments) {
+        return f.Call("libandroid.so", name, {native_ptr, arguments...});
+    };
+    CHECK_THROWS(call("AMotionEvent_getAction"));
+
+    auto java_event = std::make_shared<const runtime::AndroidBoundaryInput>(input);
+    f.boundary.SetMotionEventLookup(
+        [&](memory::GuestAddress address) { return address.Value() == native_ptr ? java_event : nullptr; });
+    CHECK(call("AInputEvent_getType") == 2);
+    CHECK(call("AInputEvent_getSource") == 0x1002);
+    CHECK(call("AMotionEvent_getAction") == 2);
+    CHECK(call("AMotionEvent_getPointerCount") == 1);
+    CHECK(call("AMotionEvent_getPointerId", 0U) == 3);
+    CHECK(std::bit_cast<float>(call("AMotionEvent_getX", 0U)) == 31.0F);
+    CHECK(std::bit_cast<float>(call("AMotionEvent_getAxisValue", 0U, 0U)) == 31.0F);
+    CHECK(call("AMotionEvent_getHistorySize") == 1);
+    CHECK(std::bit_cast<float>(call("AMotionEvent_getHistoricalX", 0U, 0U)) == 101.0F);
+    CHECK(call("AMotionEvent_getEventTime") == 1);
+    CHECK(f.cpu.GetState().Register(cpu::CoreRegister::r1) == 2);
+    CHECK_THROWS(call("AKeyEvent_getAction"));
+    CHECK_THROWS(f.Call("libandroid.so", "AMotionEvent_getAction", {native_ptr + 1}));
+
+    // The queue path keeps its own identities and the Java event is never an inflight entry.
+    input.action = 0;
+    f.boundary.PushInput(input);
+    REQUIRE(f.Call("libandroid.so", "AInputQueue_getEvent", {2, f.output.Value()}) == 0);
+    CHECK(f.Call("libandroid.so", "AMotionEvent_getAction", {f.bus.Read32(f.output)}) == 0);
+    CHECK(call("AMotionEvent_getAction") == 2);
+    CHECK_THROWS(f.Call("libandroid.so", "AInputQueue_finishEvent", {2, native_ptr, 1}));
+
+    f.boundary.SetMotionEventLookup({});
+    CHECK_THROWS(call("AMotionEvent_getAction"));
+}
+
 TEST_CASE("BND46 input queues preserve inflight events and failed reads") {
     using namespace ogplay;
     BoundaryFixture f;

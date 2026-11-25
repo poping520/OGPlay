@@ -9,12 +9,17 @@ using Ref = dx::VmObjectRef;
 constexpr auto native = dx::kAccPrivate | dx::kAccStatic | dx::kAccNative;
 constexpr auto motion_class = "Landroid/view/MotionEvent;";
 
-AndroidBoundaryInput& Motion(const Context& context, int token) {
-    auto& motions = RomInput(context).motions;
-    const auto found = motions.find(token);
-    if (found == motions.end())
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "invalid MotionEvent native handle"};
-    return found->second;
+std::shared_ptr<const AndroidBoundaryInput> Motion(const Context& context, int token) {
+    auto event = RomInput(context).motions->Find(token);
+    if (!event) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "invalid MotionEvent native handle"};
+    return event;
+}
+
+template <typename Change>
+void ChangeMotion(const Context& context, int token, Change&& change) {
+    auto event = *Motion(context, token);
+    change(event);
+    RomInput(context).motions->Publish(token, std::move(event));
 }
 
 std::size_t Pointer(const AndroidBoundaryInput& m, int index) {
@@ -108,7 +113,7 @@ Ref MakeInputEvent(dx::Interpreter& vm, const Context& context, const AndroidBou
     auto& s = RomInput(context);
     auto& pointer = WindowField(vm, event, "mNativePtr", "I");
     const auto id = pointer.bits ? static_cast<int>(pointer.bits) : AllocateRomInputHandle(s);
-    s.motions.insert_or_assign(id, input);
+    s.motions->Publish(id, input);
     pointer = {static_cast<unsigned>(id), dx::SlotTag::cat1};
     return event;
 }
@@ -154,26 +159,26 @@ void AddRomMotionNatives(dx::IntrinsicClassBuilder& b, const Context& context) {
                 static_cast<void>(Motion(context, id));
             else
                 id = AllocateRomInputHandle(s);
-            s.motions.insert_or_assign(id, std::move(m));
+            s.motions->Publish(id, std::move(m));
             return V::Int(id);
         },
         native);
     b.StaticMethod(
         "nativeDispose", "(I)V",
         [context](dx::IntrinsicContext& c) {
-            RomInput(context).motions.erase(c.arguments[0].AsInt());
+            RomInput(context).motions->Erase(c.arguments[0].AsInt());
             return V::Void();
         },
         native);
     b.StaticMethod(
         "nativeCopy", "(IIZ)I",
         [context](dx::IntrinsicContext& c) {
-            auto m = Motion(context, c.arguments[1].AsInt());
+            auto m = *Motion(context, c.arguments[1].AsInt());
             if (!c.arguments[2].AsInt()) m.history.clear();
             auto& s = RomInput(context);
             int id = c.arguments[0].AsInt();
             if (!id) id = AllocateRomInputHandle(s);
-            s.motions.insert_or_assign(id, std::move(m));
+            s.motions->Publish(id, std::move(m));
             return V::Int(id);
         },
         native);
@@ -188,7 +193,7 @@ void AddRomMotionNatives(dx::IntrinsicClassBuilder& b, const Context& context) {
         b.StaticMethod(
             std::string("nativeGet") + name, "(I)I",
             [context, member](dx::IntrinsicContext& c) {
-                return V::Int(Motion(context, c.arguments[0].AsInt()).*member);
+                return V::Int((*Motion(context, c.arguments[0].AsInt())).*member);
             },
             native);
     for (auto [name, member] : ints)
@@ -197,7 +202,8 @@ void AddRomMotionNatives(dx::IntrinsicClassBuilder& b, const Context& context) {
             b.StaticMethod(
                 std::string("nativeSet") + name, std::string_view(name) == "Source" ? "(II)I" : "(II)V",
                 [context, member, name](dx::IntrinsicContext& c) {
-                    Motion(context, c.arguments[0].AsInt()).*member = c.arguments[1].AsInt();
+                    ChangeMotion(context, c.arguments[0].AsInt(),
+                                 [&](AndroidBoundaryInput& m) { m.*member = c.arguments[1].AsInt(); });
                     return std::string_view(name) == "Source" ? V::Int(0) : V::Void();
                 },
                 native);
@@ -208,37 +214,39 @@ void AddRomMotionNatives(dx::IntrinsicClassBuilder& b, const Context& context) {
         b.StaticMethod(
             std::string("nativeGet") + name, "(I)F",
             [context, member](dx::IntrinsicContext& c) {
-                return V::Float(Motion(context, c.arguments[0].AsInt()).*member);
+                return V::Float((*Motion(context, c.arguments[0].AsInt())).*member);
             },
             native);
     b.StaticMethod(
         "nativeGetDownTimeNanos", "(I)J",
-        [context](dx::IntrinsicContext& c) { return V::Long(Motion(context, c.arguments[0].AsInt()).down_time_ns); },
+        [context](dx::IntrinsicContext& c) { return V::Long(Motion(context, c.arguments[0].AsInt())->down_time_ns); },
         native);
     b.StaticMethod(
         "nativeSetDownTimeNanos", "(IJ)V",
         [context](dx::IntrinsicContext& c) {
-            Motion(context, c.arguments[0].AsInt()).down_time_ns = c.arguments[1].AsLong();
+            ChangeMotion(context, c.arguments[0].AsInt(),
+                         [&](AndroidBoundaryInput& m) { m.down_time_ns = c.arguments[1].AsLong(); });
             return V::Void();
         },
         native);
     b.StaticMethod(
         "nativeGetPointerCount", "(I)I",
         [context](dx::IntrinsicContext& c) {
-            return V::Int(static_cast<int>(Motion(context, c.arguments[0].AsInt()).pointers.size()));
+            return V::Int(static_cast<int>(Motion(context, c.arguments[0].AsInt())->pointers.size()));
         },
         native);
     b.StaticMethod(
         "nativeGetHistorySize", "(I)I",
         [context](dx::IntrinsicContext& c) {
-            return V::Int(static_cast<int>(Motion(context, c.arguments[0].AsInt()).history.size()));
+            return V::Int(static_cast<int>(Motion(context, c.arguments[0].AsInt())->history.size()));
         },
         native);
     for (bool tool : {false, true})
         b.StaticMethod(
             tool ? "nativeGetToolType" : "nativeGetPointerId", "(II)I",
             [context, tool](dx::IntrinsicContext& c) {
-                const auto& m = Motion(context, c.arguments[0].AsInt());
+                const auto event = Motion(context, c.arguments[0].AsInt());
+                const auto& m = *event;
                 const auto& p = m.pointers[Pointer(m, c.arguments[1].AsInt())];
                 return V::Int(tool ? p.tool_type : p.id);
             },
@@ -246,7 +254,8 @@ void AddRomMotionNatives(dx::IntrinsicClassBuilder& b, const Context& context) {
     b.StaticMethod(
         "nativeFindPointerIndex", "(II)I",
         [context](dx::IntrinsicContext& c) {
-            const auto& m = Motion(context, c.arguments[0].AsInt());
+            const auto event = Motion(context, c.arguments[0].AsInt());
+            const auto& m = *event;
             for (std::size_t i = 0; i < m.pointers.size(); ++i)
                 if (m.pointers[i].id == c.arguments[1].AsInt()) return V::Int(static_cast<int>(i));
             return V::Int(-1);
@@ -255,7 +264,8 @@ void AddRomMotionNatives(dx::IntrinsicClassBuilder& b, const Context& context) {
     b.StaticMethod(
         "nativeGetEventTimeNanos", "(II)J",
         [context](dx::IntrinsicContext& c) {
-            const auto& m = Motion(context, c.arguments[0].AsInt());
+            const auto event = Motion(context, c.arguments[0].AsInt());
+            const auto& m = *event;
             const int h = c.arguments[1].AsInt();
             static_cast<void>(SamplePointer(m, 0, h));
             return V::Long(h == std::numeric_limits<int>::min() ? m.event_time_ns
@@ -266,7 +276,8 @@ void AddRomMotionNatives(dx::IntrinsicClassBuilder& b, const Context& context) {
         b.StaticMethod(
             raw ? "nativeGetRawAxisValue" : "nativeGetAxisValue", "(IIII)F",
             [context, raw](dx::IntrinsicContext& c) {
-                const auto& m = Motion(context, c.arguments[0].AsInt());
+                const auto event = Motion(context, c.arguments[0].AsInt());
+                const auto& m = *event;
                 const auto& p = SamplePointer(m, c.arguments[2].AsInt(), c.arguments[3].AsInt());
                 const auto a = c.arguments[1].AsInt();
                 if (a < 0 || a >= 64) return V::Float(0);
@@ -278,7 +289,8 @@ void AddRomMotionNatives(dx::IntrinsicClassBuilder& b, const Context& context) {
     b.StaticMethod(
         "nativeGetPointerProperties", "(IILandroid/view/MotionEvent$PointerProperties;)V",
         [context](dx::IntrinsicContext& c) {
-            const auto& m = Motion(context, c.arguments[0].AsInt());
+            const auto event = Motion(context, c.arguments[0].AsInt());
+            const auto& m = *event;
             const auto& p = m.pointers[Pointer(m, c.arguments[1].AsInt())];
             Put(c.vm, c.arguments[2].ref, "id", p.id);
             Put(c.vm, c.arguments[2].ref, "toolType", p.tool_type);
@@ -288,7 +300,8 @@ void AddRomMotionNatives(dx::IntrinsicClassBuilder& b, const Context& context) {
     b.StaticMethod(
         "nativeGetPointerCoords", "(IIILandroid/view/MotionEvent$PointerCoords;)V",
         [context](dx::IntrinsicContext& c) {
-            const auto& m = Motion(context, c.arguments[0].AsInt());
+            const auto event = Motion(context, c.arguments[0].AsInt());
+            const auto& m = *event;
             const auto& p = SamplePointer(m, c.arguments[1].AsInt(), c.arguments[2].AsInt());
             for (int a = 0; a < 64; ++a)
                 static_cast<void>(
@@ -302,7 +315,7 @@ void AddRomMotionNatives(dx::IntrinsicClassBuilder& b, const Context& context) {
     b.StaticMethod(
         "nativeAddBatch", "(IJ[Landroid/view/MotionEvent$PointerCoords;I)V",
         [context](dx::IntrinsicContext& c) {
-            auto& m = Motion(context, c.arguments[0].AsInt());
+            auto m = *Motion(context, c.arguments[0].AsInt());
             auto pointers = m.pointers;
             ReadCoords(c.vm, c.arguments[2].ref, pointers, m.x_offset, m.y_offset);
             if (m.history.size() >= 4096)
@@ -311,22 +324,25 @@ void AddRomMotionNatives(dx::IntrinsicClassBuilder& b, const Context& context) {
             m.pointers = std::move(pointers);
             m.event_time_ns = c.arguments[1].AsLong();
             m.meta_state |= c.arguments[3].AsInt();
+            RomInput(context).motions->Publish(c.arguments[0].AsInt(), std::move(m));
             return V::Void();
         },
         native);
     b.StaticMethod(
         "nativeOffsetLocation", "(IFF)V",
         [context](dx::IntrinsicContext& c) {
-            auto& m = Motion(context, c.arguments[0].AsInt());
-            m.x_offset += c.arguments[1].AsFloat();
-            m.y_offset += c.arguments[2].AsFloat();
+            ChangeMotion(context, c.arguments[0].AsInt(), [&](AndroidBoundaryInput& m) {
+                m.x_offset += c.arguments[1].AsFloat();
+                m.y_offset += c.arguments[2].AsFloat();
+            });
             return V::Void();
         },
         native);
     b.StaticMethod(
         "nativeIsTouchEvent", "(I)Z",
         [context](dx::IntrinsicContext& c) {
-            const auto& m = Motion(context, c.arguments[0].AsInt());
+            const auto event = Motion(context, c.arguments[0].AsInt());
+            const auto& m = *event;
             const auto a = m.action & 255;
             return V::Int((m.source & 2) && a != 7 && a != 8 && a != 9 && a != 10);
         },
@@ -334,7 +350,7 @@ void AddRomMotionNatives(dx::IntrinsicClassBuilder& b, const Context& context) {
     b.StaticMethod(
         "nativeScale", "(IF)V",
         [context](dx::IntrinsicContext& c) {
-            auto& m = Motion(context, c.arguments[0].AsInt());
+            auto m = *Motion(context, c.arguments[0].AsInt());
             const auto scale = c.arguments[1].AsFloat();
             m.x_offset *= scale;
             m.y_offset *= scale;
@@ -348,6 +364,7 @@ void AddRomMotionNatives(dx::IntrinsicClassBuilder& b, const Context& context) {
             apply(m.pointers);
             for (auto& h : m.history)
                 apply(h.pointers);
+            RomInput(context).motions->Publish(c.arguments[0].AsInt(), std::move(m));
             return V::Void();
         },
         native);
@@ -357,7 +374,7 @@ void AddRomMotionNatives(dx::IntrinsicClassBuilder& b, const Context& context) {
             const auto token = static_cast<int>(WindowField(c.vm, c.arguments[1].ref, "native_instance", "I").bits);
             const auto matrix = AndroidMatrixSnapshot(*context, token);
             if (!matrix) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "invalid Matrix"};
-            auto& m = Motion(context, c.arguments[0].AsInt());
+            auto m = *Motion(context, c.arguments[0].AsInt());
             const auto& a = *matrix;
             const auto point = [&](float x, float y) {
                 float z = a[6] * x + a[7] * y + a[8];
@@ -387,6 +404,7 @@ void AddRomMotionNatives(dx::IntrinsicClassBuilder& b, const Context& context) {
             apply(m.pointers);
             for (auto& h : m.history)
                 apply(h.pointers);
+            RomInput(context).motions->Publish(c.arguments[0].AsInt(), std::move(m));
             return V::Void();
         },
         native);

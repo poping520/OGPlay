@@ -449,6 +449,45 @@ TEST_CASE("P3 MotionEvent native snapshots preserve axes offsets histories and c
     f.Static(cls, "nativeDispose", "(I)V", {V::Int(copy)});
 }
 
+TEST_CASE("P3 MotionEvent mNativePtr publishes immutable snapshots for NDK readers") {
+    auto fixture = WindowVm();
+    auto& f = *fixture;
+    const auto events = RomInput(f.context).motions;
+    ogplay::runtime::AndroidBoundaryInput input;
+    input.type = ogplay::runtime::AndroidBoundaryInputType::pointer_motion;
+    input.action = 2;
+    input.source = 0x1002;
+    ogplay::runtime::AndroidInputPointer pointer;
+    pointer.axes[0] = 20;
+    input.pointers = {pointer};
+    const auto event = MakeInputEvent(f.vm, f.context, input);
+    const auto root = f.vm.ProtectReferences(std::array{event});
+    const auto native_ptr = [&] { return static_cast<int>(WindowField(f.vm, event, "mNativePtr", "I").bits); };
+    const auto before = events->Find(native_ptr());
+    REQUIRE(before);
+    CHECK(before->action == 2);
+    CHECK(before->pointers.at(0).axes[0] == 20);
+
+    f.On(event, "offsetLocation", "(FF)V", {V::Float(5), V::Float(0)});
+    f.On(event, "setAction", "(I)V", {V::Int(1)});
+    f.On(event, "scale", "(F)V", {V::Float(2)});
+    const auto after = events->Find(native_ptr());
+    CHECK(before->action == 2);
+    CHECK(before->x_offset == 0);
+    CHECK(after->action == 1);
+    CHECK(after->x_offset == 10);
+    CHECK(after->pointers.at(0).axes[0] == 40);
+    CHECK(f.On(event, "getX", "()F").AsFloat() == 50);
+
+    const auto disposed =
+        f.Static("Landroid/view/MotionEvent;", "nativeCopy", "(IIZ)I", {V::Int(0), V::Int(native_ptr()), V::Int(1)})
+            .AsInt();
+    const auto held = events->Find(disposed);
+    f.Static("Landroid/view/MotionEvent;", "nativeDispose", "(I)V", {V::Int(disposed)});
+    CHECK_FALSE(events->Find(disposed));
+    CHECK(held->action == 1);
+}
+
 TEST_CASE("P3 host vsync queues a deterministic Clock pulse without running guest callbacks") {
     struct Pulse {
         std::int64_t time{};

@@ -32,6 +32,9 @@ memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，
 - 每个 InputQueue 独立持有 pending/inflight；getEvent 输出失败不消费，finishEvent
   仅能完成该队列的事件。事件句柄单调分配、不复用，队列退役清除 pending/inflight。
   单队列最多 4096 个待处理/在途事件；预算耗尽明确失败，不静默丢弃 release/cancel。
+- API 19 的 MotionEvent.mNativePtr 本身就是 AInputEvent*。队列事件未命中时经显式
+  AndroidMotionEventLookup 查 Java 事件快照；该查询不持模块锁、不取 VM 锁，未命中仍明确失败。
+  Java 事件只供 getter 读取，不属于任何队列，不能 finish。
 - 输入时间用 ARM32 r0/r1 返回，float 保留 soft-float 位模式。legacy 单指生产者暂经
   NormalizeAndroidInput 归一；多指/历史快照检查身份、索引、有限坐标及时间顺序。
 

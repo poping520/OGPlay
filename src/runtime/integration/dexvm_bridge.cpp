@@ -2001,6 +2001,10 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
                  return impl.android_context &&
                         PaceNativeEglSwap(*impl.android_context, impl.vm->ExecutionLock(), surface);
              }});
+        session.Process().SetMotionEventLookup(
+            [events = android_intrinsics::RomInput(android_context).motions](memory::GuestAddress native_ptr) {
+                return events->Find(static_cast<int>(native_ptr.Value()));
+            });
         session.Process().SetAssetManagerHooks(
             {bridge_state,
              +[](void* owner, std::uint64_t thread, memory::GuestAddress env, AssetManagerJavaReference ref) {
@@ -2250,6 +2254,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
     }
     impl_->session->Process().SetDeviceLocaleProvider({});
     impl_->session->Process().SetSurfaceHooks({});
+    impl_->session->Process().SetMotionEventLookup({});
     impl_->session->Process().SetAssetManagerHooks({});
     for (const auto& [_, manager] : impl_->asset_managers)
         impl_->session->Process().UnregisterAssetManager(manager);

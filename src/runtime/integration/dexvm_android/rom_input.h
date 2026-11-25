@@ -7,6 +7,32 @@ namespace android_intrinsics {
 class VelocityTracker;
 }
 
+// Immutable MotionEvent snapshots keyed by mNativePtr. VM-lock holders write;
+// NDK getters read from any guest thread, so each change publishes a new snapshot.
+class RomMotionEvents final {
+public:
+    [[nodiscard]] std::shared_ptr<const AndroidBoundaryInput> Find(int handle) const {
+        std::scoped_lock lock(mutex_);
+        const auto found = events_.find(handle);
+        return found == events_.end() ? nullptr : found->second;
+    }
+
+    void Publish(int handle, AndroidBoundaryInput event) {
+        auto snapshot = std::make_shared<const AndroidBoundaryInput>(std::move(event));
+        std::scoped_lock lock(mutex_);
+        events_.insert_or_assign(handle, std::move(snapshot));
+    }
+
+    void Erase(int handle) {
+        std::scoped_lock lock(mutex_);
+        events_.erase(handle);
+    }
+
+private:
+    mutable std::mutex mutex_;
+    std::map<int, std::shared_ptr<const AndroidBoundaryInput>> events_;
+};
+
 struct RomInputState {
     struct Event {
         int sequence{};
@@ -44,7 +70,7 @@ struct RomInputState {
 
     std::map<int, ImeSender> ime_senders;
     int next_handle{1}, next_sequence{1};
-    std::map<int, AndroidBoundaryInput> motions;
+    const std::shared_ptr<RomMotionEvents> motions{std::make_shared<RomMotionEvents>()};
     std::map<int, std::shared_ptr<android_intrinsics::VelocityTracker>> velocities;
 
     struct NativeQueue {

@@ -2112,6 +2112,8 @@ public:
 
     void SetSurfaceHooks(AndroidSurfaceHooks hooks) { boundary_.SetSurfaceHooks(hooks); }
 
+    void SetMotionEventLookup(AndroidMotionEventLookup lookup) { boundary_.SetMotionEventLookup(std::move(lookup)); }
+
     memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface) {
         return boundary_.AcquireSurfaceWindow(surface);
     }
@@ -3697,6 +3699,10 @@ void AndroidGuestProcess::SetBitmapHooks(AndroidBitmapHooks hooks) {
 
 void AndroidGuestProcess::SetSurfaceHooks(AndroidSurfaceHooks hooks) {
     impl_->SetSurfaceHooks(hooks);
+}
+
+void AndroidGuestProcess::SetMotionEventLookup(AndroidMotionEventLookup lookup) {
+    impl_->SetMotionEventLookup(std::move(lookup));
 }
 
 memory::GuestAddress AndroidGuestProcess::AcquireSurfaceWindow(const AndroidSurfaceWindow& surface) {

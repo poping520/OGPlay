@@ -533,7 +533,16 @@ void AddRomActivityMethods(dx::IntrinsicClassBuilder& b, const Context& context)
     b.VirtualMethod("willActivityBeVisible", "(Landroid/os/IBinder;)Z", [context](dx::IntrinsicContext& c) {
         auto& s = Activities(context);
         const auto* r = Find(s, c.arguments[0].ref);
-        return V::Int(r && !r->finishing && !r->destroying && !s.host_closing && !s.background_tasks.contains(r->task));
+        if (!r || r->finishing || r->destroying || s.host_closing || s.background_tasks.contains(r->task))
+            return V::Int(0);
+        // API 19 willActivityBeVisibleLocked: a live Activity above the caller covers it. A
+        // queued start already sits above the stack top there, unless it reuses the caller.
+        if (std::ranges::any_of(
+                s.pending, [&](const auto& cmd) { return cmd.launch_mode == 0 || cmd.descriptor != r->descriptor; }))
+            return V::Int(0);
+        for (auto it = s.stack.rbegin(); it != s.stack.rend() && it->token != r->token; ++it)
+            if (!it->finishing) return V::Int(0);
+        return V::Int(1);
     });
     b.VirtualMethod("setRequestedOrientation", "(Landroid/os/IBinder;I)V", [context](dx::IntrinsicContext& c) {
         auto& s = Activities(context);

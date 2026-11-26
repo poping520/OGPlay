@@ -117,6 +117,28 @@ TEST_CASE("P3 AMS launch for-result finish and return use IApplicationThread sch
     CHECK(x.trace->calls.back() == "scheduleResumeActivity");
 }
 
+TEST_CASE("P3 AMS willActivityBeVisible is false below a queued or live start") {
+    Fixture x;
+    x.Start();
+    const auto caller = x.Top();
+    const auto visible = [&] {
+        return x.f.On(x.am, "willActivityBeVisible", "(Landroid/os/IBinder;)Z", {V::Ref(caller)}).AsInt();
+    };
+    CHECK(visible() == 1);
+    // onResume starts a child for a result before activityResumed reaches the AMS.
+    x.Start(0, 7);
+    CHECK(visible() == 0);
+    x.Resumed();
+    x.Paused(caller);
+    const auto child = x.Top();
+    REQUIRE(child != caller);
+    CHECK(visible() == 0);
+    x.Resumed();
+    x.f.On(x.am, "finishActivity", "(Landroid/os/IBinder;ILandroid/content/Intent;)Z",
+           {V::Ref(child), V::Int(-1), null});
+    CHECK(visible() == 1);
+}
+
 TEST_CASE("P3 AMS suspend and resume preserve the Activity until it finishes") {
     Fixture x;
     x.Start();

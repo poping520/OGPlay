@@ -34,7 +34,9 @@ struct BionicMemoryInterceptCall final {
     std::string_view symbol;
     std::array<std::uint32_t, 4> arguments{};
     std::uint64_t thread_id{};
-    std::size_t maximum_string_bytes{1024U * 1024U};
+    // Bionic strlen is unbounded; only an unmapped page stops the scan, so the
+    // default covers the whole A32 address space.
+    std::size_t maximum_string_bytes{std::size_t{1} << 32U};
 };
 
 class BionicProfileError final : public std::runtime_error {

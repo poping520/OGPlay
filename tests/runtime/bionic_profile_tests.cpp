@@ -239,6 +239,23 @@ TEST_CASE("Bionic memory intercepts preserve libc behavior") {
         ogplay::runtime::BionicProfileError);
 }
 
+TEST_CASE("Bionic strlen intercept is unbounded until unmapped memory") {
+    ogplay::memory::AddressSpace memory;
+    const ogplay::memory::GuestAddress base{0x100000U};
+    constexpr std::uint32_t kBytes = 2U * 1024U * 1024U;
+    memory.Map({base, kBytes}, ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
+    const std::vector<std::byte> text(kBytes, std::byte{'x'});
+    memory.Write(base, text);
+    const auto length = kBytes - 8U;
+    memory.Write8(base.Add(length), 0);
+    CHECK(ogplay::runtime::ExecuteBionicMemoryIntercept(memory, {"strlen", {base.Value(), 0, 0, 0}, 41}) == length);
+
+    memory.Write8(base.Add(length), 'x');
+    CHECK_THROWS_AS(static_cast<void>(
+                        ogplay::runtime::ExecuteBionicMemoryIntercept(memory, {"strlen", {base.Value(), 0, 0, 0}, 41})),
+                    ogplay::memory::MemoryFault);
+}
+
 TEST_CASE("Bionic memcpy intercept meets the M2 throughput floor") {
     ogplay::memory::AddressSpace memory;
     const ogplay::memory::GuestAddress source{0x10000U};

@@ -58,8 +58,8 @@
   ABI，并在 clone/futex/TLS syscall 边界映射到宿主真线程。profile 的数据目录固定为
   `android/<api>`，因为发行 payload 同时容纳 Bionic 与 libz 等必要 guest 系统依赖。
 - `ExecuteBionicMemoryIntercept`：受检执行 memcpy/memmove/memset/memcmp/strlen；完整范围
-  预检、重叠方向、字符串上限、A32 返回值和吞吐基准均有契约。固定大小的调用期栈暂存
-  避免在高频 libc 边界反复分配宿主堆内存。
+  预检、重叠方向、strlen 按 Bionic 不设长度上限（仅未映射页报访存故障）、A32 返回值和
+  吞吐基准均有契约。固定大小的调用期栈暂存避免在高频 libc 边界反复分配宿主堆内存。
 - `BionicHleSymbolProvider` / `BuildBionicLinkNamespace`：在固定 HLE thunk 区注册可反查的
   边界符号，将 libc 选择性拦截、虚拟边界库和真实 guest ELF 装入统一链接命名空间。
 - `BionicDynamicLinkHooks`：把真实 guest `libdl.so` 的 linker-service 入口连接到

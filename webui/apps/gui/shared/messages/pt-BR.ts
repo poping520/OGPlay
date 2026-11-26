@@ -299,8 +299,6 @@ export const messages: Record<string, string> = {
   "dataHint.mountAndRelaunch": "Montar e reiniciar",
   "dataHint.chooseFolder": "Escolher pasta do pacote de dados",
 
-  "settings.previous": "Anterior",
-  "settings.next": "Próximo",
   "settings.decrease": "Diminuir",
   "settings.increase": "Aumentar",
   "settings.placeholder.default": "Deixe vazio para o padrão",

@@ -299,8 +299,6 @@ export const messages: Record<string, string> = {
   "dataHint.mountAndRelaunch": "마운트하고 다시 실행",
   "dataHint.chooseFolder": "데이터 팩 폴더 선택",
 
-  "settings.previous": "이전",
-  "settings.next": "다음",
   "settings.decrease": "줄이기",
   "settings.increase": "늘리기",
   "settings.placeholder.default": "비워 두면 기본 동작",

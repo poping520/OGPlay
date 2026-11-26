@@ -204,11 +204,11 @@
 .cfg-phone .row > .ic { width: 34px; height: 34px; }
 .cfg-phone .ctl { gap: 10px; }
 .cfg-phone .ctl:not(:has(> .switch)), .cfg-phone .ctl:has(> .restore) { grid-column: 1 / -1; justify-content: space-between; }
-.cfg-phone .ctl > :is(.seg, .cyc, .step, .range, .txt, .pick) { flex: 1; width: auto; min-width: 0; }
+.cfg-phone .ctl > :is(.seg, .step, .range, .txt, .pick) { flex: 1; width: auto; min-width: 0; }
 .cfg-phone .seg { display: flex; }
 .cfg-phone .seg button { flex: 1; height: 40px; padding: 0 8px; }
-.cfg-phone :is(.cyc, .step, .txt) { height: 48px; }
-.cfg-phone :is(.cyc, .step) button { width: 48px; height: 48px; }
+.cfg-phone :is(.step, .txt) { height: 48px; }
+.cfg-phone .step button { width: 48px; height: 48px; }
 .cfg-phone .range { height: 48px; }
 .cfg-phone .range input::-webkit-slider-thumb { width: 28px; height: 28px; }
 .cfg .pick { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 48px; padding: 0 16px 0 18px; border-radius: 999px;

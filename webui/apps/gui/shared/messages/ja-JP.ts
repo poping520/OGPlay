@@ -299,8 +299,6 @@ export const messages: Record<string, string> = {
   "dataHint.mountAndRelaunch": "マウントして再起動",
   "dataHint.chooseFolder": "データパックのフォルダを選択",
 
-  "settings.previous": "前へ",
-  "settings.next": "次へ",
   "settings.decrease": "減らす",
   "settings.increase": "増やす",
   "settings.placeholder.default": "空欄で既定の動作",

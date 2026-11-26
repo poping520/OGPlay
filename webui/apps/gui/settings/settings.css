@@ -73,6 +73,8 @@
 .row { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(280px, max-content); gap: 16px; align-items: center; min-height: 70px; padding: 12px 18px;
   border-radius: 18px; background: var(--glass); transition: background .12s, box-shadow .15s; }
 .row:hover { background: rgba(255,255,255,.08); }
+/* a click on the row runs its main action (settings-ui.tsx activateRow) */
+.cfg .row:has(.sel, .switch, .pick, .step, .txt, .path-edit) { cursor: pointer; }
 .row.focus { background: rgba(255,255,255,.09); box-shadow: inset 0 0 0 2px var(--yellow), 0 0 26px rgba(255,194,26,.18); }
 /* the row's own glyph (setting-icons.ts) on the sidebar's plain chip; the focused row lights it like the selected group */
 .row > .ic { width: 36px; height: 36px; border-radius: 11px; }
@@ -94,15 +96,32 @@
 .cfg .switch.on::after { transform: translateX(24px); background: #2a2000; }
 /* existing behaviour: the track loses its fill while hovered */
 @media (hover: hover) { .cfg .switch:hover:not(:disabled) { background: none; } }
-.cyc, .step, .txt { display: inline-flex; align-items: center; height: 40px; border-radius: 999px; background: var(--field); }
-.cyc { width: 220px; }
-.cfg .cyc button, .cfg .step button { flex: none; width: 40px; height: 40px; border-radius: 50%; font-size: 18px; font-weight: 900; line-height: 1; color: var(--muted); }
-.cfg .cyc button:hover:not(:disabled), .cfg .step button:hover:not(:disabled) { color: var(--yellow); }
-.cyc .val { display: flex; flex: 1; flex-direction: column; align-items: center; min-width: 0; line-height: 1.15; }
-.cyc .val span { overflow: hidden; max-width: 100%; font-weight: 800; white-space: nowrap; text-overflow: ellipsis; }
-.cyc .pips { display: flex; gap: 4px; margin-top: 2px; }
-.cyc .pips i { width: 4px; height: 4px; border-radius: 50%; background: rgba(255,255,255,.2); }
-.cyc .pips i.on { background: var(--yellow); }
+.step, .txt { display: inline-flex; align-items: center; height: 40px; border-radius: 999px; background: var(--field); }
+.cfg .step button { flex: none; width: 40px; height: 40px; border-radius: 50%; font-size: 18px; font-weight: 900; line-height: 1; color: var(--muted); }
+.cfg .step button:hover:not(:disabled) { color: var(--yellow); }
+/* choice lists: the value and a chevron; the list opens on the page root (settings-ui.tsx Select) */
+.cfg .sel { display: inline-flex; align-items: center; gap: 10px; width: 220px; height: 40px; padding: 0 14px 0 18px; border-radius: 999px;
+  background: var(--field); box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); font-weight: 800; text-align: left; transition: box-shadow .15s, background .15s; }
+.cfg .sel span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cfg .sel svg { flex: none; width: 16px; height: 16px; color: var(--muted); transition: transform .18s cubic-bezier(.3,1.3,.5,1), color .15s; }
+.cfg .sel:hover:not(:disabled) { background: rgba(0,0,0,.36); box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); }
+.cfg .sel:hover:not(:disabled) svg, .cfg .sel.open svg { color: var(--yellow); }
+.cfg .sel.open { box-shadow: inset 0 0 0 2px var(--yellow); }
+.cfg .sel.open svg { transform: rotate(180deg); }
+.cfg .sel-pop { position: fixed; z-index: 30; display: flex; flex-direction: column; gap: 2px; padding: 6px; overflow-y: auto; overscroll-behavior: contain;
+  border-radius: 18px; background: #1a2134; box-shadow: inset 0 0 0 1px rgba(255,255,255,.1), 0 22px 50px -12px rgba(0,0,0,.7), 0 2px 8px rgba(0,0,0,.35);
+  scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.16) transparent; transform-origin: top; animation: sel-open .16s cubic-bezier(.2,.9,.3,1); }
+.cfg .sel-pop.up { transform-origin: bottom; }
+.cfg .sel-pop button { display: flex; flex: none; align-items: center; gap: 10px; height: 38px; padding: 0 12px 0 14px; border-radius: 12px;
+  color: var(--soft); font-weight: 700; text-align: left; }
+.cfg .sel-pop button span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cfg .sel-pop button svg { flex: none; width: 16px; height: 16px; }
+.cfg .sel-pop button.active { background: rgba(255,255,255,.08); color: var(--ink); }
+.cfg .sel-pop button.on { color: var(--yellow); font-weight: 900; }
+.cfg .sel-pop button.on.active { background: rgba(255,194,26,.12); }
+@keyframes sel-open { from { opacity: 0; transform: scaleY(.92) translateY(-4px); } }
+.cfg .sel-pop.up { animation-name: sel-open-up; }
+@keyframes sel-open-up { from { opacity: 0; transform: scaleY(.92) translateY(4px); } }
 .step { width: 220px; }
 .step input { flex: 1; width: 0; min-width: 0; border: 0; background: none; color: var(--ink); text-align: center; font: 800 15px var(--font); font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
 .step input::-webkit-inner-spin-button, .step input::-webkit-outer-spin-button { display: none; }
@@ -118,7 +137,8 @@
 .txt input:focus { outline: none; }
 .cfg :is(.txt, .path-field) button { height: 32px; padding: 0 12px; border-radius: 999px; background: var(--glass2); font-size: 12px; font-weight: 800; white-space: nowrap; }
 .cfg :is(.txt, .path-field) button:hover:not(:disabled) { background: rgba(255,255,255,.16); }
-.cfg :is(.seg, .cyc, .step, .txt, .range, .path-edit) :disabled { cursor: not-allowed; }
+.cfg :is(.seg, .step, .txt, .range, .path-edit) :disabled, .cfg .sel:disabled { cursor: not-allowed; }
+.cfg .sel:disabled { opacity: .5; }
 /* a path that must be right: the field takes the row's whole width and wraps, so all of it stays readable */
 .cfg .row.path-row { grid-template-columns: auto minmax(0, 1fr); row-gap: 10px; }
 .path-row .lbl .tag { margin-left: 8px; vertical-align: 2px; }
@@ -216,7 +236,7 @@ details.credit details.credit { background: rgba(255,255,255,.04); }
 @keyframes cfg-toast { from { transform: translate(-50%, 12px); opacity: 0; } }
 @media (max-width: 1240px) {
   .cfg { grid-template-columns: 250px minmax(0, 1fr); } .cfg .brand { width: 186px; } .legend { display: none; }
-  .row { grid-template-columns: auto minmax(0, 1fr) minmax(250px, max-content); } .cyc, .step, .range { width: 196px; }
+  .row { grid-template-columns: auto minmax(0, 1fr) minmax(250px, max-content); } .sel, .step, .range { width: 196px; }
 }
 @media (max-width: 1100px) { .cfg-top .save-state { display: none; } .cfg-foot .hk:nth-child(n+6) kbd { display: none; } }
 @media (prefers-reduced-motion: reduce) { .rows > *, .save-state.on i, .toast, .cfg dialog[open] { animation: none; } .cfg .switch::after { transition: none; } }
@@ -298,11 +318,18 @@ details.credit details.credit { background: rgba(255,255,255,.04); }
 .cfg.skin-glass .switch.on { background: linear-gradient(90deg, #4fe3d0, var(--mint)); }
 .cfg.skin-glass .switch::after, .cfg.skin-glass .switch.on::after { background: #fff; }
 .cfg.skin-glass .switch.on::after { box-shadow: 0 2px 8px rgba(0,60,60,.4); }
-.skin-glass :is(.seg, .cyc, .step, .txt, .path-field) { border-radius: 14px; box-shadow: inset 0 1px 2px rgba(0,0,0,.2), 0 1px 0 rgba(255,255,255,.08); }
+.skin-glass :is(.seg, .sel, .step, .txt, .path-field) { border-radius: 14px; box-shadow: inset 0 1px 2px rgba(0,0,0,.2), 0 1px 0 rgba(255,255,255,.08); }
 .skin-glass .seg { border-radius: 16px; }
 .cfg.skin-glass .seg button { border-radius: 12px; color: var(--soft); }
-.cfg.skin-glass :is(.cyc, .step) button:hover:not(:disabled) { color: var(--mint); }
-.skin-glass .cyc .pips i.on { background: var(--mint); }
+.cfg.skin-glass .step button:hover:not(:disabled) { color: var(--mint); }
+.cfg.skin-glass .sel:hover:not(:disabled) svg, .cfg.skin-glass .sel.open svg { color: var(--mint); }
+.cfg.skin-glass .sel.open { box-shadow: inset 0 0 0 2px var(--mint); }
+.cfg.skin-glass .sel-pop { border-radius: 20px; background: linear-gradient(160deg, rgba(70,52,120,.86), rgba(34,28,70,.9));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.28), inset 0 0 0 1px rgba(255,255,255,.12), 0 24px 60px -16px rgba(20,0,60,.7); backdrop-filter: blur(24px) saturate(1.3); }
+.cfg.skin-glass .sel-pop button { border-radius: 14px; color: rgba(255,255,255,.82); }
+.cfg.skin-glass .sel-pop button.active { background: rgba(255,255,255,.14); color: #fff; }
+.cfg.skin-glass .sel-pop button.on { color: var(--mint); }
+.cfg.skin-glass .sel-pop button.on.active { background: rgba(111,247,228,.16); }
 .cfg.skin-glass :is(.txt, .path-field) button { border-radius: 10px; background: rgba(255,255,255,.16); }
 .skin-glass .range input { background: linear-gradient(90deg, var(--mint) var(--p), rgba(255,255,255,.18) var(--p)); }
 .skin-glass .range input::-webkit-slider-thumb { background: #fff; }

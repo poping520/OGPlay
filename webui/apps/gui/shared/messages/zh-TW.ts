@@ -299,8 +299,6 @@ export const messages: Record<string, string> = {
   "dataHint.mountAndRelaunch": "掛載並重新啟動",
   "dataHint.chooseFolder": "選擇資料包資料夾",
 
-  "settings.previous": "上一項",
-  "settings.next": "下一項",
   "settings.decrease": "減少",
   "settings.increase": "增加",
   "settings.placeholder.default": "留空使用預設行為",

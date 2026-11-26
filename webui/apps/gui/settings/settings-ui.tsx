@@ -1,5 +1,6 @@
 import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { createPortal } from 'preact/compat';
 import { changedKeys, choiceLabel, fieldMeta, stepValue, shownFields, shownGroups, type SettingField, type SettingValue } from './settings';
 import { shellStyle } from '../cartridge/cartridge';
 import { t } from '../shared/i18n';
@@ -80,17 +81,10 @@ function Control({ field, value, disabled, change, browse }: {
     return <div class="seg" role="radiogroup" aria-label={meta.label}>{field.choices.map(choice =>
       <button key={choice} role="radio" aria-checked={choice === value} class={choice === value ? 'on' : ''} disabled={disabled} onClick={() => change(choice)}>{choiceLabel(field, choice)}</button>)}</div>;
   if (field.choices.length && __OGPLAY_PHONE__) return <ChoicePicker field={field} value={value} disabled={disabled} change={change} />;
-  if (field.choices.length) {
-    const at = field.choices.indexOf(String(value));
-    return <div class="cyc" role="group" aria-label={meta.label}>
-      <button aria-label={t('settings.previous')} disabled={disabled} onClick={() => change(stepValue(field, value, -1))}>‹</button>
-      <div class="val"><span>{choiceLabel(field, String(value))}</span><div class="pips">{field.choices.map((choice, index) => <i key={choice} class={index === at ? 'on' : ''} />)}</div></div>
-      <button aria-label={t('settings.next')} disabled={disabled} onClick={() => change(stepValue(field, value, 1))}>›</button>
-    </div>;
-  }
+  if (field.choices.length) return <Select field={field} value={value} disabled={disabled} change={change} />;
   if (typeof field.initial === 'number') {
     const number = typed.shown.trim() ? Number(typed.shown) : NaN;
-    if (meta.unit === '%') {
+    if (field.unit === 'percent') {
       const percent = Number.isFinite(number) ? (number - field.min) / (field.max - field.min) * 100 : 0;
       return <div class="range"><input type="range" min={field.min} max={field.max} step={1} value={Number.isFinite(number) ? number : field.min} disabled={disabled}
         aria-label={meta.label} style={{ '--p': `${percent}%` }} {...typed.events} /><b>{Number.isFinite(number) ? number : '—'}%</b></div>;
@@ -106,6 +100,85 @@ function Control({ field, value, disabled, change, browse }: {
   return <div class="txt"><input type="text" value={typed.shown} disabled={disabled} aria-label={meta.label}
     placeholder={field.directory ? t('settings.placeholder.default') : field.reserved ? t('settings.placeholder.devicePreset') : t('common.notSet')} {...typed.events} />
     {browse && <button disabled={disabled} onClick={browse}>{t('settings.browse')}</button>}</div>;
+}
+
+// Longer choice lists: the value with a chevron, opening the whole list below it (above when there is no room).
+// The list lives on the page root so neither the scrolling column nor the glass rows' backdrop filter clip it.
+// While open it owns the keyboard (and the gamepad, which arrives as keys): ↑/↓ move, A/Enter choose, B/Esc close.
+interface Placement { left: number; width: number; top?: number; bottom?: number; maxHeight: number }
+function Select({ field, value, disabled, change }: { field: SettingField; value: SettingValue; disabled: boolean; change: (value: SettingValue) => void }) {
+  const [open, setOpen] = useState(false);
+  const [active, setActiveState] = useState(0);
+  const activeRef = useRef(0);
+  const setActive = (index: number) => { activeRef.current = index; setActiveState(index); };
+  const [place, setPlace] = useState<Placement | null>(null);
+  const trigger = useRef<HTMLButtonElement>(null), list = useRef<HTMLDivElement>(null);
+  const current = String(value), at = field.choices.indexOf(current), label = fieldMeta(field).label;
+  const close = () => { setOpen(false); setPlace(null); };
+  const choose = (choice: string) => { close(); if (choice !== current) change(choice); };
+  useLayoutEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      const box = trigger.current?.getBoundingClientRect();
+      if (!box) return;
+      const gap = 6, margin = 12, width = Math.max(box.width, 240);
+      const room = { below: innerHeight - box.bottom - gap - margin, above: box.top - gap - margin };
+      const wanted = Math.min(field.choices.length * 40 + 12, 380);
+      const up = room.below < wanted && room.above > room.below;
+      const left = Math.min(Math.max(margin, box.right - width), innerWidth - width - margin);
+      setPlace(up ? { left, width, bottom: innerHeight - box.top + gap, maxHeight: Math.min(wanted, room.above) }
+        : { left, width, top: box.bottom + gap, maxHeight: Math.min(wanted, room.below) });
+    };
+    measure();
+    const outside = (event: PointerEvent) => {
+      // A click on the list's own row toggles it through the row (activateRow), so the row is not "outside".
+      const target = event.target as Node, row = trigger.current?.closest('[data-row]');
+      if (!(row ?? trigger.current)?.contains(target) && !list.current?.contains(target)) close();
+    };
+    const keys = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const last = field.choices.length - 1;
+      const move: Record<string, number> = { ArrowDown: 1, ArrowUp: -1, ArrowRight: 1, ArrowLeft: -1 };
+      if (event.key in move) setActive(Math.min(last, Math.max(0, activeRef.current + move[event.key])));
+      else if (event.key === 'Home' || event.key === 'End') setActive(event.key === 'Home' ? 0 : last);
+      else if (event.key === 'Enter' || event.key === 'a' || event.key === ' ') choose(field.choices[activeRef.current]);
+      else if (event.key === 'Escape' || event.key === 'b' || event.key === 'Tab') close();
+      else return;
+      // The page listens on window too: keep its row navigation and back key out of the open list.
+      event.preventDefault(); event.stopPropagation();
+    };
+    document.addEventListener('pointerdown', outside, true);
+    window.addEventListener('keydown', keys, true);
+    window.addEventListener('resize', close);
+    // Scrolling the page would leave the list behind its value; the list's own scrolling keeps it.
+    const scrolled = (event: Event) => { if (!list.current?.contains(event.target as Node)) close(); };
+    document.addEventListener('scroll', scrolled, true);
+    return () => {
+      document.removeEventListener('pointerdown', outside, true);
+      window.removeEventListener('keydown', keys, true);
+      window.removeEventListener('resize', close);
+      document.removeEventListener('scroll', scrolled, true);
+    };
+  }, [open]);
+  useEffect(() => { if (open) list.current?.querySelector(`[data-index="${active}"]`)?.scrollIntoView({ block: 'nearest' }); }, [open, active, place]);
+  const root = trigger.current?.closest('.cfg');
+  return <>
+    <button ref={trigger} class={`sel ${open ? 'open' : ''}`} aria-haspopup="listbox" aria-expanded={open} aria-label={label} disabled={disabled}
+      onClick={() => { if (open) close(); else { setActive(Math.max(0, at)); setOpen(true); } }}>
+      <span>{choiceLabel(field, current)}</span><Glyph name="down" />
+    </button>
+    {open && place && root && createPortal(
+      <div ref={list} class={`sel-pop ${place.bottom !== undefined ? 'up' : ''}`} role="listbox" aria-label={label}
+        style={{ left: `${place.left}px`, width: `${place.width}px`, maxHeight: `${place.maxHeight}px`,
+          ...(place.top !== undefined ? { top: `${place.top}px` } : { bottom: `${place.bottom}px` }) }}>
+        {field.choices.map((choice, index) =>
+          <button key={choice} data-index={index} role="option" aria-selected={choice === current}
+            class={`${choice === current ? 'on' : ''} ${index === active ? 'active' : ''}`}
+            onPointerMove={() => setActive(index)} onClick={() => choose(choice)}>
+            <span>{choiceLabel(field, choice)}</span>{choice === current && <Glyph name="check" />}
+          </button>)}
+      </div>, root)}
+  </>;
 }
 
 // Phone: longer choice lists open a bottom sheet instead of stepping through them one at a time.
@@ -128,12 +201,31 @@ export interface RowModel {
 }
 // Per-game rows never lock: editing one makes it this game's own value (outlined, 'settings.customized'), and the restore
 // button beside the control drops it back to the inherited one.
+// A row's main action, the same for A/Enter and for a click on the row outside its controls: a choice list opens,
+// a switch flips, other choices step, and text or numbers take the keyboard. A click leaves segmented choices and
+// sliders alone: their own buttons and track are the target.
+function activateRow(row: Element | null | undefined, field: SettingField, model: RowModel, change: (value: SettingValue) => void,
+  pointer = false) {
+  if (!row || model.disabled) return;
+  const list = row.querySelector<HTMLButtonElement>('.sel, .pick');
+  if (list) list.click();
+  else if (pointer && row.querySelector('.seg, .range')) return;
+  else if (typeof field.initial === 'boolean' || field.choices.length) change(stepValue(field, model.value, 0));
+  else row.querySelector<HTMLElement>(pointer ? 'input:not([type=range]), textarea' : 'input, textarea')?.focus();
+}
+// Clicks that land on a control (or a link in a note) are the control's own.
+const onControl = (event: MouseEvent) => !!(event.target as Element).closest('button, input, textarea, select, a, label, .seg, .range, .step, .txt, .path-edit');
+const rowClick = (field: SettingField, model: RowModel, change: (value: SettingValue) => void) => (event: MouseEvent) => {
+  if (!onControl(event)) activateRow(event.currentTarget as Element, field, model, change, true);
+};
+
 function FieldRow({ field, model, focused, focus, change, browse, restoreInherit }: {
   field: SettingField; model: RowModel; focused: boolean; focus: () => void;
   change: (value: SettingValue) => void; browse?: () => void; restoreInherit?: () => void;
 }) {
   const meta = fieldMeta(field), inherit = model.inherit, overridden = !!inherit?.overridden;
-  return <div class={`row ${focused ? 'focus' : ''} ${overridden ? 'override' : ''}`} data-row onPointerDown={focus}>
+  return <div class={`row ${focused ? 'focus' : ''} ${overridden ? 'override' : ''}`} data-row onPointerDown={focus}
+    onClick={rowClick(field, model, change)}>
     <GroupIcon name={field.group} glyph={SETTING_ICONS[field.key]} />
     <div class="lbl"><b>{meta.label}</b>
       {(inherit || meta.reserved || meta.hint) && <div class="meta">
@@ -169,7 +261,7 @@ function ConfirmedPathRow({ field, model, saving, focused, focus, change, browse
   // The page shows a write's value before it lands: only once it has can the edit be let go.
   useEffect(() => { if (!saving && text === value) setText(null); }, [text, value, saving]);
   const save = () => { if (dirty && !model.disabled) change(shown); };
-  return <div class={`row path-row ${focused ? 'focus' : ''}`} data-row onPointerDown={focus}>
+  return <div class={`row path-row ${focused ? 'focus' : ''}`} data-row onPointerDown={focus} onClick={rowClick(field, model, change)}>
     <GroupIcon name={field.group} glyph={SETTING_ICONS[field.key]} />
     <div class="lbl"><b>{meta.label}</b>{dirty && <span class="tag pending">{t('import.unsaved')}</span>}
       {meta.hint && <div class="meta"><span>{meta.hint}</span></div>}
@@ -345,10 +437,7 @@ function ConsoleFrame(props: FrameProps) {
           props.change(field, stepValue(field, model.value, event.key === 'ArrowRight' ? 1 : -1));
       } else if ((event.key === 'Enter' || event.key === 'a') && field) {
         event.preventDefault();
-        const model = props.model(field);
-        if (model.disabled) return;
-        if (typeof field.initial === 'boolean' || field.choices.length) props.change(field, stepValue(field, model.value, 0));
-        else main.current?.querySelectorAll('[data-row]')[focus]?.querySelector<HTMLElement>('input, textarea')?.focus();
+        activateRow(main.current?.querySelectorAll('[data-row]')[focus], field, props.model(field), value => props.change(field, value));
       } else if ((event.key === 'q' || event.key === 'e') && groups.length) {
         selectGroup(groups[(at + (event.key === 'e' ? 1 : groups.length - 1)) % groups.length][0]);
       } else if (event.key === 'i' && field && props.restoreInherit && props.model(field).inherit?.overridden) props.restoreInherit(field);

@@ -300,8 +300,6 @@ export const messages: Record<string, string> = {
   "dataHint.mountAndRelaunch": "挂载并重新启动",
   "dataHint.chooseFolder": "选择数据包目录",
 
-  "settings.previous": "上一项",
-  "settings.next": "下一项",
   "settings.decrease": "减少",
   "settings.increase": "增加",
   "settings.placeholder.default": "留空使用默认行为",

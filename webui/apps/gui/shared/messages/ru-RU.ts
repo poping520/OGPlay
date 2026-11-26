@@ -299,8 +299,6 @@ export const messages: Record<string, string> = {
   "dataHint.mountAndRelaunch": "Смонтировать и перезапустить",
   "dataHint.chooseFolder": "Выбрать папку с пакетом данных",
 
-  "settings.previous": "Назад",
-  "settings.next": "Далее",
   "settings.decrease": "Уменьшить",
   "settings.increase": "Увеличить",
   "settings.placeholder.default": "Оставьте пустым для значения по умолчанию",

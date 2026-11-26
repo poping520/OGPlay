@@ -15,6 +15,7 @@
 - [execution](execution/MODULE.md)：guest 生命周期、线程 runner 与 clone 执行。
 - [vfs](vfs/MODULE.md)：Android 路径、挂载和 descriptor 核心。
 - [process](process/MODULE.md)：进程内虚拟进程（fork/exec/wait/kill）与内置命令 sh、ps。
+- [net](net/MODULE.md)：guest socket 栈（AF_UNIX/回环进程内、dnsproxyd 端点、联网模式宿主出口）。
 - [resources](resources/MODULE.md)：独立的 API19 资源表、主题、编译 XML 和归档资产。
 - [integration](integration/MODULE.md)：无界面累计装配和出口报告。
 

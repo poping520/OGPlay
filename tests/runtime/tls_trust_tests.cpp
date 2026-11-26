@@ -45,6 +45,8 @@
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/network_runtime.h"
+#include "ogplay/runtime/net/guest_network.h"
+#include "host_network_fixture.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/vfs/vfs.h"
 #include "ogplay/session/android_app_process.h"
@@ -103,106 +105,6 @@ using SocketLength = std::size_t;
                                             {{{"android.intent.action.MAIN"}, {"android.intent.category.LAUNCHER"}}}});
     return manifest;
 }
-
-class LoopbackTransport final : public NetworkTransport {
-public:
-    explicit LoopbackTransport(const std::uint16_t port) : port_(port) {
-#ifdef _WIN32
-        WSADATA data{};
-        REQUIRE(WSAStartup(MAKEWORD(2, 2), &data) == 0);
-        wsa_ = true;
-#endif
-    }
-
-    ~LoopbackTransport() override {
-        for (auto& [_, socket] : sockets_)
-            CloseSocket(socket);
-#ifdef _WIN32
-        if (wsa_) WSACleanup();
-#endif
-    }
-
-    std::vector<std::string> Resolve(std::string_view) override { return {"127.0.0.1"}; }
-
-    std::uint64_t Connect(std::string_view, std::uint16_t, bool tls) override {
-        CHECK_FALSE(tls);
-        HostSocket socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        REQUIRE(socket != kInvalidSocket);
-        sockaddr_in address{};
-        address.sin_family = AF_INET;
-        address.sin_port = htons(port_);
-        REQUIRE(inet_pton(AF_INET, "127.0.0.1", &address.sin_addr) == 1);
-        REQUIRE(::connect(socket, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
-        const auto channel = next_++;
-        sockets_[channel] = socket;
-        return channel;
-    }
-
-    void Send(std::uint64_t channel, std::span<const std::byte> bytes) override {
-        auto socket = sockets_.at(channel);
-        const auto sent =
-            ::send(socket, reinterpret_cast<const char*>(bytes.data()), static_cast<SocketLength>(bytes.size()), 0);
-        REQUIRE(sent == static_cast<int>(bytes.size()));
-    }
-
-    std::vector<std::byte> Receive(std::uint64_t channel, std::size_t maximum) override {
-        return Receive(channel, maximum, 0);
-    }
-
-    std::vector<std::byte> Receive(std::uint64_t channel, std::size_t maximum, std::int32_t timeout_ms) override {
-        auto socket = sockets_.at(channel);
-        if (timeout_ms > 0) {
-            fd_set read_set;
-            FD_ZERO(&read_set);
-            FD_SET(socket, &read_set);
-            timeval timeout{timeout_ms / 1000, (timeout_ms % 1000) * 1000};
-#ifdef _WIN32
-            const int ready = ::select(0, &read_set, nullptr, nullptr, &timeout);
-#else
-            const int ready = ::select(socket + 1, &read_set, nullptr, nullptr, &timeout);
-#endif
-            if (ready == 0) throw NetworkRuntimeError("socket receive timed out");
-            REQUIRE(ready > 0);
-        }
-        std::vector<std::byte> buffer(maximum);
-        const auto received =
-            ::recv(socket, reinterpret_cast<char*>(buffer.data()), static_cast<SocketLength>(buffer.size()), 0);
-        if (received <= 0) return {};
-        buffer.resize(static_cast<std::size_t>(received));
-        return buffer;
-    }
-
-    void Close(std::uint64_t channel) noexcept override {
-        const auto found = sockets_.find(channel);
-        if (found == sockets_.end()) return;
-        CloseSocket(found->second);
-        sockets_.erase(found);
-    }
-
-    void SendDatagram(const NetworkDatagram&) override {
-        throw NetworkRuntimeError("datagram is not used by TLS tests");
-    }
-
-    NetworkDatagram ReceiveDatagram(std::size_t) override {
-        throw NetworkRuntimeError("datagram is not used by TLS tests");
-    }
-
-private:
-    static void CloseSocket(HostSocket socket) {
-#ifdef _WIN32
-        closesocket(socket);
-#else
-        close(socket);
-#endif
-    }
-
-    std::uint16_t port_{};
-    std::uint64_t next_{1};
-    std::unordered_map<std::uint64_t, HostSocket> sockets_{};
-#ifdef _WIN32
-    bool wsa_{};
-#endif
-};
 
 struct OracleServer final {
     OracleServer(const std::string& cert, const std::string& key, const std::string& client_ca = {}) {
@@ -312,10 +214,11 @@ struct TlsApp final {
     std::vector<BionicModuleSource> libraries;
     ogplay::test::native_library::MainThreadActions main;
     std::unique_ptr<AndroidAppProcess> app;
-    LoopbackTransport* transport{};
 
-    explicit TlsApp(NetworkTransport* network = nullptr,
-                    const InterpreterBackend backend = InterpreterBackend::threaded) {
+    // network: the online egress (null keeps the device offline). host_tls selects the
+    // OGPlayJSSE engine; these tests exercise guest libssl unless they ask otherwise.
+    explicit TlsApp(ogplay::hal::HostNetwork* network = nullptr,
+                    const InterpreterBackend backend = InterpreterBackend::threaded, const bool host_tls = false) {
         InstallCaPack(filesystem);
         for (const auto name :
              {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so", "libcrypto.so", "libssl.so", "libgabi++.so",
@@ -346,17 +249,14 @@ struct TlsApp final {
         request.filesystem = &filesystem;
         request.ledger = &ledger;
         request.logger = &logger;
+        request.platform.network_mode = network != nullptr ? ogplay::runtime::net::NetworkMode::online
+                                                           : ogplay::runtime::net::NetworkMode::disabled;
+        request.platform.host_network = network;
+        request.platform.host_tls = host_tls;
         ogplay::test::BindBootDexArchive(*context);
         main.Install(request);
         app = AndroidAppProcess::Create(std::move(request));
         app->StartApplication();
-        if (network != nullptr) {
-            main.Run(*app, [&] {
-                context->network_policy = NetworkPolicy{true, true, false, {"tls.test", "127.0.0.1"}};
-                context->network_transport = network;
-                Vm().Network().Configure(context->network_policy, network);
-            });
-        }
     }
 
     void Run(const std::function<void()>& action) { main.Run(*app, action); }
@@ -707,7 +607,7 @@ TEST_CASE("TLS-01 path validation uses guest libcrypto") {
 
 TEST_CASE("TLS-02 client handshake HTTPS layered autoClose") {
     OracleServer server("server.crt", "server.key");
-    LoopbackTransport transport(server.Port());
+    ogplay::test::host_network::RedirectHostNetwork transport({"tls.test"});
     for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         TlsApp app(&transport, backend);
@@ -745,7 +645,7 @@ TEST_CASE("TLS-02 client handshake HTTPS layered autoClose") {
                        {VmValue::Ref(url), VmValue::Ref(app.Vm().NewStringUtf8(spec))});
             auto connection = app.Invoke(url, "openConnection", "()Ljava/net/URLConnection;").ref;
             CHECK(app.Linker().Class(app.Vm().Model().ObjectClass(connection)).descriptor ==
-                  "Lorg/ogplay/security/OgPlayHttpsURLConnection;");
+                  "Lcom/android/okhttp/internal/http/HttpsURLConnectionImpl;");
             auto opened_connect = app.InvokeResult(connection, "connect", "()V");
             REQUIRE_MESSAGE(!opened_connect.exception.IsValid(), opened_connect.exception_message);
             auto body_result = app.InvokeResult(connection, "getInputStream", "()Ljava/io/InputStream;");
@@ -832,7 +732,7 @@ TEST_CASE("TLS-02 SSLContext init does not replace the HTTPS factory") {
         REQUIRE(failure.exception.IsValid());
         CHECK(app.Linker().IsAssignable(app.Linker().ResolveDescriptor("Ljava/io/IOException;"),
                                         failure.exception_class));
-        CHECK(failure.exception_message.find("offline") != std::string::npos);
+        CHECK(failure.exception_message.find("Unable to resolve host") != std::string::npos);
         app.Invoke(connection.value.ref, "disconnect", "()V");
         app.Invoke(connection.value.ref, "disconnect", "()V");
         (void)defaults;
@@ -842,7 +742,7 @@ TEST_CASE("TLS-02 SSLContext init does not replace the HTTPS factory") {
 
 TEST_CASE("TLS-02 enabled protocols and SNI apply to the handshake") {
     OracleServer server("server.crt", "server.key");
-    LoopbackTransport transport(server.Port());
+    ogplay::test::host_network::RedirectHostNetwork transport({"tls.test"});
     TlsApp app(&transport);
     app.Run([&] {
         auto context =
@@ -885,7 +785,7 @@ TEST_CASE("TLS-02 enabled protocols and SNI apply to the handshake") {
 
 TEST_CASE("TLS-02 session cache resumes and honors timeout") {
     OracleServer server("server.crt", "server.key");
-    LoopbackTransport transport(server.Port());
+    ogplay::test::host_network::RedirectHostNetwork transport({"tls.test"});
     TlsApp app(&transport);
     app.Run([&] {
         auto context =
@@ -1041,7 +941,7 @@ void HandshakeMutualTls(TlsApp& app, std::uint16_t port, const char* algorithm, 
 
 TEST_CASE("TLS-02 mutual TLS installs a BKS client certificate") {
     OracleServer server("server.crt", "server.key", "ca.crt");
-    LoopbackTransport transport(server.Port());
+    ogplay::test::host_network::RedirectHostNetwork transport({"tls.test"});
     for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         TlsApp app(&transport, backend);
@@ -1056,7 +956,8 @@ TEST_CASE("TLS-02 network stays offline by default") {
     for (const auto backend : ogplay::test::InterpreterBackends()) {
         TlsApp app(nullptr, backend);
         app.Run([&] {
-            CHECK_FALSE(app.Vm().Network().Policy().enabled);
+            REQUIRE(app.Vm().Network().Stack() != nullptr);
+            CHECK(app.Vm().Network().Stack()->Mode() == ogplay::runtime::net::NetworkMode::disabled);
             auto url = app.Vm().NewIntrinsicInstance("Ljava/net/URL;");
             app.Direct("Ljava/net/URL;", "<init>", "(Ljava/lang/String;)V",
                        {VmValue::Ref(url), VmValue::Ref(app.Vm().NewStringUtf8("https://tls.test/"))});
@@ -1080,11 +981,63 @@ TEST_CASE("TLS-02 network stays offline by default") {
                 auto failure = app.InvokeResult(connection, operation, descriptor);
                 REQUIRE(failure.exception.IsValid());
                 CHECK(app.Linker().IsAssignable(io_exception, failure.exception_class));
-                CHECK(failure.exception_message.find("offline") != std::string::npos);
+                CHECK(failure.exception_message.find("Unable to resolve host") != std::string::npos);
                 app.Invoke(connection, "disconnect", "()V");
                 app.Invoke(connection, "disconnect", "()V");
-                CHECK_FALSE(app.Vm().Network().Policy().enabled);
             }
         });
     }
+}
+
+TEST_CASE("TLS-04 host engine defers trust to the TrustManager and rejects unknown roots by default") {
+    OracleServer server("server.crt", "server.key");
+    ogplay::test::host_network::RedirectHostNetwork transport({"tls.test"});
+    TlsApp app(&transport, InterpreterBackend::threaded, true);
+    app.Run([&] {
+        const auto connect = [&](const VmObjectRef context) {
+            auto factory = app.Invoke(context, "getSocketFactory", "()Ljavax/net/ssl/SSLSocketFactory;").ref;
+            auto socket = app.Invoke(factory, "createSocket", "(Ljava/lang/String;I)Ljava/net/Socket;",
+                                     {VmValue::Ref(app.Vm().NewStringUtf8("tls.test")), VmValue::Int(server.Port())})
+                              .ref;
+            return std::pair{socket, app.InvokeResult(socket, "startHandshake", "()V")};
+        };
+        const auto new_context = [&](const VmObjectRef managers) {
+            auto context = app.Direct("Ljavax/net/ssl/SSLContext;", "getInstance",
+                                      "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
+                                      {VmValue::Ref(app.Vm().NewStringUtf8("TLS"))})
+                               .ref;
+            app.Invoke(context, "init",
+                       "([Ljavax/net/ssl/KeyManager;[Ljavax/net/ssl/TrustManager;Ljava/security/SecureRandom;)V",
+                       {VmValue::Ref(VmObjectRef{}), VmValue::Ref(managers), VmValue::Ref(VmObjectRef{})});
+            return context;
+        };
+        // Default trust: the host's roots do not include the fixture CA.
+        auto [rejected_socket, rejected] = connect(new_context(VmObjectRef{}));
+        REQUIRE(rejected.exception.IsValid());
+        CHECK(app.Linker().Class(rejected.exception_class).descriptor == "Ljavax/net/ssl/SSLHandshakeException;");
+        app.Invoke(rejected_socket, "close", "()V");
+
+        // A TrustManager over the bundled AndroidCAStore accepts the fixture chain.
+        auto store =
+            app.Direct("Ljava/security/KeyStore;", "getInstance", "(Ljava/lang/String;)Ljava/security/KeyStore;",
+                       {VmValue::Ref(app.Vm().NewStringUtf8("AndroidCAStore"))})
+                .ref;
+        app.Invoke(store, "load", "(Ljava/io/InputStream;[C)V",
+                   {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
+        auto tmf = app.Direct("Ljavax/net/ssl/TrustManagerFactory;", "getInstance",
+                              "(Ljava/lang/String;)Ljavax/net/ssl/TrustManagerFactory;",
+                              {VmValue::Ref(app.Vm().NewStringUtf8("PKIX"))})
+                       .ref;
+        app.Invoke(tmf, "init", "(Ljava/security/KeyStore;)V", {VmValue::Ref(store)});
+        auto managers = app.Invoke(tmf, "getTrustManagers", "()[Ljavax/net/ssl/TrustManager;").ref;
+        auto [socket, handshake] = connect(new_context(managers));
+        REQUIRE_MESSAGE(!handshake.exception.IsValid(), handshake.exception_message);
+        auto session = app.Invoke(socket, "getSession", "()Ljavax/net/ssl/SSLSession;").ref;
+        const auto protocol = app.Vm().StringUtf8(app.Invoke(session, "getProtocol", "()Ljava/lang/String;").ref);
+        CHECK((protocol == "TLSv1.2" || protocol == "TLSv1.3"));
+        CHECK(app.Vm().StringUtf8(app.Invoke(session, "getCipherSuite", "()Ljava/lang/String;").ref).find("TLS_") == 0);
+        auto supported = app.Invoke(socket, "getSupportedProtocols", "()[Ljava/lang/String;").ref;
+        CHECK(app.Vm().StringUtf8(app.Vm().Model().GetObjectElement(supported, 0)) == "TLSv1.3");
+        app.Invoke(socket, "close", "()V");
+    });
 }

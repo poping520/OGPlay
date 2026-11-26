@@ -163,11 +163,11 @@ Java FileDescriptor 保存逻辑描述符，而不是宿主 fd。
 接口查询用描述符与普通文件 IO 分开，数字有效不表示可以对它执行任何操作。
 这样文件身份与资源权限能跨 Java/native 保持一致。
 
-NetworkRuntime 通过注入的 policy/transport 访问网络，默认离线。
-URL 解析本身不触网，DNS、connect 和实际 IO 才检查策略。
-离线接口视图来自统一进程拓扑，不读取宿主网卡；
-能查询回环地址也不代表在线传输已授权。
-原因见[离线接口决定](../adr/runtime.md#adr-0168)。
+网络由进程内唯一的 socket 栈（[runtime/net](../../src/runtime/net/MODULE.md)）承担：socket 是 VFS 描述符对象，
+ARM syscall 与 Java Posix native 看到同一组编号，ROM 的 Socket/IoBridge/okhttp 原样运行。
+AF_UNIX、回环和 netd 的 dnsproxyd 端点在进程内实现，所以离线时游戏看到的是“Wi-Fi 未连接的手机”：
+本地通信正常，外部地址不可达、名字解析失败。只有联网模式才把外部连接交给宿主 socket 与宿主解析器，
+设备对外仍报告模拟的 Wi-Fi 地址；连接性服务与接口表从同一模式派生，不读取宿主网卡。
 
 ## 密码资源与 BKS 状态归属
 
@@ -188,23 +188,20 @@ BKS 也不代表 AndroidKeyStore 或硬件保护，敏感值不进入诊断日�
 
 ## TLS 为什么使用内存 BIO
 
-OGPlayJSSE 把原版 JSSE API 连到 guest libssl/libcrypto。
-内存 BIO 是 SSL 库读写加密字节的缓冲接口，
-它与 NetworkRuntime raw channel 交换密文，不把宿主 fd 传入 guest SSL。
-这样加密和网络授权分别由唯一后端处理，也避免宿主再加密一次。
+OGPlayJSSE 把原版 JSSE API 连到一个 TLS 引擎，引擎只通过内存 BIO（SSL 库读写加密字节的缓冲接口）
+交换密文，密文再经 SSLSocket 下层的普通 guest socket 收发。这样网络开关只在 socket 栈一处，
+引擎也永远拿不到宿主 fd。
 
-TLS 链验证、SNI 与主机名校验分别承担不同责任。
-默认 TrustManager 执行真实路径验证，HttpsURLConnection 与 Apache 使用相应 HostnameVerifier，
-连接恢复和 session cache 保留实际寿命；查询本身不续期。
-这种拆分多了校验接缝，却能区分“信任链有效”“目标主机正确”与“网络允许连接”。
+默认引擎在宿主：OpenSSL 3.5 提供 TLS 1.3 与现代套件，证书由宿主操作系统的信任根判定，
+根证书随系统更新，项目不再维护公开 CA 包；API19 老 CA 与 OpenSSL 1.0.1 不被现网接受是选它的原因。
+宿主握手不做信任判断，握手后把证书链交给调用方的 TrustManager——游戏自装的“信任全部”或
+自带 CA 的 TrustManager 因而照常生效，默认 TrustManager 才调用宿主信任根。guest libssl 引擎保留为
+`tls_mode=guest`，用于还原 4.4 行为与对照排查，不承诺公网安全。
 
-AndroidCAStore 提供来自显式包的只读版本化 CA 视图，测试 CA 包不是公开信任列表。
-一次回环 TLS 成功可以验证握手、密文 transport、证书链和主机名校验的接缝，
-却不能替项目选择公开 CA 来源或承担旧 OpenSSL 的补丁维护，这两项责任尚未闭合，
-loopback 客户端成功只能作为本地兼容开发证据。
-默认离线仍由唯一 NetworkPolicy 决定；KeyStore 能保存证书不等于该证书被加入默认信任，
-AndroidCAStore 可读也不等于拥有完整 Android 密钥服务。
-SSLEngine、server TLS、AndroidKeyStore 与完整 PKIX 的边界见
+TLS 链验证、SNI 与主机名校验分别承担不同责任：TrustManager 管链，HttpsURLConnection 与 Apache
+使用 HostnameVerifier，session cache 保留实际寿命，查询不续期。KeyStore 能保存证书不等于该证书被加入
+默认信任，AndroidCAStore 可读也不等于拥有完整 Android 密钥服务。游戏 .so 里静态链接的 TLS 不经过
+OGPlayJSSE，只从 socket 栈获得连接。SSLEngine、server TLS、AndroidKeyStore 与完整 PKIX 的边界见
 [已知问题](../state/KNOWN-ISSUES.md#执行与平台)。
 
 ## 契约、决定与操作

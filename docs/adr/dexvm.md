@@ -71,7 +71,10 @@ GC、Java 显式 close、finalizer 与 teardown 共用关闭事实，不能重�
 
 ## ADR-0066 · 密码、KeyStore 与 TLS 的 guest 依赖边界
 
-- 状态：Accepted
+- 状态：Accepted；TLS 部分已按用户决定修订：OGPlayJSSE 默认使用宿主 OpenSSL 3 引擎与宿主信任根，
+  guest libssl 保留为 `tls_mode=guest`，网络经 `runtime/net` 栈（见 [JSSE 契约](../../src/guest/crypto/java/MODULE.md)、
+  [runtime/net](../../src/runtime/net/MODULE.md)）。下文中关于宿主不实现 TLS 与 NetworkPolicy/raw transport 的
+  表述仅适用于 guest 引擎。
 - 日期：2026-09-16
 
 ### 背景

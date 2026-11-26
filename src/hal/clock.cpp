@@ -12,6 +12,11 @@
 #endif
 
 namespace ogplay::hal {
+std::int64_t Clock::HostUnixTimeMillis() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+
 std::uint64_t Clock::SteadyTimestampNs() {
     return static_cast<std::uint64_t>(
         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())

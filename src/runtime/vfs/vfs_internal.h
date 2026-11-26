@@ -184,6 +184,20 @@ private:
     bool reader_{};
 };
 
+// Runs the object's OnLastClose when the open description retires.
+class ObjectPin final {
+public:
+    explicit ObjectPin(std::shared_ptr<VfsDescriptorObject> object) : object_(std::move(object)) {}
+
+    ~ObjectPin() { object_->OnLastClose(); }
+
+    ObjectPin(const ObjectPin&) = delete;
+    ObjectPin& operator=(const ObjectPin&) = delete;
+
+private:
+    std::shared_ptr<VfsDescriptorObject> object_;
+};
+
 struct OpenFile final {
     OpenFile(std::shared_ptr<File> initial_file, std::uint64_t initial_offset, bool initial_readable,
              bool initial_writable, std::shared_ptr<OpenDirectoryState> initial_directory, bool initial_pipe = false)
@@ -197,7 +211,8 @@ struct OpenFile final {
     bool writable{};
     std::shared_ptr<OpenDirectoryState> directory;
     bool append{};
-    bool non_blocking{};
+    // Atomic: F_SETFL may change it while another thread blocks on the description.
+    std::atomic<bool> non_blocking{};
     bool large_file{};
     bool no_follow{};
     bool pipe{};
@@ -209,6 +224,10 @@ struct OpenFile final {
     std::unique_ptr<PipeEnd> pipe_end;
     // Set for stream endpoints; `file` is then an empty placeholder node.
     std::shared_ptr<const VfsStreamEndpoint> endpoint;
+    // Set for upper-layer descriptor objects; `pipe` is also set so stream
+    // rules (ESPIPE, no lease/truncate) apply. Declared last: retires first.
+    std::shared_ptr<VfsDescriptorObject> object;
+    std::unique_ptr<ObjectPin> object_pin;
 };
 
 struct DescriptorTable final {
@@ -262,6 +281,11 @@ public:
     [[nodiscard]] std::uint64_t PipeReadinessGeneration() const;
     void WaitPipeReadiness(std::uint64_t observed, std::chrono::nanoseconds timeout) const;
     void NotifyPipeReadiness() const;
+    [[nodiscard]] std::int32_t OpenObject(std::shared_ptr<VfsDescriptorObject> object, VfsOpenStatus status);
+    [[nodiscard]] std::shared_ptr<VfsDescriptorObject> DescriptorObject(std::int32_t descriptor) const;
+    void SetNonBlocking(std::int32_t descriptor, bool non_blocking);
+    [[nodiscard]] VfsIoContext IoContext(std::int32_t descriptor) const;
+    [[nodiscard]] std::function<bool()> ThreadInterrupt() const;
     [[nodiscard]] std::size_t Read(std::int32_t descriptor, std::span<std::byte> destination);
     [[nodiscard]] std::size_t ReadAt(std::int32_t descriptor, std::uint64_t offset, std::span<std::byte> destination);
     [[nodiscard]] std::size_t Write(std::int32_t descriptor, std::span<const std::byte> source);

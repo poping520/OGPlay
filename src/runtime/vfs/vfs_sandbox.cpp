@@ -485,6 +485,7 @@ VfsFileInfo VirtualFileSystem::Impl::DescriptorInfo(const std::int32_t descripto
     if (open->directory) return open->directory->info;
     auto info = FileInfoLocked(*open->file, open->owner_id);
     if (open->pipe) info.device = static_cast<std::uint32_t>(Volume::pipefs);
+    info.is_socket = static_cast<bool>(open->object);
     return info;
 }
 

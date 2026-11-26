@@ -13,19 +13,46 @@ std::string Hex(const std::uint32_t value, const int width = 0) {
 }
 }
 
-GuestNetworkEnvironment::GuestNetworkEnvironment(const AndroidOfflineConnectivity&)
+GuestNetworkEnvironment::GuestNetworkEnvironment(const AndroidOfflineConnectivity&,
+                                                 const std::optional<std::array<std::uint8_t, 4>> device_ipv4)
     // API19-era Linux v3.4 drivers/net/loopback.c: MTU 16*1024+20+20+12,
     // https://github.com/torvalds/linux/blob/v3.4/drivers/net/loopback.c
     // IFF_LOOPBACK; net/core/dev.c/dev_get_flags adds UP and RUNNING.
     // net/ipv4/devinet.c loopback 127.0.0.1/8; net/ipv6/addrconf.c ::1,
     // IPV6_ADDR_LOOPBACK / IFA_HOST (0x10), IFA_F_PERMANENT (0x80). No host adapter is sampled.
-    : interfaces_{{"lo", 1, 0x49, 16436, "00:00:00:00:00:00",
-        std::array{std::byte{127}, std::byte{0}, std::byte{0}, std::byte{1}},
-        {std::byte{255}, std::byte{0}, std::byte{0}, std::byte{0}}, {},
-        {std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0},
-         std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0},
-         std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0},
-         std::byte{0}, std::byte{0}, std::byte{0}, std::byte{1}}, 128, 0x10, 0x80}} {}
+    : interfaces_{{"lo",
+                   1,
+                   0x49,
+                   16436,
+                   "00:00:00:00:00:00",
+                   std::array{std::byte{127}, std::byte{0}, std::byte{0}, std::byte{1}},
+                   {std::byte{255}, std::byte{0}, std::byte{0}, std::byte{0}},
+                   {},
+                   {std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0},
+                    std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0},
+                    std::byte{0}, std::byte{1}},
+                   128,
+                   0x10,
+                   0x80}} {
+    if (!device_ipv4) return;
+    // Connected Wi-Fi: IFF_UP|IFF_BROADCAST|IFF_RUNNING|IFF_MULTICAST, Ethernet MTU,
+    // a /24 home network. IPv4 only: no IPv6 address, so /proc/net/if_inet6 keeps lo alone.
+    const auto& ip = *device_ipv4;
+    const auto byte = [](const std::uint8_t value) { return std::byte{value}; };
+    GuestNetworkInterface wlan{"wlan0",
+                               2,
+                               0x1043,
+                               1500,
+                               "02:00:00:00:00:00",
+                               std::array{byte(ip[0]), byte(ip[1]), byte(ip[2]), byte(ip[3])},
+                               {std::byte{255}, std::byte{255}, std::byte{255}, std::byte{0}},
+                               {byte(ip[0]), byte(ip[1]), byte(ip[2]), std::byte{255}},
+                               {},
+                               0,
+                               0,
+                               0};
+    interfaces_.push_back(std::move(wlan));
+}
 
 void GuestNetworkEnvironment::Publish(VirtualFileSystem& filesystem) {
     std::vector<std::unique_ptr<VfsGeneratedFileRegistration>> files;
@@ -41,6 +68,7 @@ void GuestNetworkEnvironment::Publish(VirtualFileSystem& filesystem) {
         publish(root + "flags", "0x" + Hex(interface.flags) + "\n");
         publish(root + "mtu", std::to_string(interface.mtu) + "\n");
         publish(root + "address", interface.hardware_address + "\n");
+        if (interface.ipv6_prefix == 0) continue;  // No IPv6 address on this interface.
         for (const auto byte : interface.ipv6) inet6 += Hex(std::to_integer<unsigned>(byte), 2);
         inet6 += " " + Hex(interface.index, 2) + " " + Hex(interface.ipv6_prefix, 2) +
                  " " + Hex(interface.ipv6_scope, 2) + " " + Hex(interface.ipv6_flags, 2) +

@@ -77,10 +77,22 @@ TEST_CASE("GUI global launch settings forward only supported CLI controls") {
     auto entry = Entry(directory, {});
     entry.external_dir.reset();
     LibraryConfig config;
-    const auto baseline = WithoutEditorPort(BuildLaunchPlan(cli, tree.path, entry, config).argv);
-    SetSetting(config, "network_policy", std::string("allow"));
+    auto baseline = WithoutEditorPort(BuildLaunchPlan(cli, tree.path, entry, config).argv);
     SetSetting(config, "volume", std::uint32_t{25});
     CHECK(WithoutEditorPort(BuildLaunchPlan(cli, tree.path, entry, config).argv) == baseline);
+    // The network policy and TLS engine reach the runtime as --network and --tls.
+    SetSetting(config, "network_policy", std::string("allow"));
+    SetSetting(config, "tls_mode", std::string("guest"));
+    const auto networked = WithoutEditorPort(BuildLaunchPlan(cli, tree.path, entry, config).argv);
+    REQUIRE(networked.size() == baseline.size() + 4);
+    for (const auto& [flag, value] :
+         std::vector<std::pair<std::string, std::string>>{{"--network", "allow"}, {"--tls", "guest"}}) {
+        const auto it = std::find(networked.begin(), networked.end(), flag);
+        REQUIRE(it != networked.end());
+        REQUIRE(std::next(it) != networked.end());
+        CHECK(*std::next(it) == value);
+    }
+    baseline = networked;
     SetSetting(config, "supersample", std::uint32_t{2});
     SetSetting(config, "interpreter", std::string("threaded"));
     SetSetting(config, "mcp_enabled", true);

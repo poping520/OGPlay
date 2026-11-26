@@ -1,5 +1,6 @@
 #include "catalog.h"
 #include "runtime/integration/guest_network_environment.h"
+#include "ogplay/runtime/net/guest_network.h"
 #include "ogplay/runtime/integration/guest_process_environment.h"
 #include "ogplay/runtime/boundary/device_locale.h"
 
@@ -51,13 +52,16 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<
     services.memory_mappings = [context]() -> const GuestMemoryMappings* {
         return context->session ? &context->session->Process().MemoryMappings() : nullptr;
     };
-    if (context->offline_connectivity && !context->network_policy.enabled && !context->network_environment) {
-        auto environment = std::make_shared<GuestNetworkEnvironment>(*context->offline_connectivity);
+    if (context->offline_connectivity && !context->network_environment) {
+        const bool online = context->network != nullptr && context->network->Mode() == net::NetworkMode::online;
+        auto environment = std::make_shared<GuestNetworkEnvironment>(
+            *context->offline_connectivity,
+            online ? std::optional{context->network->Config().device_ipv4} : std::nullopt);
         if (context->vfs) environment->Publish(*context->vfs);
         context->network_environment = std::move(environment);
     }
     services.network_interfaces = [context](dexvm::Interpreter& vm) -> const std::vector<GuestNetworkInterface>& {
-        if (!context->offline_connectivity || context->network_policy.enabled || !context->network_environment) {
+        if (!context->offline_connectivity || !context->network_environment) {
             if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.connectivity_offline", 0);
             throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                      "guest interface topology is unavailable"};

@@ -30,6 +30,8 @@
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/net/guest_network.h"
+#include "ogplay/runtime/vfs/vfs.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/dexvm/reflection.h"
@@ -1565,7 +1567,7 @@ TEST_CASE("DVM-241 offline connectivity distinguishes unsupported types and pres
         CHECK_FALSE(f.On(wifi, "isWifiEnabled", "()Z").AsInt());
         CHECK(f.On(wifi, "setWifiEnabled", "(Z)Z", {VmValue::Int(1)}).AsInt());
 
-        CHECK_THROWS_AS(static_cast<void>(f.vm.Network().Resolve("offline.test")), NetworkRuntimeError);
+        CHECK(f.vm.Network().Stack() == nullptr);
         f.context->offline_connectivity->wifi_type_supported = false;
         const auto unsupported = query(1);
         REQUIRE_FALSE(unsupported.exception.IsValid());
@@ -1574,14 +1576,30 @@ TEST_CASE("DVM-241 offline connectivity distinguishes unsupported types and pres
         fail(query(1), "Ljava/lang/UnsupportedOperationException;");
         fail(f.OnOutcome(wifi, "getWifiState", "()I"), "Ljava/lang/UnsupportedOperationException;");
         f.context->offline_connectivity = AndroidOfflineConnectivity{};
-        f.context->network_policy.enabled = true;
-        fail(query(1), "Ljava/lang/UnsupportedOperationException;");
-        f.context->network_policy.enabled = false;
-        NetworkPolicy online;
-        online.enabled = true;
-        f.vm.Network().Configure(std::move(online), nullptr);
-        fail(query(1), "Ljava/lang/UnsupportedOperationException;");
-        f.vm.Network().Configure({}, nullptr);
+        // Online mode: the same facts with a connected Wi-Fi network at the device address.
+        VirtualFileSystem online_vfs;
+        net::GuestNetworkStack online(online_vfs, {.mode = net::NetworkMode::online});
+        f.context->network = &online;
+        const auto active = f.On(manager, "getActiveNetworkInfo", "()Landroid/net/NetworkInfo;").ref;
+        REQUIRE(active.IsValid());
+        const auto active_root = f.vm.ProtectReferences(std::array{active});
+        CHECK(f.On(active, "isConnected", "()Z").AsInt() == 1);
+        CHECK(f.On(active, "getType", "()I").AsInt() == 1);
+        CHECK(f.vm.StringUtf8(f.On(active, "getExtraInfo", "()Ljava/lang/String;").ref) == "\"OGPlay\"");
+        CHECK(f.On(manager, "isActiveNetworkMetered", "()Z").AsInt() == 0);
+        const auto online_wifi = query(1);
+        REQUIRE_FALSE(online_wifi.exception.IsValid());
+        CHECK(f.On(online_wifi.value.ref, "isConnected", "()Z").AsInt() == 1);
+        const auto connection = f.On(wifi, "getConnectionInfo", "()Landroid/net/wifi/WifiInfo;").ref;
+        const auto connection_root = f.vm.ProtectReferences(std::array{connection});
+        CHECK(f.vm.StringUtf8(f.On(connection, "getSSID", "()Ljava/lang/String;").ref) == "\"OGPlay\"");
+        // WifiInfo.getIpAddress packs the first octet in the low byte: 192.168.1.100.
+        CHECK(static_cast<std::uint32_t>(f.On(connection, "getIpAddress", "()I").AsInt()) == 0x6401a8c0U);
+        // Turning Wi-Fi off disconnects the device.
+        CHECK(f.On(wifi, "setWifiEnabled", "(Z)Z", {VmValue::Int(0)}).AsInt());
+        CHECK_FALSE(f.On(manager, "getActiveNetworkInfo", "()Landroid/net/NetworkInfo;").ref.IsValid());
+        CHECK(f.On(wifi, "setWifiEnabled", "(Z)Z", {VmValue::Int(1)}).AsInt());
+        f.context->network = nullptr;
         f.context->granted_permissions.clear();
         fail(query(1), "Ljava/lang/SecurityException;");
         fail(f.OnOutcome(manager, "getActiveNetworkInfo", "()Landroid/net/NetworkInfo;"),

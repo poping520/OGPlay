@@ -47,9 +47,14 @@ Revision/Serial 为无板级信息时的零值，不采样宿主。API19 `syscon
 CP15 和不存在的协处理器启用同步 SIGILL，见 ADR-0079。
 不支持统计负载、热插拔、调频控制或周期精确模拟，见 ADR-0080。
 
-`GuestNetworkEnvironment` 从会话 offline_connectivity 派生不可变接口表，仅发布 API19
-回环 lo 的只读 sysfs/proc；CoreIntrinsicServices 回调与 VFS 共用同表。注册冲突整体回滚，
-owner 退役同步撤销文件；缺事实或 context 在线策略明确失败。不采样宿主网卡，见 ADR-0168。
+`GuestNetworkEnvironment` 从会话 offline_connectivity 与 socket 栈模式派生不可变接口表：离线只有
+API19 回环 lo，联网再加 wlan0（设备 IPv4、/24、无 IPv6），发布只读 sysfs/proc；CoreIntrinsicServices
+回调与 VFS 共用同表。注册冲突整体回滚，owner 退役同步撤销文件；缺事实明确失败。不采样宿主网卡，
+见 ADR-0168。
+
+`AndroidGuestCallSession` 持有进程的 `runtime/net` 栈（模式取平台配置 `network_mode`，联网时用
+系统 `HostNetwork` 或测试注入的 `host_network`），绑定 socket syscall，并经 `Network()` 交给 DexVM；
+`BeginTeardown` 停止该栈以唤醒阻塞的 socket 操作。平台配置的 `host_tls` 选择 OGPlayJSSE 引擎。
 
 第二阶段（ADR-0081）可按配置建立一个进程共享 ExecutionBudget，所有主/clone/Java
 native/音频回调及重入 CPU 使用同一 Dynarmic context。并发上限可独立启用为配置核数，
@@ -306,7 +311,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   退出标记并调用 VM.Exit，保留退出码、非 Java 展开，不从 worker 同步 Stop/join。
   宿主 Stop 仍为取消，不自动运行 hook；详见 [相关说明](../../../docs/design/dexvm.md)。
 - wait/sleep/timed join 共用注入 monotonic Clock。Java 与 syscall 共用会话纳秒 uptime，
-  currentTimeMillis 与原生墙钟查询共用固定纪元。时钟驱动线程上的原生 nanosleep 与到期的
+  currentTimeMillis 与原生墙钟查询共用会话墙钟原点（`wall_epoch_millis`，生产会话为启动时宿主 UTC 减去初始
+  uptime，测试默认固定纪元）。时钟驱动线程上的原生 nanosleep 与到期的
   futex 限时等待经 `native_sleep_observer` 推进 uptime，下一次帧推进扣除该额度。
   ADR-0171：blocking observer 统一跟踪生命周期驱动停摆并转发 EGL pacer；无 EGL 亦适用。
   root/worker 限时等待仅补至停摆起点 uptime 加注入 RealtimeClock 的真实流逝时间，

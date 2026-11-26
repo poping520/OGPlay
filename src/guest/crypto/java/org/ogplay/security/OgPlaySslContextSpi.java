@@ -44,17 +44,16 @@ public class OgPlaySslContextSpi extends SSLContextSpi {
                 byte[] entropy = new byte[64];
                 try {
                     sr.nextBytes(entropy);
-                    NativeTls.seed(entropy);
+                    Tls.seed(entropy);
                 } finally {
                     Arrays.fill(entropy, (byte) 0);
                 }
             }
             if (nativeContext != 0) {
-                NativeTls.freeContext(nativeContext);
+                Tls.freeContext(nativeContext);
                 nativeContext = 0;
             }
-            nativeContext = NativeTls.createContext(defaultProtocols,
-                    NativeTls.defaultCipherSuites());
+            nativeContext = Tls.createContext(defaultProtocols, Tls.defaultCipherSuites());
             clientSessions = new OgPlaySslSessionContext();
             socketFactory = new OgPlaySslSocketFactory(this);
             initialized = true;

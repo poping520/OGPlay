@@ -73,20 +73,14 @@ public final class OgPlaySslSocket extends SSLSocket {
         this.peerHost = host;
         this.peerPort = port;
         this.enabledProtocols = context.protocols();
-        this.enabledCiphers = NativeTls.defaultCipherSuites();
-        NativeTls.markTls(this);
-        if (layered) {
-            NativeTls.requireTls(host);
-        }
+        this.enabledCiphers = Tls.defaultCipherSuites();
     }
 
     void connectTo(String host, int port) throws IOException {
-        NativeTls.markTls(this);
         connect(new InetSocketAddress(host, port));
     }
 
     void connectTo(InetAddress address, int port) throws IOException {
-        NativeTls.markTls(this);
         connect(new InetSocketAddress(address, port));
     }
 
@@ -95,7 +89,6 @@ public final class OgPlaySslSocket extends SSLSocket {
     }
 
     public void connect(SocketAddress endpoint, int timeout) throws IOException {
-        NativeTls.markTls(this);
         if (endpoint instanceof InetSocketAddress) {
             InetSocketAddress inet = (InetSocketAddress) endpoint;
             String host = inet.getHostName();
@@ -104,7 +97,8 @@ public final class OgPlaySslSocket extends SSLSocket {
             }
             peerPort = inet.getPort();
         }
-        NativeTls.connectRaw(this, endpoint, timeout);
+        // The plain API 19 socket carries the ciphertext.
+        super.connect(endpoint, timeout);
     }
 
     public void startHandshake() throws IOException {
@@ -127,14 +121,14 @@ public final class OgPlaySslSocket extends SSLSocket {
                 setSoTimeout(15000);
             }
             if (ssl == 0) {
-                ssl = NativeTls.createSsl(context.nativeContextToken(), peerHost);
-                NativeTls.configure(ssl, enabledProtocols, enabledCiphers);
+                ssl = Tls.createSsl(context.nativeContextToken(), peerHost);
+                Tls.configure(ssl, enabledProtocols, enabledCiphers);
             }
             OgPlaySslSession cached = context.sessions().findResumable(
                     peerHost, peerPort != 0 ? peerPort : getPort());
             boolean offered = false;
             if (cached != null) {
-                offered = NativeTls.setSession(ssl, cached.encodedState());
+                offered = Tls.setSession(ssl, cached.encodedState());
             }
             if (!enableSessionCreation && !offered) {
                 setSoTimeout(savedTimeout);
@@ -147,20 +141,20 @@ public final class OgPlaySslSocket extends SSLSocket {
                     setSoTimeout(savedTimeout);
                     throw new SocketException("TLS handshake timed out");
                 }
-                int status = NativeTls.handshake(ssl, context.trustManager(), false);
+                int status = Tls.handshake(ssl, context.trustManager(), false);
                 pumpWire();
-                if (status == NativeTls.OK) {
+                if (status == Tls.OK) {
                     setSoTimeout(savedTimeout);
-                    if (!NativeTls.sessionReused(ssl) && !enableSessionCreation) {
+                    if (!Tls.sessionReused(ssl) && !enableSessionCreation) {
                         throw new javax.net.ssl.SSLException("SSL session creation is disabled");
                     }
                     break;
                 }
-                if (status == NativeTls.WANT_WRITE) {
+                if (status == Tls.WANT_WRITE) {
                     pumpWire();
                     continue;
                 }
-                if (status == NativeTls.WANT_READ) {
+                if (status == Tls.WANT_READ) {
                     if (!readWire()) {
                         setSoTimeout(savedTimeout);
                         throw new SocketException("TLS handshake truncated");
@@ -168,19 +162,32 @@ public final class OgPlaySslSocket extends SSLSocket {
                     continue;
                 }
                 setSoTimeout(savedTimeout);
-                if (status == NativeTls.CLOSED) {
+                if (status == Tls.CLOSED) {
                     throw new javax.net.ssl.SSLHandshakeException("TLS handshake closed");
                 }
                 throw new javax.net.ssl.SSLHandshakeException("TLS handshake failed");
             }
-            Certificate[] peer = certificates(NativeTls.peerCertificates(ssl));
-            if (cached != null && NativeTls.sessionReused(ssl)) {
+            byte[] packedPeer = Tls.peerCertificates(ssl);
+            boolean resumed = cached != null && Tls.sessionReused(ssl);
+            if (!resumed && !Tls.verifiesDuringHandshake()) {
+                // The host engine defers trust to the caller's TrustManager.
+                try {
+                    NativeTls.dispatchVerify(context.trustManager(), packedPeer, Tls.authType(ssl), false);
+                } catch (java.security.cert.CertificateException e) {
+                    javax.net.ssl.SSLHandshakeException failure =
+                            new javax.net.ssl.SSLHandshakeException(e.getMessage());
+                    failure.initCause(e);
+                    throw failure;
+                }
+            }
+            Certificate[] peer = certificates(packedPeer);
+            if (resumed) {
                 session = cached;
                 session.touch();
             } else {
-                session = new OgPlaySslSession(NativeTls.protocol(ssl), NativeTls.cipherSuite(ssl),
+                session = new OgPlaySslSession(Tls.protocol(ssl), Tls.cipherSuite(ssl),
                         peerHost, peerPort != 0 ? peerPort : getPort(), peer, context.sessions(),
-                        NativeTls.sessionId(ssl), NativeTls.sessionState(ssl));
+                        Tls.sessionId(ssl), Tls.sessionState(ssl));
             }
             context.sessions().put(session);
             synchronized (this) {
@@ -215,7 +222,7 @@ public final class OgPlaySslSocket extends SSLSocket {
         state = CLOSING;
         try {
             if (ssl != 0 && session != null) {
-                NativeTls.shutdown(ssl);
+                Tls.shutdown(ssl);
                 pumpWire();
             }
         } catch (IOException ignored) {
@@ -233,7 +240,7 @@ public final class OgPlaySslSocket extends SSLSocket {
     }
 
     public String[] getSupportedCipherSuites() {
-        return NativeTls.supportedCipherSuites();
+        return Tls.supportedCipherSuites();
     }
 
     public String[] getEnabledCipherSuites() {
@@ -245,7 +252,7 @@ public final class OgPlaySslSocket extends SSLSocket {
     }
 
     public String[] getSupportedProtocols() {
-        return new String[] {"TLSv1.2", "TLSv1.1", "TLSv1"};
+        return Tls.supportedProtocols();
     }
 
     public String[] getEnabledProtocols() {
@@ -372,13 +379,13 @@ public final class OgPlaySslSocket extends SSLSocket {
             if (!isConnected()) {
                 throw new SocketException("socket is not connected");
             }
-            rawIn = NativeTls.socketInput(this);
-            rawOut = NativeTls.socketOutput(this);
+            rawIn = super.getInputStream();
+            rawOut = super.getOutputStream();
         }
     }
 
     private void pumpWire() throws IOException {
-        byte[] pending = NativeTls.pullWire(ssl);
+        byte[] pending = Tls.pullWire(ssl);
         if (pending != null && pending.length > 0) {
             rawOut.write(pending);
             rawOut.flush();
@@ -391,7 +398,7 @@ public final class OgPlaySslSocket extends SSLSocket {
         if (n < 0) {
             return false;
         }
-        NativeTls.pushWire(ssl, buffer, 0, n);
+        Tls.pushWire(ssl, buffer, 0, n);
         return true;
     }
 
@@ -413,7 +420,7 @@ public final class OgPlaySslSocket extends SSLSocket {
             throw new javax.net.ssl.SSLHandshakeException("client certificate chain is missing");
         }
         try {
-            NativeTls.setClientKey(ssl, key.getEncoded(), packCertificates(chain));
+            Tls.setClientKey(ssl, key.getEncoded(), packCertificates(chain));
         } catch (CertificateException e) {
             throw new javax.net.ssl.SSLHandshakeException(e.toString());
         }
@@ -446,7 +453,7 @@ public final class OgPlaySslSocket extends SSLSocket {
 
     private void freeSsl() {
         if (ssl != 0) {
-            NativeTls.freeSsl(ssl);
+            Tls.freeSsl(ssl);
             ssl = 0;
         }
     }
@@ -535,18 +542,18 @@ public final class OgPlaySslSocket extends SSLSocket {
                 throw new SocketException("socket is closed");
             }
             while (true) {
-                int status = NativeTls.read(ssl, buffer, offset, length);
+                int status = Tls.read(ssl, buffer, offset, length);
                 pumpWire();
-                if (status == NativeTls.CLOSED) {
+                if (status == Tls.IO_CLOSED) {
                     return -1;
                 }
-                if (status == NativeTls.WANT_READ) {
+                if (status == Tls.IO_WANT_READ) {
                     if (!readWire()) {
                         return -1;
                     }
                     continue;
                 }
-                if (status == NativeTls.WANT_WRITE) {
+                if (status == Tls.IO_WANT_WRITE) {
                     pumpWire();
                     continue;
                 }
@@ -574,15 +581,15 @@ public final class OgPlaySslSocket extends SSLSocket {
             int remaining = length;
             int position = offset;
             while (remaining > 0) {
-                int status = NativeTls.write(ssl, buffer, position, remaining);
+                int status = Tls.write(ssl, buffer, position, remaining);
                 pumpWire();
-                if (status == NativeTls.WANT_READ) {
+                if (status == Tls.IO_WANT_READ) {
                     if (!readWire()) {
                         throw new SocketException("TLS write truncated");
                     }
                     continue;
                 }
-                if (status == NativeTls.WANT_WRITE) {
+                if (status == Tls.IO_WANT_WRITE) {
                     pumpWire();
                     continue;
                 }

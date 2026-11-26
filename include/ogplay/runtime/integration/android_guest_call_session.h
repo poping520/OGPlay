@@ -32,7 +32,12 @@
 #include "ogplay/runtime/integration/guest_process_environment.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
 #include "ogplay/runtime/jni/jni_environment.h"
+#include "ogplay/runtime/net/guest_network.h"
 #include "ogplay/runtime/vfs/vfs.h"
+
+namespace ogplay::hal {
+class HostNetwork;
+}
 
 namespace ogplay::runtime {
 
@@ -78,6 +83,14 @@ struct AndroidGuestPlatformConfig final {
     // Installed Play Store, disabled GSF and no account; local LVL/billing
     // services only report failure. Off removes the Google Play environment.
     bool google_play{true};
+    // disabled/loopback keep the device offline; online uses the host egress (runtime/net).
+    net::NetworkMode network_mode{net::NetworkMode::disabled};
+    // OGPlayJSSE engine: host TLS with host roots, or guest libssl with the bundled CA set.
+    bool host_tls{true};
+    // Guest wall-clock origin: CLOCK_REALTIME = origin + session uptime.
+    std::int64_t wall_epoch_millis{kAndroidWallEpochMillis};
+    // Test seam: the online egress instead of the operating system's (not owned).
+    hal::HostNetwork* host_network{};
 };
 
 class AndroidGuestPlatformState final {
@@ -311,6 +324,8 @@ public:
     [[nodiscard]] audio::OpenSlesPcmMixer& PcmPlayback() noexcept;
     void SetAuxiliaryAudioMix(std::function<void(std::span<std::int64_t>, std::uint32_t)> mix);
     [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;
+    // The process's guest socket stack; shared by ARM syscalls and libcore.io.Posix.
+    [[nodiscard]] net::GuestNetworkStack* Network() noexcept;
     // In-process virtual processes of this guest process (fork/exec/wait,
     // built-in commands); shared by native syscalls and Java ProcessManager.
     [[nodiscard]] VirtualProcessKernel& VirtualProcesses() noexcept;
@@ -463,6 +478,8 @@ public:
     [[nodiscard]] audio::OpenSlesPcmMixer& PcmPlayback() noexcept;
     void SetAuxiliaryAudioMix(std::function<void(std::span<std::int64_t>, std::uint32_t)> mix);
     [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;
+    // The process's guest socket stack; shared by ARM syscalls and libcore.io.Posix.
+    [[nodiscard]] net::GuestNetworkStack* Network() noexcept;
     [[nodiscard]] const GuestCpuConfig& CpuConfig() const noexcept;
     [[nodiscard]] const GuestMemorySnapshot& MemorySnapshot() const noexcept;
     [[nodiscard]] AndroidGuestProcess& Process() noexcept;

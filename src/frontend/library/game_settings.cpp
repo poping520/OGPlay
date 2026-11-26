@@ -28,6 +28,7 @@ const std::vector<SettingDefinition>& GameSettingDefinitions() {
                                                               {"keymap", "input"},
                                                               {"gamepad_deadzone", "input"},
                                                               {"network_policy", "network"},
+                                                              {"tls_mode", "network"},
                                                               {"profiles_dir", "compatibility"},
                                                               {"mcp_enabled", "advanced"},
                                                               {"mcp_port", "advanced"}}) {

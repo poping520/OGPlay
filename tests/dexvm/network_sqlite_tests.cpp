@@ -28,6 +28,8 @@
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/network_runtime.h"
+#include "ogplay/runtime/net/guest_network.h"
+#include "../runtime/host_network_fixture.h"
 #include "runtime/integration/guest_network_environment.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
@@ -55,54 +57,6 @@ std::optional<std::vector<std::uint8_t>> ReadLocalAngryBirdsDex() {
     std::memcpy(result.data(), dex.data(), dex.size());
     return result;
 }
-
-class FakeNetwork final : public NetworkTransport {
-public:
-    std::vector<std::string> Resolve(std::string_view host) override {
-        resolved = std::string(host);
-        return {"203.0.113.7"};
-    }
-
-    std::uint64_t Connect(std::string_view host, std::uint16_t port, bool tls) override {
-        connected = std::string(host) + ":" + std::to_string(port);
-        used_tls = tls;
-        return 7;
-    }
-
-    void Send(std::uint64_t channel, std::span<const std::byte> bytes) override {
-        CHECK(channel == 7);
-        sent.assign(bytes.begin(), bytes.end());
-    }
-
-    std::vector<std::byte> Receive(std::uint64_t channel, std::size_t maximum) override {
-        CHECK(channel == 7);
-        const std::string value = "pong";
-        const auto count = std::min(maximum, value.size());
-        return std::vector<std::byte>(reinterpret_cast<const std::byte*>(value.data()),
-                                      reinterpret_cast<const std::byte*>(value.data() + count));
-    }
-
-    void Close(std::uint64_t channel) noexcept override {
-        closed = channel;
-        ++close_count;
-    }
-
-    void SendDatagram(const NetworkDatagram& datagram) override { last_datagram = datagram; }
-
-    NetworkDatagram ReceiveDatagram(std::size_t maximum) override {
-        NetworkDatagram result{"203.0.113.7", 9000, {std::byte{'o'}, std::byte{'k'}}};
-        if (result.payload.size() > maximum) result.payload.resize(maximum);
-        return result;
-    }
-
-    std::string resolved;
-    std::string connected;
-    bool used_tls{};
-    std::uint64_t closed{};
-    std::vector<std::byte> sent;
-    NetworkDatagram last_datagram;
-    std::uint32_t close_count{};
-};
 
 std::vector<std::byte> MakeStoredZip(const std::string_view name, const std::span<const std::byte> payload) {
     const auto append16 = [](std::vector<std::byte>& bytes, std::uint16_t value) {
@@ -202,6 +156,8 @@ struct NetworkSqliteVm final {
     VirtualFileSystem vfs;
     DexVmIoVfsAdapter io_file_system{vfs};
     std::shared_ptr<DexVmAndroidContext> context{std::make_shared<DexVmAndroidContext>()};
+    // The process socket stack, offline unless a test switches it.
+    std::unique_ptr<net::GuestNetworkStack> network;
     std::unique_ptr<ogplay::test::container_traversal::AndroidTestRuntime> runtime;
     JavaObjectModel& model;
     DexClassLinker& linker;
@@ -224,6 +180,8 @@ struct NetworkSqliteVm final {
               ogplay::test::BindBootDexArchive(*context);
               context->package_name = package_name;
               context->vfs = &vfs;
+              network = std::make_unique<net::GuestNetworkStack>(vfs, net::GuestNetworkConfig{});
+              context->network = network.get();
               auto catalog = AndroidIntrinsicCatalog(context);
               auto helper = IntrinsicClassBuilder::Class("Ltest/SqliteOpenHelperFixture;",
                                                          "Landroid/database/sqlite/SQLiteOpenHelper;");
@@ -279,6 +237,13 @@ struct NetworkSqliteVm final {
     }
 
     ~NetworkSqliteVm() { ReleaseAndroidDatabaseResources(context); }
+
+    // Replaces the process socket stack, as a session in another mode would have it.
+    void UseNetwork(const net::NetworkMode mode, ogplay::hal::HostNetwork* host = nullptr) {
+        network = std::make_unique<net::GuestNetworkStack>(vfs, net::GuestNetworkConfig{.mode = mode, .host = host});
+        context->network = network.get();
+        vm.Network().Configure(network.get(), vm.Network().HostTls());
+    }
 
     VmObjectRef New(const char* descriptor, const char* constructor = "()V", std::vector<VmValue> arguments = {}) {
         const auto object = vm.NewIntrinsicInstance(descriptor);
@@ -1035,42 +1000,6 @@ TEST_CASE("DVM-186 GC marking competes safely with connection close") {
     }
 }
 
-TEST_CASE("DVM-88 network runtime is offline unless explicitly injected") {
-    NetworkRuntime runtime;
-    CHECK_THROWS_WITH_AS(([&] { static_cast<void>(runtime.Resolve("game.test")); }()), "network policy is offline",
-                         NetworkRuntimeError);
-
-    FakeNetwork transport;
-    runtime.Configure({true, true, true, {"game.test"}}, &transport);
-    CHECK(runtime.Resolve("game.test") == std::vector<std::string>{"203.0.113.7"});
-    CHECK_THROWS_AS(([&] { static_cast<void>(runtime.Resolve("tracker.test")); }()), NetworkRuntimeError);
-
-    runtime.CreateSocket(VmObjectRef(1), true);
-    runtime.Connect(VmObjectRef(1), {"game.test", "203.0.113.7", 443});
-    runtime.BindStream(VmObjectRef(2), VmObjectRef(1), true);
-    runtime.BindStream(VmObjectRef(3), VmObjectRef(1), false);
-    const std::array request{std::byte{'p'}, std::byte{'i'}, std::byte{'n'}, std::byte{'g'}};
-    runtime.WriteStream(VmObjectRef(2), request);
-    CHECK(runtime.ReadStream(VmObjectRef(3), 4) ==
-          std::vector<std::byte>{std::byte{'p'}, std::byte{'o'}, std::byte{'n'}, std::byte{'g'}});
-    CHECK(transport.connected == "game.test:443");
-    CHECK_FALSE(transport.used_tls);
-    runtime.CloseSocket(VmObjectRef(1));
-    CHECK(transport.closed == 7);
-}
-
-TEST_CASE("DVM-88 network runtime closes live channels during teardown") {
-    FakeNetwork transport;
-    {
-        NetworkRuntime runtime;
-        runtime.Configure({true, false, false, {"game.test"}}, &transport);
-        runtime.CreateSocket(VmObjectRef(9));
-        runtime.Connect(VmObjectRef(9), {"game.test", "203.0.113.7", 80});
-    }
-    CHECK(transport.closed == 7);
-    CHECK(transport.close_count == 1);
-}
-
 TEST_CASE("DVM-152 API 19 InetAddress owns address state and uses bounded DNS") {
     for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
@@ -1098,8 +1027,8 @@ TEST_CASE("DVM-152 API 19 InetAddress owns address state and uses bounded DNS") 
         CHECK(fixture.linker.Class(fixture.model.ObjectClass(ipv6)).descriptor == "Ljava/net/Inet6Address;");
         CHECK(fixture.vm.StringUtf8(fixture.On(ipv6, "getHostAddress", "()Ljava/lang/String;").ref) == "2001:db8::1");
 
-        FakeNetwork transport;
-        fixture.vm.Network().Configure({true, false, false, {"game.test"}}, &transport);
+        ogplay::test::host_network::RedirectHostNetwork host({"game.test"});
+        fixture.UseNetwork(net::NetworkMode::online, &host);
         const auto posix = fixture.New("Llibcore/io/Posix;");
         const auto hints = fixture.New("Llibcore/io/StructAddrinfo;");
         const auto addresses = fixture
@@ -1110,9 +1039,20 @@ TEST_CASE("DVM-152 API 19 InetAddress owns address state and uses bounded DNS") 
                                    .ref;
         REQUIRE(fixture.model.ArrayLength(addresses) == 1);
         const auto resolved = fixture.model.GetObjectElement(addresses, 0);
-        CHECK(transport.resolved == "game.test");
+        CHECK(host.Resolutions() == 1);
         CHECK(fixture.vm.StringUtf8(fixture.On(resolved, "getHostAddress", "()Ljava/lang/String;").ref) ==
-              "203.0.113.7");
+              "203.0.113.10");
+        CHECK(fixture.vm.StringUtf8(fixture.On(resolved, "getHostName", "()Ljava/lang/String;").ref) == "game.test");
+
+        // Offline lookups fail like bionic's proxied getaddrinfo: EAI_NODATA.
+        fixture.UseNetwork(net::NetworkMode::disabled);
+        const auto offline =
+            fixture.StaticOutcome("Ljava/net/InetAddress;", "getByName", "(Ljava/lang/String;)Ljava/net/InetAddress;",
+                                  {VmValue::Ref(fixture.vm.NewStringUtf8("game.test"))});
+        REQUIRE(offline.exception.IsValid());
+        CHECK(fixture.linker.Class(offline.exception_class).descriptor == "Ljava/net/UnknownHostException;");
+        CHECK(offline.exception_message.find("No address associated with hostname") != std::string::npos);
+        CHECK(host.Resolutions() == 1);
     }
 }
 
@@ -1146,12 +1086,23 @@ TEST_CASE("DVM-153 API 19 URI parses creates normalizes and resolves in BootDex"
     }
 }
 
-TEST_CASE("ProxySelector reports no process-wide proxy service") {
+TEST_CASE("ProxySelector is the API 19 direct selector") {
     for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
         NetworkSqliteVm fixture(backend);
-        const auto selector = fixture.Static("Ljava/net/ProxySelector;", "getDefault", "()Ljava/net/ProxySelector;");
-        CHECK_FALSE(selector.ref.IsValid());
+        const auto selector =
+            fixture.Static("Ljava/net/ProxySelector;", "getDefault", "()Ljava/net/ProxySelector;").ref;
+        REQUIRE(selector.IsValid());
+        const auto uri = fixture
+                             .Static("Ljava/net/URI;", "create", "(Ljava/lang/String;)Ljava/net/URI;",
+                                     {VmValue::Ref(fixture.vm.NewStringUtf8("http://game.test/"))})
+                             .ref;
+        const auto proxies =
+            fixture.On(selector, "select", "(Ljava/net/URI;)Ljava/util/List;", {VmValue::Ref(uri)}).ref;
+        REQUIRE(fixture.On(proxies, "size", "()I").AsInt() == 1);
+        const auto proxy = fixture.On(proxies, "get", "(I)Ljava/lang/Object;", {VmValue::Int(0)}).ref;
+        const auto type = fixture.On(proxy, "type", "()Ljava/net/Proxy$Type;").ref;
+        CHECK(fixture.vm.StringUtf8(fixture.On(type, "name", "()Ljava/lang/String;").ref) == "DIRECT");
     }
 }
 
@@ -1212,7 +1163,7 @@ TEST_CASE("DVM-88 URL form codecs match API 19 UTF-8 behavior") {
 TEST_CASE("DVM-88 URL parsing is value-only and offline failure starts at I/O") {
     for (const auto backend : ogplay::test::InterpreterBackends()) {
         CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
-        FakeNetwork transport;
+        ogplay::test::host_network::RedirectHostNetwork host({"example.com"});
         NetworkSqliteVm fixture(backend);
         const auto url = fixture.New(
             "Ljava/net/URL;", "(Ljava/lang/String;)V",
@@ -1294,18 +1245,19 @@ TEST_CASE("DVM-88 URL parsing is value-only and offline failure starts at I/O") 
         const auto offline = fixture.OnOutcome(url, "openConnection", "()Ljava/net/URLConnection;");
         REQUIRE_FALSE(offline.exception.IsValid());
         REQUIRE(offline.value.ref.IsValid());
+        // API 19 HttpsHandler: the okhttp connection classes from the boot classpath.
+        CHECK(fixture.linker.Class(fixture.model.ObjectClass(offline.value.ref)).descriptor ==
+              "Lcom/android/okhttp/internal/http/HttpsURLConnectionImpl;");
         CHECK(fixture.On(offline.value.ref, "getURL", "()Ljava/net/URL;").ref == url);
         fixture.On(offline.value.ref, "disconnect", "()V");
         fixture.On(offline.value.ref, "disconnect", "()V");
-        CHECK(transport.resolved.empty());
-        CHECK(transport.connected.empty());
 
-        fixture.vm.Network().Configure({true, true, false, {"example.com"}}, &transport);
+        fixture.UseNetwork(net::NetworkMode::online, &host);
         const auto enabled_connection = fixture.OnOutcome(url, "openConnection", "()Ljava/net/URLConnection;");
         REQUIRE_FALSE(enabled_connection.exception.IsValid());
         REQUIRE(enabled_connection.value.ref.IsValid());
         CHECK(fixture.On(enabled_connection.value.ref, "getURL", "()Ljava/net/URL;").ref == url);
-        CHECK(transport.connected.empty());  // Opening a connection does not perform I/O.
+        CHECK(host.Resolutions() == 0);  // Opening a connection does not perform I/O.
 
         const auto url_class = fixture.linker.ResolveDescriptor("Ljava/net/URL;");
         const auto constructor = fixture.linker.FindDirectMethod(url_class, "<init>", "(Ljava/lang/String;)V");
@@ -1318,18 +1270,53 @@ TEST_CASE("DVM-88 URL parsing is value-only and offline failure starts at I/O") 
     }
 }
 
-TEST_CASE("DVM-88 SocketFactory exposes policy-gated common creation") {
-    FakeNetwork transport;
+TEST_CASE("DVM-88 ROM sockets connect through the guest stack in process") {
     NetworkSqliteVm fixture;
-    fixture.vm.Network().Configure({true, false, false, {"game.test"}}, &transport);
+    // new ServerSocket(0, 4, 127.0.0.1): API 19 PlainSocketImpl over libcore.io.Posix.
+    const auto loopback =
+        fixture
+            .Static("Ljava/net/InetAddress;", "getByName", "(Ljava/lang/String;)Ljava/net/InetAddress;",
+                    {VmValue::Ref(fixture.vm.NewStringUtf8("127.0.0.1"))})
+            .ref;
+    const auto loopback_root = fixture.vm.ProtectReferences(std::array{loopback});
+    const auto server = fixture.New("Ljava/net/ServerSocket;", "(IILjava/net/InetAddress;)V",
+                                    {VmValue::Int(0), VmValue::Int(4), VmValue::Ref(loopback)});
+    const auto server_root = fixture.vm.ProtectReferences(std::array{server});
+    const auto port = fixture.On(server, "getLocalPort", "()I").AsInt();
+    CHECK(port >= 32768);
     const auto factory = fixture.Static("Ljavax/net/SocketFactory;", "getDefault", "()Ljavax/net/SocketFactory;").ref;
-    const auto socket = fixture
+    const auto client = fixture
                             .On(factory, "createSocket", "(Ljava/lang/String;I)Ljava/net/Socket;",
-                                {VmValue::Ref(fixture.vm.NewStringUtf8("game.test")), VmValue::Int(80)})
+                                {VmValue::Ref(fixture.vm.NewStringUtf8("127.0.0.1")), VmValue::Int(port)})
                             .ref;
-    CHECK(fixture.linker.Class(fixture.model.ObjectClass(socket)).descriptor == "Ljava/net/Socket;");
-    CHECK(transport.connected == "game.test:80");
-    static_cast<void>(fixture.On(socket, "close", "()V"));
+    const auto client_root = fixture.vm.ProtectReferences(std::array{client});
+    CHECK(fixture.linker.Class(fixture.model.ObjectClass(client)).descriptor == "Ljava/net/Socket;");
+    CHECK(fixture.On(client, "isConnected", "()Z").AsInt() == 1);
+    const auto accepted = fixture.On(server, "accept", "()Ljava/net/Socket;").ref;
+    const auto accepted_root = fixture.vm.ProtectReferences(std::array{accepted});
+    const auto output = fixture.On(client, "getOutputStream", "()Ljava/io/OutputStream;").ref;
+    fixture.On(output, "write", "(I)V", {VmValue::Int('Z')});
+    const auto input = fixture.On(accepted, "getInputStream", "()Ljava/io/InputStream;").ref;
+    CHECK(fixture.On(input, "read", "()I").AsInt() == 'Z');
+    CHECK(fixture.On(accepted, "getPort", "()I").AsInt() == fixture.On(client, "getLocalPort", "()I").AsInt());
+    // SO_TIMEOUT: a read without data fails with SocketTimeoutException.
+    fixture.On(accepted, "setSoTimeout", "(I)V", {VmValue::Int(20)});
+    const auto timed_out = fixture.OnOutcome(input, "read", "()I");
+    REQUIRE(timed_out.exception.IsValid());
+    CHECK(fixture.linker.Class(timed_out.exception_class).descriptor == "Ljava/net/SocketTimeoutException;");
+    fixture.On(client, "close", "()V");
+    CHECK(fixture.On(input, "read", "()I").AsInt() == -1);
+    fixture.On(accepted, "close", "()V");
+    fixture.On(server, "close", "()V");
+
+    // Offline: a public address is unreachable.
+    const auto unreachable =
+        fixture.OnOutcome(factory, "createSocket", "(Ljava/lang/String;I)Ljava/net/Socket;",
+                          {VmValue::Ref(fixture.vm.NewStringUtf8("93.184.216.34")), VmValue::Int(80)});
+    REQUIRE(unreachable.exception.IsValid());
+    CHECK(fixture.linker.IsAssignable(fixture.linker.ResolveDescriptor("Ljava/net/SocketException;"),
+                                      unreachable.exception_class));
+    CHECK(unreachable.exception_message.find("ENETUNREACH") != std::string::npos);
 }
 
 TEST_CASE("DVM-88 ContentValues SQLite query persists through guest VFS") {
@@ -1709,9 +1696,8 @@ TEST_CASE("Sealed classpath URLs read registered ZIP entries with parent first a
 
 TEST_CASE("DVM164 offline HTTP objects configure and disconnect after failed I/O") {
     for (const auto backend : ogplay::test::InterpreterBackends()) {
-        FakeNetwork transport;
+        ogplay::test::host_network::RedirectHostNetwork host({"game.test"});
         NetworkSqliteVm fixture(backend);
-        fixture.vm.Network().Configure({}, &transport);
         const auto url = fixture.New("Ljava/net/URL;", "(Ljava/lang/String;)V",
                                      {VmValue::Ref(fixture.vm.NewStringUtf8("http://game.test/resource"))});
         const auto io_exception = fixture.linker.ResolveDescriptor("Ljava/io/IOException;");
@@ -1727,22 +1713,19 @@ TEST_CASE("DVM164 offline HTTP objects configure and disconnect after failed I/O
             fixture.On(connection, "setReadTimeout", "(I)V", {VmValue::Int(200)});
             CHECK(fixture.On(connection, "getConnectTimeout", "()I").AsInt() == 100);
             CHECK(fixture.On(connection, "getReadTimeout", "()I").AsInt() == 200);
-            CHECK(transport.resolved.empty());
-            CHECK(transport.connected.empty());
             fixture.On(connection, "disconnect", "()V");
             const auto* descriptor = std::string_view(operation) == "getResponseCode"  ? "()I"
                                      : std::string_view(operation) == "getInputStream" ? "()Ljava/io/InputStream;"
                                                                                        : "()V";
             const auto failure = fixture.OnOutcome(connection, operation, descriptor);
             REQUIRE(failure.exception.IsValid());
+            CAPTURE(fixture.linker.Class(failure.exception_class).descriptor);
+            CAPTURE(failure.exception_message);
             CHECK(fixture.linker.IsAssignable(io_exception, failure.exception_class));
-            CHECK(failure.exception_message.find("offline") != std::string::npos);
+            CHECK(failure.exception_message.find("Unable to resolve host") != std::string::npos);
             fixture.On(connection, "disconnect", "()V");
             fixture.On(connection, "disconnect", "()V");
-            CHECK(transport.resolved.empty());
-            CHECK(transport.connected.empty());
-            CHECK(transport.sent.empty());
-            CHECK(transport.close_count == 0);
+            CHECK(host.Resolutions() == 0);  // The offline stack never asks the host resolver.
         }
     }
 }
@@ -1754,77 +1737,90 @@ TEST_CASE("DVM-265 DEX DatagramPacket setData owns length") {
         const auto roots = f.vm.ProtectReferences(std::array{array});
         CHECK(f.Static("Ltest/RomJavaReplacement;", "packet", "([B)I", {VmValue::Ref(array)}).AsInt() == 2);
         CHECK(f.linker.Class(f.linker.ResolveDescriptor("Ljava/net/DatagramPacket;")).is_boot_dex);
-        FakeNetwork transport;
-        f.vm.Network().Configure(
-            {.enabled = true, .allow_datagram = true, .allowed_hosts = {"game.test", "203.0.113.7"}}, &transport);
-        const auto host = f.vm.NewStringUtf8("game.test");
-        const auto raw_address = f.Bytes(std::string("\xcb\0\x71\x07", 4));
-        const auto raw_root = f.vm.ProtectReferences(std::array{raw_address});
-        const auto address =
-            f.Static("Ljava/net/InetAddress;", "getByAddress", "(Ljava/lang/String;[B)Ljava/net/InetAddress;",
-                     {VmValue::Ref(host), VmValue::Ref(raw_address)})
-                .ref;
-        const auto address_root = f.vm.ProtectReferences(std::array{address});
-        const auto packet =
-            f.New("Ljava/net/DatagramPacket;", "([BIILjava/net/InetAddress;I)V",
-                  {VmValue::Ref(array), VmValue::Int(1), VmValue::Int(2), VmValue::Ref(address), VmValue::Int(9000)});
-        const auto socket = f.New("Ljava/net/DatagramSocket;");
-        const auto packet_roots = f.vm.ProtectReferences(std::array{packet, socket});
-        f.On(socket, "send", "(Ljava/net/DatagramPacket;)V", {VmValue::Ref(packet)});
-        CHECK(transport.last_datagram.host == "game.test");
-        CHECK(transport.last_datagram.port == 9000);
-        CHECK(transport.last_datagram.payload == std::vector<std::byte>{std::byte{'b'}, std::byte{'c'}});
-        f.On(socket, "receive", "(Ljava/net/DatagramPacket;)V", {VmValue::Ref(packet)});
-        CHECK(f.BytesOf(array) == "aokd");
-        CHECK(f.On(packet, "getLength", "()I").AsInt() == 2);
-        CHECK(f.On(packet, "getOffset", "()I").AsInt() == 1);
-        CHECK(f.On(packet, "getPort", "()I").AsInt() == 9000);
-        const auto received_address = f.On(packet, "getAddress", "()Ljava/net/InetAddress;").ref;
-        CHECK(f.vm.StringUtf8(f.On(received_address, "getHostAddress", "()Ljava/lang/String;").ref) == "203.0.113.7");
-        f.vm.Network().Shutdown();
     }
 }
 
-TEST_CASE("Posix datagram bytes accept direct ByteBuffer slices in the existing transport") {
+TEST_CASE("DVM-265 ROM DatagramSocket exchanges loopback packets in process") {
     for (const auto backend : ogplay::test::InterpreterBackends()) {
-        FakeNetwork transport;
-        ogplay::test::android_value::AndroidValueVm f(backend);
-        f.vm.Network().Configure({.enabled = true, .allow_datagram = true, .allowed_hosts = {"203.0.113.7"}},
-                                 &transport);
+        NetworkSqliteVm f(backend);
+        const auto receiver = f.New("Ljava/net/DatagramSocket;", "(I)V", {VmValue::Int(9000)});
+        const auto sender = f.New("Ljava/net/DatagramSocket;");
+        const auto sockets = f.vm.ProtectReferences(std::array{receiver, sender});
+        const auto address =
+            f.Static("Ljava/net/InetAddress;", "getByName", "(Ljava/lang/String;)Ljava/net/InetAddress;",
+                     {VmValue::Ref(f.vm.NewStringUtf8("127.0.0.1"))})
+                .ref;
+        const auto address_root = f.vm.ProtectReferences(std::array{address});
+        const auto make_bytes = [&](const std::string& text) {
+            const auto array = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte,
+                                                         static_cast<JniSize>(text.size()));
+            f.model.WriteByteRegion(array, 0, std::as_bytes(std::span{text.data(), text.size()}));
+            return array;
+        };
+        const auto payload = make_bytes("abcd");
+        const auto payload_root = f.vm.ProtectReferences(std::array{payload});
+        const auto packet =
+            f.New("Ljava/net/DatagramPacket;", "([BIILjava/net/InetAddress;I)V",
+                  {VmValue::Ref(payload), VmValue::Int(1), VmValue::Int(2), VmValue::Ref(address), VmValue::Int(9000)});
+        const auto packet_root = f.vm.ProtectReferences(std::array{packet});
+        f.On(sender, "send", "(Ljava/net/DatagramPacket;)V", {VmValue::Ref(packet)});
+        const auto buffer = make_bytes("xxxx");
+        const auto buffer_root = f.vm.ProtectReferences(std::array{buffer});
+        const auto incoming =
+            f.New("Ljava/net/DatagramPacket;", "([BII)V", {VmValue::Ref(buffer), VmValue::Int(1), VmValue::Int(3)});
+        const auto incoming_root = f.vm.ProtectReferences(std::array{incoming});
+        f.On(receiver, "receive", "(Ljava/net/DatagramPacket;)V", {VmValue::Ref(incoming)});
+        const auto received = f.model.ReadByteRegion(buffer, 0, 4);
+        CHECK(std::string(reinterpret_cast<const char*>(received.data()), 4) == "xbcx");
+        CHECK(f.On(incoming, "getLength", "()I").AsInt() == 2);
+        CHECK(f.On(incoming, "getPort", "()I").AsInt() == f.On(sender, "getLocalPort", "()I").AsInt());
+        const auto source = f.On(incoming, "getAddress", "()Ljava/net/InetAddress;").ref;
+        CHECK(f.vm.StringUtf8(f.On(source, "getHostAddress", "()Ljava/lang/String;").ref) == "127.0.0.1");
+        f.On(sender, "close", "()V");
+        f.On(receiver, "close", "()V");
+    }
+}
+
+TEST_CASE("Posix datagram bytes accept direct ByteBuffer slices") {
+    for (const auto backend : ogplay::test::InterpreterBackends()) {
+        NetworkSqliteVm f(backend);
         const auto posix = f.New("Llibcore/io/Posix;");
-        const auto fd = f.New("Ljava/io/FileDescriptor;");
+        const auto fd =
+            f.On(posix, "socket", "(III)Ljava/io/FileDescriptor;", {VmValue::Int(10), VmValue::Int(2), VmValue::Int(0)})
+                .ref;
         const auto io = f.vm.ProtectReferences(std::array{posix, fd});
-        // Bind the fixture descriptor to the existing injected datagram transport.
-        const auto handle = f.linker.FindFieldRecursive(f.model.ObjectClass(fd), "descriptor", "I");
-        REQUIRE(handle);
-        f.model.InstanceSlots(fd)[f.linker.Field(*handle).slot] = {3U, SlotTag::cat1};
-        f.vm.Network().CreateSocket(fd);
+        const auto address =
+            f.Static("Ljava/net/InetAddress;", "getByName", "(Ljava/lang/String;)Ljava/net/InetAddress;",
+                     {VmValue::Ref(f.vm.NewStringUtf8("127.0.0.1"))})
+                .ref;
+        const auto address_root = f.vm.ProtectReferences(std::array{address});
+        f.On(posix, "bind", "(Ljava/io/FileDescriptor;Ljava/net/InetAddress;I)V",
+             {VmValue::Ref(fd), VmValue::Ref(address), VmValue::Int(9001)});
         const auto direct =
             f.Static("Ljava/nio/ByteBuffer;", "allocateDirect", "(I)Ljava/nio/ByteBuffer;", {VmValue::Int(6)}).ref;
         const auto root = f.vm.ProtectReferences(std::array{direct});
-        const auto host = f.vm.NewStringUtf8("203.0.113.7");
-        const auto address = f.Static("Ljava/net/InetAddress;", "getByName",
-                                      "(Ljava/lang/String;)Ljava/net/InetAddress;", {VmValue::Ref(host)})
-                                 .ref;
-        const auto address_root = f.vm.ProtectReferences(std::array{address});
         f.On(direct, "put", "(IB)Ljava/nio/ByteBuffer;", {VmValue::Int(2), VmValue::Int('a')});
         f.On(direct, "put", "(IB)Ljava/nio/ByteBuffer;", {VmValue::Int(3), VmValue::Int('b')});
         f.On(direct, "position", "(I)Ljava/nio/Buffer;", {VmValue::Int(2)});
         f.On(direct, "limit", "(I)Ljava/nio/Buffer;", {VmValue::Int(4)});
         CHECK(f.On(posix, "sendto", "(Ljava/io/FileDescriptor;Ljava/nio/ByteBuffer;ILjava/net/InetAddress;I)I",
-                   {VmValue::Ref(fd), VmValue::Ref(direct), VmValue::Int(0), VmValue::Ref(address), VmValue::Int(9000)})
+                   {VmValue::Ref(fd), VmValue::Ref(direct), VmValue::Int(0), VmValue::Ref(address), VmValue::Int(9001)})
                   .AsInt() == 2);
-        CHECK(transport.last_datagram.payload == std::vector<std::byte>{std::byte{'a'}, std::byte{'b'}});
+        // API 19 Posix.sendto/recvfrom leave the position to IoBridge.
+        CHECK(f.On(direct, "position", "()I").AsInt() == 2);
+        f.On(direct, "put", "(IB)Ljava/nio/ByteBuffer;", {VmValue::Int(2), VmValue::Int('x')});
+        f.On(direct, "put", "(IB)Ljava/nio/ByteBuffer;", {VmValue::Int(3), VmValue::Int('y')});
+        f.On(direct, "position", "(I)Ljava/nio/Buffer;", {VmValue::Int(2)});
         const auto source = f.New("Ljava/net/InetSocketAddress;");
         const auto source_root = f.vm.ProtectReferences(std::array{source});
         CHECK(f.On(posix, "recvfrom", "(Ljava/io/FileDescriptor;Ljava/nio/ByteBuffer;ILjava/net/InetSocketAddress;)I",
                    {VmValue::Ref(fd), VmValue::Ref(direct), VmValue::Int(0), VmValue::Ref(source)})
                   .AsInt() == 2);
         CHECK(f.On(direct, "position", "()I").AsInt() == 2);
-        CHECK(f.On(direct, "get", "(I)B", {VmValue::Int(2)}).AsInt() == 'o');
-        CHECK(f.On(direct, "get", "(I)B", {VmValue::Int(3)}).AsInt() == 'k');
-        CHECK(f.On(source, "getPort", "()I").AsInt() == 9000);
-        f.vm.Network().Shutdown();
+        CHECK(f.On(direct, "get", "(I)B", {VmValue::Int(2)}).AsInt() == 'a');
+        CHECK(f.On(direct, "get", "(I)B", {VmValue::Int(3)}).AsInt() == 'b');
+        CHECK(f.On(source, "getPort", "()I").AsInt() == 9001);
+        f.On(posix, "close", "(Ljava/io/FileDescriptor;)V", {VmValue::Ref(fd)});
     }
 }
 
@@ -1882,7 +1878,7 @@ TEST_CASE("DVM-343 ROM network interfaces enumerate the offline kernel view") {
     }
 }
 
-TEST_CASE("DVM-343 interface query descriptors bound Posix errno and close semantics") {
+TEST_CASE("DVM-343 interface queries answer on guest sockets with Posix errno and close semantics") {
     for (const auto backend : ogplay::test::InterpreterBackends()) {
         NetworkSqliteVm f(backend, {}, "test.game", true);
         const auto posix = f.New("Llibcore/io/Posix;");
@@ -1894,18 +1890,18 @@ TEST_CASE("DVM-343 interface query descriptors bound Posix errno and close seman
             CHECK(static_cast<int>(f.model.InstanceSlots(outcome.exception)[f.linker.Field(*field).slot].bits) ==
                   expected);
         };
-        for (const auto args : {std::array{1, 2, 0}, std::array{2, 1, 0}, std::array{10, 2, 1}}) {
-            errno_is(f.OnOutcome(posix, "socket", "(III)Ljava/io/FileDescriptor;",
-                                 {VmValue::Int(args[0]), VmValue::Int(args[1]), VmValue::Int(args[2])}),
-                     38);
-        }
-        const auto hits = f.ledger.Unimplemented();
-        CHECK(std::any_of(hits.begin(), hits.end(),
-                          [](const auto& hit) { return hit.id == "libcore.io.Posix.socket" && hit.count == 3; }));
+        // AF_INET6 datagrams with protocol 1 (ICMP) and an unknown family.
+        errno_is(f.OnOutcome(posix, "socket", "(III)Ljava/io/FileDescriptor;",
+                             {VmValue::Int(10), VmValue::Int(2), VmValue::Int(1)}),
+                 93);
+        errno_is(f.OnOutcome(posix, "socket", "(III)Ljava/io/FileDescriptor;",
+                             {VmValue::Int(17), VmValue::Int(3), VmValue::Int(0)}),
+                 97);
         for (const auto domain : {2, 10}) {
             const auto fd = f.On(posix, "socket", "(III)Ljava/io/FileDescriptor;",
                                  {VmValue::Int(domain), VmValue::Int(2), VmValue::Int(0)})
                                 .ref;
+            const auto fd_root = f.vm.ProtectReferences(std::array{fd});
             const auto ioctl = [&](VmObjectRef descriptor, int cmd, const char* name) {
                 return f.OnOutcome(
                     posix, "ioctlInetAddress", "(Ljava/io/FileDescriptor;ILjava/lang/String;)Ljava/net/InetAddress;",
@@ -1913,23 +1909,26 @@ TEST_CASE("DVM-343 interface query descriptors bound Posix errno and close seman
             };
             errno_is(ioctl(fd, 0x8915, "wlan0"), 19);
             errno_is(ioctl(fd, 0, "lo"), 38);
-            const auto other = f.New("Ljava/io/FileDescriptor;");
-            errno_is(ioctl(other, 0x8915, "lo"), 38);
-            errno_is(
-                f.OnOutcome(posix, "dup", "(Ljava/io/FileDescriptor;)Ljava/io/FileDescriptor;", {VmValue::Ref(fd)}),
-                38);
+            const auto address = ioctl(fd, 0x8915, "lo");
+            REQUIRE_FALSE(address.exception.IsValid());
+            CHECK(f.vm.StringUtf8(f.On(address.value.ref, "getHostAddress", "()Ljava/lang/String;").ref) ==
+                  "127.0.0.1");
+            const auto copy =
+                f.On(posix, "dup", "(Ljava/io/FileDescriptor;)Ljava/io/FileDescriptor;", {VmValue::Ref(fd)}).ref;
+            const auto copy_root = f.vm.ProtectReferences(std::array{copy});
+            f.On(posix, "close", "(Ljava/io/FileDescriptor;)V", {VmValue::Ref(copy)});
             f.On(posix, "close", "(Ljava/io/FileDescriptor;)V", {VmValue::Ref(fd)});
-            f.On(posix, "close", "(Ljava/io/FileDescriptor;)V", {VmValue::Ref(fd)});
+            // libcore Posix.close clears the descriptor first; closing again is EBADF.
+            errno_is(f.OnOutcome(posix, "close", "(Ljava/io/FileDescriptor;)V", {VmValue::Ref(fd)}), 9);
             errno_is(ioctl(fd, 0x8915, "lo"), 38);
         }
-        // Local interface queries do not consult the transport's NetworkPolicy.
-        f.vm.Network().Configure({.enabled = true}, nullptr);
-        CHECK(f.Static("Ljava/net/NetworkInterface;", "getByName", "(Ljava/lang/String;)Ljava/net/NetworkInterface;",
-                       {VmValue::Ref(f.vm.NewStringUtf8("lo"))})
-                  .ref.IsValid());
         f.context->offline_connectivity.reset();
-        const auto unavailable = f.OnOutcome(posix, "socket", "(III)Ljava/io/FileDescriptor;",
-                                             {VmValue::Int(2), VmValue::Int(2), VmValue::Int(0)});
+        const auto fd =
+            f.On(posix, "socket", "(III)Ljava/io/FileDescriptor;", {VmValue::Int(2), VmValue::Int(2), VmValue::Int(0)})
+                .ref;
+        const auto unavailable = f.OnOutcome(
+            posix, "ioctlInetAddress", "(Ljava/io/FileDescriptor;ILjava/lang/String;)Ljava/net/InetAddress;",
+            {VmValue::Ref(fd), VmValue::Int(0x8915), VmValue::Ref(f.vm.NewStringUtf8("lo"))});
         REQUIRE(unavailable.exception.IsValid());
         CHECK(f.linker.Class(unavailable.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
     }

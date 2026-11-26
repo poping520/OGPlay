@@ -47,6 +47,10 @@ ROM_JARS = {
     "conscrypt.jar": ("platform/libcore",
                       "c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004",
                       "a8c3f9df9b31a9fc9b78d16d618f21af5ed80a703ee67a3cea8b8738244fb621"),
+    # API 19 BOOTCLASSPATH: core:conscrypt:okhttp:...; URL handlers load it by name.
+    "okhttp.jar": ("platform/external/okhttp",
+                   "96a017d2f9460de493dbb987f0806627cb85f74dce487550ba97afe0ffd697bf",
+                   "8f28efcc4ff16ef62b3338e24193e245083f0e0e2d7f6de944a2f52a31e8ced2"),
     "ext.jar": ("platform/external/apache-http",
                 "e95d35989f0e1b438b3b6fea2777a798a0398f457a32875cdadfe3e2573a4ca2",
                 "25315c2c3ec8ca7ec2aacebadadaeade8af55de4e2f584db35b9c8337f307c23"),

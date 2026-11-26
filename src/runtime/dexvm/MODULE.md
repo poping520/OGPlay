@@ -234,9 +234,7 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   Java 逻辑归 BootDex；字段/数组是唯一状态。native 仅保留受审边界，不得恢复重复 C++ 算法。
 - ROM Java 拥有字段和普通方法，宿主只扩展 native 与进程内服务；现存整类替换和非 native
   覆盖按阶段移除，新代码不得增加。ROM Looper/Handler 管理消息协议，宿主只提供 native poll/wake。
-  DatagramPacket 状态归 Java；DatagramSocket 经 VM 虚派 getter/setter 读取 payload 区间、
-  地址和端口、提交接收长度及来源，NetworkRuntime 只消费一次性的 Endpoint/payload 快照，
-  不保存 packet 侧表。InputSource 的值状态和 Appendable 接口归 ROM；SAX 使用 [BootDex 文本流适配器](../../guest/xml/MODULE.md)。
+  DatagramPacket 与 DatagramSocket 状态归 ROM（PlainDatagramSocketImpl 经 Posix 收发）。InputSource 的值状态和 Appendable 接口归 ROM；SAX 使用 [BootDex 文本流适配器](../../guest/xml/MODULE.md)。
 - `IoRuntime` 只持文件资源、本地接口查询描述符与增量解码状态，文件仅走注入 `IoFileSystem`；API 19
   File/FIS/FOS/RAF/FileChannelImpl 普通算法来自 BootDex，Posix 文件 native 是唯一入口。FIS/FOS 的
   OpenFileDescription 保存隔离的 VFS descriptor 与访问模式，同一逻辑 FileDescriptor 共享
@@ -252,20 +250,20 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   `ErrnoException`，使原版 `File.mkdirs()` 能在 ENOENT 时递归创建父目录。
   相对路径不读 host cwd，逻辑 FileDescriptor 不存 host fd。`ZipRuntime` 复用严格
   ZIP parser/inflate。
-- `NetworkRuntime` 只经注入 policy/transport，默认离线；不读 host DNS/代理/证书、不在 core
-  创建 socket。InetAddress 与 InetSocketAddress 状态归 BootDex 字段，NetworkRuntime 只保存
-  socket/stream/datagram 资源；URI 普通值语义归 BootDex，URL 解析不触网，未授权或未实现
-  I/O 明确失败。
-- `ProxySelector` 是明确的无进程代理薄边界：`getDefault()` 返回 null，使 API 19 Apache
-  RoutePlanner 选择直连；不读取宿主代理，也不登记 `Proxy`/默认 selector 的 BootDex 闭包。
-- URLConnection/HttpURLConnection/HttpsURLConnection 的请求属性、超时、method 和默认
-  socket factory/hostname verifier 状态来自 API 19 BootDex；core 只 overlay connect 与
-  URL.openConnection 的 NetworkRuntime 边界。HTTP/HTTPS openConnection 仅正常构造对象，
-  离线也可配置请求；policy 在实际 DNS/connect/I/O 时拒绝，未连接或失败后可安全 disconnect。
-  封存 classpath 的只读连接复用原版父类状态与
-  ByteArrayInputStream；URL.openStream 虚派连接的 getInputStream。默认 NetworkPolicy disabled。真实客户端
-  TLS/HTTPS 由 OGPlayJSSE 经 raw transport 与 guest libssl 完成，不在宿主重复加密。
-  SSLEngine、server TLS 和公开互联网 CA 不在当前 complete 范围。
+- `NetworkRuntime` 只持有会话注入的 `runtime/net` 栈与 TLS 引擎选择，不保存 socket 状态。
+  `libcore.io.Posix` 的 socket/socketpair/bind/connect/listen/accept/getsockname/getpeername/
+  sendtoBytes/recvfromBytes/poll/shutdown/getsockopt*/setsockopt* 与 getaddrinfo/getnameinfo 直接
+  使用该栈的 guest 描述符号（与 ARM syscall 同一 FD 表），ROM `PlainSocketImpl`、`IoBridge`、
+  `Socket`/`ServerSocket`/`DatagramSocket` 与 `SocketFactory` 原样运行。阻塞调用释放 VM 执行锁，
+  数据经临时缓冲复制，不跨解锁持有 Java 数组。F_SETFL 只改 O_NONBLOCK（IoUtils.setBlocking）。
+  getaddrinfo 按 AI_NUMERICHOST/AI_ADDRCONFIG 与 family 提示筛选，失败一律 EAI_NODATA（与 Bionic
+  代理解析一致），关闭的 FileDescriptor 上的操作报 "Socket closed"。`AsynchronousCloseMonitor`
+  无需额外动作：关闭 socket 即令阻塞操作失败。未注入栈时 socket 族 native 返回 ENOSYS 并记账。
+- `ProxySelector` 使用 ROM `ProxySelectorImpl`（无 http.proxyHost 等属性时为 DIRECT）。
+- URL 仍是现存整类替换：解析与组件、`toURI`/`toURILenient`、`URL(URL, String)` 相对解析由其提供；
+  http/https 的 `openConnection` 按 API19 `URL.setupStreamHandler` 交给 okhttp.jar 的
+  `HttpHandler`/`HttpsHandler`，HTTP 协议、重定向、缓存与 HttpsURLConnection 默认工厂/校验器均为
+  ROM 原样；jar: 仍走封存 classpath 的只读连接，file: 明确失败。
 - `System.lineSeparator` 在 ROM 类初始化时冻结。Java Properties 由 System 持有，宿主读取
   属性经 ROM getProperty。specialProperties 从已注入的 guest VFS 取得 `user.dir`。
 - NIO Buffer、类型化数组/字节视图、MemoryBlock、ByteOrder、NIOAccess/NioUtils 与 Memory
@@ -293,10 +291,8 @@ Android MessageQueue 的队列等待由此在 VM 线程回收时展开。
   归 BootDex；Point、Rect、AndroidException 不保留普通方法 overlay。
 - API19 Settings 与 NameValueCache 执行 ROM，包括 moved-key 路由、数值转换与异常；
   有界存储经进程内 Settings provider 与 IContentService，不使用非 native overlay 或 Binder IPC。
-- API 19 ext.jar 的 Terms/Restlet Apache HTTP 闭包归 BootDex；Commons Logging 的反射实现类
-  显式列入配方，`org.apache.http.entity` 的 12 个类完整入集。HTTP socket 仍只经
-  NetworkRuntime，Apache 客户端 TLS 走同一 OGPlayJSSE 与 raw transport；SSLEngine 与
-  server TLS 仍明确失败，不因类可解析而宣称完整 Apache 或公开互联网 CA。
+- API 19 ext.jar 的 Apache HTTP 与 Commons Logging 原样在 BootDex；socket 经 ROM
+  `PlainSocketImpl` 进入同一 guest socket 栈，HTTPS 走 OGPlayJSSE；SSLEngine 与 server TLS 明确失败。
 - API 19 `Animation$AnimationListener` 作为独立嵌套接口进入 BootDex，只提供类型、访问标志
   与三个抽象回调签名，供应用类链接和接口分派；不纳入 `Animation` 本体或动画执行。签名中的
   `Animation` 仅作类型描述符，不因此承诺动画框架。

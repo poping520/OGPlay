@@ -180,6 +180,8 @@ set(OGPLAY_TEST_SOURCES
     tests/runtime/native_library_fixture.cpp
     tests/runtime/rom_window_integration_tests.cpp
     tests/runtime/tls_trust_tests.cpp
+    tests/runtime/guest_network_tests.cpp
+    tests/runtime/host_network_fixture.cpp
     tests/runtime/preferences_xml_tests.cpp
     tests/runtime/sandbox_store_tests.cpp
     tests/runtime/vfs_descriptor_table_tests.cpp

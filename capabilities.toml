@@ -519,10 +519,15 @@ status = "complete"
 test = "tests/runtime/syscall_tests.cpp"
 note = "read/write/pread64/pwrite64 共用 64 KiB 临时缓冲，移除 16 MiB 请求拒绝限制；请求截到 0x7ffff000，短传输停止，后续内存/VFS 错误返回已完成字节。 将 pread64/pwrite64 改为真正 ReadAt/WriteAt，不移动或临时改写 FD offset；不涵盖 mmap 或完整 POSIX"
 
+[runtime.guest_network]
+status = "complete"
+test = "tests/runtime/guest_network_tests.cpp; tests/dexvm/network_sqlite_tests.cpp#ROM sockets; tests/dexvm/network_sqlite_tests.cpp#DVM-265 ROM DatagramSocket"
+note = "runtime/net：socket 为 VFS 描述符对象，ARM socket syscall 与 Posix native 共用；AF_UNIX/回环 TCP/UDP 进程内，离线时外部 ENETUNREACH、解析失败；联网经宿主非阻塞 socket 与宿主解析器，报告设备地址；进程内 dnsproxyd 按 netd 协议应答 Bionic。不支持 SCM_RIGHTS、OOB、raw/netlink、宿主监听、组播成员、对外 IPv6。"
+
 [runtime.syscall_poll]
 status = "partial"
-test = "tests/runtime/syscall_poll_tests.cpp"
-note = "poll/ppoll 覆盖 VFS pipe、其他 VFS fd（DEFAULT_POLLMASK）与 stdio/日志端点；pipe 写入/关闭即时唤醒，信号与线程退出按 10ms 片检查返回 EINTR；超时与清理预算沿 futex WAIT 钩子。ppoll 临时 sigmask 返回 ENOSYS 记账；socket、eventfd、epoll、select 未实现；pipe 挂断时读端同报 POLLIN。"
+test = "tests/runtime/syscall_poll_tests.cpp; tests/runtime/guest_network_tests.cpp#NET-06"
+note = "poll/ppoll、_newselect 与 epoll 共用掩码与等待，覆盖 VFS pipe、socket 等描述符对象、其他 VFS fd（DEFAULT_POLLMASK）与 stdio/日志端点；写入/关闭即时唤醒，宿主 socket 与信号按 10ms 片复查。ppoll/epoll_pwait 临时 sigmask 返回 ENOSYS 记账；EPOLLET 按电平上报；eventfd 未实现；pipe 挂断时读端同报 POLLIN。"
 
 [runtime.syscall_file_metadata]
 status = "partial"
@@ -1676,18 +1681,18 @@ note = "atomic、CountDownLatch/Semaphore/CyclicBarrier、concurrent 容器、Th
 
 [dexvm.java_network]
 status = "complete"
-test = "tests/dexvm/network_sqlite_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp#DVM-103; tests/dexvm/bootdex_library_tests.cpp#DVM-103; tests/dexvm/bootdex_concurrency_tests.cpp#DVM-103; tests/dexvm/bootdex_security_tests.cpp#DVM-149"
-note = "URI、InetAddress、URLConnection/HttpURLConnection/HttpsURLConnection 在 BootDex，connect/IO 与 SSL 经 NetworkRuntime；NetworkPolicy 默认 disabled，离线时可创建连接对象，实际 DNS/connect 受策略拒绝且 disconnect 安全；ProxySelector.getDefault 返回 null。HTTPS 经 OGPlayJSSE，客户端握手未闭合；不启用公网、不伪造证书。"
+test = "tests/dexvm/network_sqlite_tests.cpp; tests/runtime/tls_trust_tests.cpp; tests/dexvm/bootdex_security_tests.cpp#DVM-149"
+note = "ROM Socket/ServerSocket/DatagramSocket/SocketFactory（PlainSocketImpl、IoBridge）、ProxySelectorImpl 与 okhttp.jar 原样运行；libcore.io.Posix socket 族、poll、getaddrinfo/getnameinfo 走 runtime/net 栈（与 ARM syscall 同 FD 表）。URL 仍为现存替换类，补 toURI/toURILenient/相对构造；jar: 走封存 classpath，file: 明确失败。离线解析报 EAI_NODATA。"
 
 [dexvm.connectivity_offline]
 status = "partial"
 test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-241; tests/dexvm/android_value_tests.cpp#DVM-98; tests/dexvm/android_wifi_locks_tests.cpp#Offline WifiInfo; tests/runtime/jni_android_platform_tests.cpp#DVM-241; tests/dexvm/network_sqlite_tests.cpp#DVM-343"
-note = "ROM ConnectivityManager 查询 framework-res 声明的 Wi-Fi 和 GSM 移动系列，均断开，活动网络为 null。无 SIM，移动数据关闭，Wi-Fi 初始开启且可切换。动态登记取得断开的粘性快照；网络传输沿既有离线回环策略。"
+note = "ROM ConnectivityManager 查询 framework-res 的 Wi-Fi 与 GSM 移动系列。离线：无 SIM、移动数据关闭、Wi-Fi 开启未连接、活动网络 null、断开粘性快照。联网模式（socket 栈 online 且 Wi-Fi 开启）：活动网络为已连接 Wi-Fi（SSID OGPlay、设备 IPv4、wlan0），粘性广播同为已连接，关闭 Wi-Fi 即断开。"
 
 [dexvm.apache_http_bootdex]
 status = "partial"
 test = "tests/dexvm/bootdex_security_tests.cpp#DVM-149"
-note = "从 API19 ext.jar 选入 Apache HTTP（含完整 org.apache.http.entity）与 Commons Logging，BasicHttpParams、SchemeRegistry、ThreadSafeClientConnManager、DefaultHttpClient 由原版 Java 执行；网络受 NetworkRuntime 策略约束，HTTPS 与 OGPlayJSSE 共用传输但客户端握手未闭合。URLEncodedUtils 未纳入，在线请求未验收。"
+note = "从 API19 ext.jar 选入 Apache HTTP（含完整 org.apache.http.entity）与 Commons Logging，BasicHttpParams、SchemeRegistry、ThreadSafeClientConnManager、DefaultHttpClient 由原版 Java 执行；socket 经 ROM PlainSocketImpl 进入 runtime/net，HTTPS 走 OGPlayJSSE。URLEncodedUtils 未纳入；Apache 客户端的在线请求未单独验收。"
 
 [dexvm.sqlite_vfs]
 status = "complete"
@@ -1856,8 +1861,8 @@ note = "只读 AndroidCAStore 从 /system/etc/security/cacerts.ogplay 加载版�
 
 [dexvm.tls_client]
 status = "complete"
-test = "tests/runtime/tls_trust_tests.cpp#TLS-02"
-note = "TLS-02：OGPlayJSSE SSLContext/SSLSocket/session 经 guest libssl 内存 BIO 与 NetworkRuntime 完成客户端 TLS 1.2 握手，支持 SNI、TrustManager 回调、session 恢复与超时；DefaultContext 不覆盖已设置的 HTTPS 工厂。SSLEngine 与 server TLS 明确失败；公网 CA 与在线 HTTPS 见 https_transport。"
+test = "tests/runtime/tls_trust_tests.cpp#TLS-02; tests/runtime/tls_trust_tests.cpp#TLS-04"
+note = "OGPlayJSSE SSLContext/SSLSocket/session 经内存缓冲完成客户端握手：默认宿主 OpenSSL 3 引擎（TLS 1.3/1.2，握手后把证书链交 TrustManager，默认信任为宿主根），可选 guest libssl（TLS 1.2，握手内回调）；支持 SNI、会话恢复、客户端证书与超时。SSLEngine 与 server TLS 明确失败。"
 
 [dexvm.tls_client_auth]
 status = "complete"
@@ -1865,9 +1870,9 @@ test = "tests/runtime/tls_trust_tests.cpp#TLS-02 mutual TLS"
 note = "BKS KeyManager 安装 RSA 或 EC 客户端证书后 loopback mTLS 协商 TLSv1.2，双解释器受检。complete 仅指该客户端证书路径。"
 
 [dexvm.https_transport]
-status = "partial"
-test = "tests/runtime/tls_trust_tests.cpp#TLS-02"
-note = "HttpsURLConnection 与 Apache HTTPS 出口接到同一 OGPlayJSSE。默认离线 UnknownHostException 受检；loopback HTTPS GET 200/tls-ok 与 layered autoClose=false 通过。公开互联网 HTTPS 被测试 CA 包与已停止维护的 OpenSSL 1.0.1（AOSP 4.4.4_r2.0.1）阻塞，TLS-03 仍未完成，不能据本地握手发布。"
+status = "complete"
+test = "tests/runtime/tls_trust_tests.cpp#TLS-02; tests/runtime/tls_trust_tests.cpp#TLS-04"
+note = "HttpsURLConnection（okhttp）与 Apache HTTPS 共用 OGPlayJSSE 与 guest socket 栈；离线报 UnknownHostException；loopback HTTPS GET 200/tls-ok、分层 autoClose=false 通过；联网模式下宿主引擎以宿主根与 TLS 1.3 访问公网（ASHM 安装器对 Gameloft HTTPS 服务实测握手与请求）。guest 引擎仍受 API19 CA 与 TLS 1.2 限制。"
 
 [dexvm.object_stream_bootdex]
 status = "complete"

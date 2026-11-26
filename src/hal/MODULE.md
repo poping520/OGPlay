@@ -28,6 +28,19 @@
 - `WebViewHost::PickPath`：接受上层提供的 UTF-8 标题，返回文件/目录选择 future，取消返回空；原生句柄不跨接口。
 - `Clock::SteadyTimestampNs`：宿主诊断采集时刻，steady epoch 纳秒，与 guest ticks 分开。
 - `Clock::UtcTimestamp`：仅宿主元数据使用的 UTC 时间，guest 时间仍为 Clock ticks。
+- `Clock::HostUnixTimeMillis`：宿主 UTC 墙钟毫秒，只在会话开始时读取一次以确定 guest 墙钟原点；
+  之后 guest 墙钟随会话 uptime 推进，不再读宿主时间。
+- `HostNetwork` / `HostSocket` / `CreateSystemHostNetwork`：guest socket 栈的联网出口——宿主非阻塞
+  socket（TCP/UDP、IPv4/IPv6）与宿主解析器；所有状态返回 0/正数或负的 *Linux* errno（宿主 errno 与
+  WSA 码在此换算），macOS 用 SO_NOSIGPIPE、Linux/Android 用 MSG_NOSIGNAL 防止 SIGPIPE。不监听、
+  不读取宿主网卡与代理设置；宿主侧系统代理/TUN 对其透明生效。
+- `HostTlsSession` / `CreateHostTlsSession`：OpenSSL 3.5 LTS（`third_party/openssl-prebuilt` 静态 SDK）
+  的客户端 TLS 引擎，内存 BIO 交换密文，不验证对端、不接触 socket；TLSv1.2 为最高启用版本时同时
+  提供 TLS 1.3，SECLEVEL 1，SNI 仅用于域名，意外 EOF 按正常关闭。read/write 以 -2/-3 报 WANT。
+  会话可编码恢复；客户端证书经 PKCS#8 与 DER 链安装。无 SDK 的平台（Linux）`HostTlsAvailable` 为 false。
+- `VerifyServerChainWithHostRoots`：以宿主信任根判定服务端链（不做主机名校验）：macOS SecTrust
+  （SSL 策略，可能按 AIA 取中间证书）、Windows CertGetCertificateChain + CERT_CHAIN_POLICY_SSL，
+  Android/Linux 用 OpenSSL 载入系统 CA 目录（Android 按文件逐个读取 old-hash 命名的 PEM）。
 - `TryCloneFile`：把普通文件克隆为尚不存在的目标；macOS clonefile、Linux FICLONE，Windows
   暂返回不支持。跨卷/文件系统不支持返回 false 且不留目标，其他错误抛 system_error。
 - `OpenHostDirectory`：打开已由上层验证的宿主目录，失败明确传播。

@@ -215,7 +215,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
           mcp_manual_step, preflight, survey_gaps_output, sandbox_directory, installation_id, ephemeral_sandbox,
           input_config_path, library_root, missing_data_report, run_report, window_title, window_icon,
           window_icon_style, ui_language, app_language, surface_size_explicit, surface_adaptation, fps_overlay,
-          google_play] = std::move(options);
+          google_play, network, tls] = std::move(options);
     const auto language = ui_language ? *ui_language : app::SystemUiLanguage();
     const auto guest_language = app_language.value_or(language);
     const auto bundled_data = HostBundledDataPaths();
@@ -459,6 +459,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         {
             dex_context = runtime::AssembleAndroidContext(runtime::ReadBootClasspath(payload_root / "framework"));
             dex_context->system_font_source = std::move(system_font_source);
+            // The guest wall clock starts at the host's UTC time, then follows the session uptime.
+            dex_context->wall_epoch_millis = hal::Clock::HostUnixTimeMillis() - dex_context->UptimeMillis();
             dex_context->native_output_sample_rate = kDesktopAudioOutputSpec.sample_rate;
             dex_context->native_output_buffer_frames = session::AudioOutputPump::kChunkFrames;
             dex_context->native_output_target_queued_frames = session::AudioOutputPump::kTargetQueuedFrames;
@@ -585,10 +587,14 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         app_request.boundary_options = {.async_present_readback = !mcp_manual_step, .frame_period_ns = frame_period_ns};
         app_request.guest_call_slice_observer = guest_slice_observer;
         app_request.guest_call_slice_observer_thread = std::this_thread::get_id();
-        app_request.platform = {.installation_id = sandbox.installation_id,
-                                .android_id = sandbox.android_id,
-                                .version_name = manifest.version_name.value_or("unknown"),
-                                .google_play = google_play};
+        app_request.platform = {
+            .installation_id = sandbox.installation_id,
+            .android_id = sandbox.android_id,
+            .version_name = manifest.version_name.value_or("unknown"),
+            .google_play = google_play,
+            .network_mode = runtime::net::ParseNetworkMode(network).value_or(runtime::net::NetworkMode::disabled),
+            .host_tls = tls != "guest",
+            .wall_epoch_millis = dex_context->wall_epoch_millis};
         app_request.dexvm = bridge_config;
         app_request.ledger = &dexvm_ledger;
         app_request.logger = &logger;

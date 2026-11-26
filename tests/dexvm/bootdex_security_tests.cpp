@@ -206,6 +206,8 @@ TEST_CASE("DVM NativeCrypto identity and members come from API 19 BootDex") {
 TEST_CASE("DVM-149 Apache HTTP BootDex supports the Restlet startup object path") {
     for (const auto backend : ogplay::test::InterpreterBackends()) {
         Dvm87Vm f(backend);
+        // The guest libssl engine: without a guest native loader its TLS setup fails below.
+        f.vm.Network().Configure(nullptr, false);
 
         const auto params = f.vm.NewIntrinsicInstance("Lorg/apache/http/params/BasicHttpParams;");
         f.Construct(params, "Lorg/apache/http/params/BasicHttpParams;", "()V");

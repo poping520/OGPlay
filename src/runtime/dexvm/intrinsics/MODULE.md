@@ -181,23 +181,25 @@ Posix.mmap/munmap/msync 经 CoreIntrinsicServices 接入进程的 syscall 映射
   File.setLastModifiedImpl 和 Posix chmod/fchmod 转发到 VFS，stat 系列读取同源属主、
   mode 与修改时间。ROM File.lastModified 按 API19 秒精度读取。
   Posix bytes 接口接受 byte[] 或 direct ByteBuffer；定位 IO 使用 VFS ReadAt/WriteAt，
-  不移动共享文件位置。datagram 仍要求既有显式 socket/transport 和离线策略，未支持 flags 记账失败。
-- socket/stream/datagram 交 NetworkRuntime；默认离线，只有注入 policy/allowlist/transport
-  才能连接，SSL factory 不扩大权限。form URL codec 用固定 Boost.URL、UTF-8、空格/+ 规则，
-  非法百分号和未支持 charset 抛异常。客户端 TLS 由 OGPlayJSSE 经 raw transport 与 guest
-  libssl 内存 BIO 执行；loopback 握手与 HTTPS GET 已受检，默认离线，不能静默把未播种 RNG
-  或公开 CA 缺失当成成功。SAX 保留构造/handler 身份，未支持 parse 明确失败。
+  不移动共享文件位置。
+- socket 族 native（socket/bind/connect/listen/accept/sendto/recvfrom/poll/选项/名字）使用会话
+  `runtime/net` 栈的 guest 描述符；离线时外部地址不可达。form URL codec 用固定 Boost.URL、UTF-8、
+  空格/+ 规则，非法百分号和未支持 charset 抛异常。`HostTls`（java_host_tls.cpp）是 OGPlayJSSE 的宿主
+  引擎：OpenSSL 3 会话以不复用的 long token 保存，宿主信任判定在释放 VM 锁后进行；guest 引擎仍为
+  NativeTls 的 guest JNI。SAX 保留构造/handler 身份，未支持 parse 明确失败。
 - URL 整类 intrinsic 临时补齐 ROM 的三参、四参、五参 component 构造器，短版本委托五参；
   保留 port、protocol、IPv6、fragment 与 query 规则，非 null 自定义 URLStreamHandler 记账并抛
   MalformedURLException。jar 条目名按 JarURLConnection 原样查找，不校验/解码条目中的百分号，
   仅归档文件路径按 UriCodec.decode 语义解码；Class/ROM 加载器共用原始条目规则。
-  这三个构造器和 jar 条目规则是临时补充，随 java.net 批次中 URL 改回 ROM 时删除。
+  另补 toURI/toURILenient（只转义 URI 非法字符）与 URL(URL, String[, handler]) 相对解析（经 ROM URI.resolve），
+  供 okhttp 重定向与缓存键使用；http/https 的 openConnection 交 okhttp.jar 的 Http(s)Handler。
+  这些构造器、方法和 jar 条目规则是临时补充，随 java.net 批次中 URL 改回 ROM 时删除。
 - InetAddress/Inet4Address/Inet6Address、地址缓存、InetSocketAddress 与 NetworkInterface 普通
   行为归 API 19 BootDex；IP 字节、hostName、scope 与 endpoint 字段是唯一状态。Posix 仅保留
-  地址解析、受策略 DNS/反向查询、确定性 guest uname 及本地接口查询边界。
-  NetworkInterface 从离线拓扑派生的只读 sysfs/proc 与同表 ioctl 枚举 lo；本地查询不受
-  transport NetworkPolicy 限制，不探测宿主网卡。未知接口 ENODEV，无 IPv4 EADDRNOTAVAIL；
-  其他 ioctl/非查询描述符记账 ENOSYS。netlink/getifaddrs/if_indextoname 仍明确失败。
+  地址解析、经 socket 栈的 DNS/反向查询、确定性 guest uname 及本地接口查询边界。
+  NetworkInterface 从会话拓扑派生的只读 sysfs/proc 与同表 ioctl 枚举 lo（联网时另有 wlan0），可在任意
+  guest socket 上查询，不探测宿主网卡。未知接口 ENODEV，无 IPv4 EADDRNOTAVAIL；
+  其他 ioctl/非 socket 描述符记账 ENOSYS。netlink/getifaddrs/if_indextoname 仍明确失败。
 - URI、内部 encoder、URISyntaxException 与 UrlUtils 普通行为归 BootDex；构造、create、
   normalize/resolve/relativize、比较和对象流协议使用原版字段与算法。URL 仍使用现有有界
   intrinsic，因此共用的 C++ URL 解析辅助函数继续保留。

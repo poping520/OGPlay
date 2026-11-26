@@ -2,33 +2,16 @@
 
 #include "ogplay/runtime/common/api19_identity.h"
 
-#include <cstddef>
-#include <cstdint>
-#include <functional>
 #include <optional>
-#include <span>
-#include <stdexcept>
 #include <string>
-#include <string_view>
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
 
-#include "ogplay/runtime/dexvm/dexvm_types.h"
+namespace ogplay::runtime::net {
+class GuestNetworkStack;
+}
 
 namespace ogplay::runtime::dexvm {
 
-class NetworkRuntimeError final : public std::runtime_error {
-public:
-    using std::runtime_error::runtime_error;
-};
-
 struct NetworkPolicy final {
-    bool enabled{};
-    bool allow_tls{};
-    bool allow_datagram{};
-    std::unordered_set<std::string> allowed_hosts;
-
     // Deterministic API 19 guest identity; never the host computer's identity.
     struct HostIdentity final {
         std::string sysname, nodename, release, version, machine;
@@ -38,94 +21,30 @@ struct NetworkPolicy final {
         HostIdentity{kGuestSysname, kGuestNodename, kGuestRelease, kGuestVersion, kGuestMachine}};
 };
 
-struct NetworkDatagram final {
-    std::string host;
-    std::uint16_t port{};
-    std::vector<std::byte> payload;
-};
-
-// Transport is injected by the process owner. Core never opens a host socket.
-class NetworkTransport {
-public:
-    virtual ~NetworkTransport() = default;
-    [[nodiscard]] virtual std::vector<std::string> Resolve(std::string_view host) = 0;
-
-    [[nodiscard]] virtual std::string Reverse(std::string_view) {
-        throw NetworkRuntimeError("reverse lookup is not provided by transport");
-    }
-
-    [[nodiscard]] virtual std::uint64_t Connect(std::string_view host, std::uint16_t port, bool tls) = 0;
-    virtual void Send(std::uint64_t channel, std::span<const std::byte> bytes) = 0;
-    [[nodiscard]] virtual std::vector<std::byte> Receive(std::uint64_t channel, std::size_t maximum) = 0;
-
-    [[nodiscard]] virtual std::vector<std::byte> Receive(std::uint64_t channel, std::size_t maximum,
-                                                         std::int32_t timeout_ms) {
-        static_cast<void>(timeout_ms);
-        return Receive(channel, maximum);
-    }
-
-    virtual void Close(std::uint64_t channel) noexcept = 0;
-    virtual void SendDatagram(const NetworkDatagram& datagram) = 0;
-    [[nodiscard]] virtual NetworkDatagram ReceiveDatagram(std::size_t maximum) = 0;
-};
-
+// The VM's handle on the process socket stack (runtime/net). libcore.io.Posix
+// socket natives use guest descriptor numbers of that stack, shared with ARM
+// syscalls. Without an injected stack every socket operation fails.
 class NetworkRuntime final {
 public:
-    NetworkRuntime() = default;
-    ~NetworkRuntime();
-    NetworkRuntime(const NetworkRuntime&) = delete;
-    NetworkRuntime& operator=(const NetworkRuntime&) = delete;
+    // host_tls selects the OGPlayJSSE engine: the host TLS engine with host
+    // roots, or guest libssl with the bundled CA set.
+    void Configure(net::GuestNetworkStack* stack, const bool host_tls = true) noexcept {
+        stack_ = stack;
+        host_tls_ = host_tls;
+    }
 
-    struct Endpoint final {
-        std::string host;
-        std::string address;
-        std::uint16_t port{};
-    };
+    [[nodiscard]] net::GuestNetworkStack* Stack() const noexcept { return stack_; }
 
-    struct Socket final {
-        Endpoint endpoint;
-        std::uint64_t channel{};
-        bool tls{};
-        bool connected{};
-        bool closed{};
-        std::int32_t timeout_ms{};
-    };
+    [[nodiscard]] bool HostTls() const noexcept { return host_tls_; }
 
-    void Configure(NetworkPolicy policy, NetworkTransport* transport) noexcept;
-    [[nodiscard]] const NetworkPolicy& Policy() const noexcept;
-    [[nodiscard]] std::vector<std::string> Resolve(std::string_view host);
-    [[nodiscard]] std::string Reverse(std::string_view address);
+    [[nodiscard]] const NetworkPolicy& Policy() const noexcept { return policy_; }
 
-    void CreateSocket(VmObjectRef owner, bool tls = false);
-    void Connect(VmObjectRef owner, Endpoint endpoint);
-    void RequireTls(std::string_view host);
-    void SetTimeout(VmObjectRef owner, std::int32_t timeout_ms);
-    [[nodiscard]] Socket& GetSocket(VmObjectRef owner);
-    [[nodiscard]] const Socket& GetSocket(VmObjectRef owner) const;
-    void BindStream(VmObjectRef stream, VmObjectRef socket, bool output);
-    [[nodiscard]] std::vector<std::byte> ReadStream(VmObjectRef stream, std::size_t maximum);
-    void WriteStream(VmObjectRef stream, std::span<const std::byte> bytes);
-    void CloseSocket(VmObjectRef owner) noexcept;
-    void Shutdown() noexcept;
-
-    void SendPacket(const Endpoint& endpoint, std::span<const std::byte> bytes);
-    [[nodiscard]] NetworkDatagram ReceivePacket(std::size_t maximum);
-
-    void Trace(VmObjectRef owner, const std::function<void(VmObjectRef)>& visit) const;
-    void Sweep(VmObjectRef owner) noexcept;
+    void Shutdown() noexcept { stack_ = nullptr; }
 
 private:
-    void RequireAllowed(std::string_view host, bool tls, bool datagram) const;
     NetworkPolicy policy_;
-    NetworkTransport* transport_{};
-    std::unordered_map<std::uint32_t, Socket> sockets_;
-
-    struct Stream final {
-        VmObjectRef socket;
-        bool output{};
-    };
-
-    std::unordered_map<std::uint32_t, Stream> streams_;
+    net::GuestNetworkStack* stack_{};
+    bool host_tls_{true};
 };
 
 }  // namespace ogplay::runtime::dexvm

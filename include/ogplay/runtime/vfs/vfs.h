@@ -183,8 +183,11 @@ struct VfsFileInfo final {
     VfsFileMetadata metadata{};
     // Guest st_dev/st_ino, separate from character-device st_rdev above.
     std::uint32_t device{}, inode{};
+    // Upper-layer descriptor object (socket): S_IFSOCK, mode 0777 like Linux sockfs.
+    bool is_socket{};
 
     [[nodiscard]] std::uint32_t Mode() const noexcept {
+        if (is_socket) return 0140000U | 0777U;
         const auto type = is_directory ? 0040000U : is_character_device ? 0020000U : 0100000U;
         const auto defaults = is_directory ? (writable ? 0755U : 0555U) : (writable ? 0644U : 0444U);
         return type | metadata.permissions.value_or(defaults);
@@ -229,6 +232,34 @@ struct VfsStreamEndpoint final {
 struct VfsPipeDescriptors final {
     std::int32_t read_descriptor{};
     std::int32_t write_descriptor{};
+};
+
+// Blocking context of one descriptor operation: the open description's
+// O_NONBLOCK and the calling thread's VfsThreadBinding interrupt check.
+struct VfsIoContext final {
+    bool non_blocking{};
+    std::function<bool()> interrupted;
+
+    [[nodiscard]] bool Interrupted() const { return interrupted && interrupted(); }
+};
+
+// A descriptor whose IO and readiness belong to an upper layer (sockets).
+// The VFS owns numbering, dup/fork/close-on-exec and O_NONBLOCK; calls run
+// without VFS locks and may block. OnLastClose runs once, when the last
+// open description sharing the object retires.
+class VfsDescriptorObject {
+public:
+    virtual ~VfsDescriptorObject() = default;
+    // Throws VfsError with a Linux errno. Zero means end of stream.
+    [[nodiscard]] virtual std::size_t Read(std::span<std::byte> destination, const VfsIoContext& context) = 0;
+    [[nodiscard]] virtual std::size_t Write(std::span<const std::byte> source, const VfsIoContext& context) = 0;
+    // PipePollEvents bits: read=1, write=2, error=4, hangup=8.
+    [[nodiscard]] virtual std::uint32_t PollEvents() const = 0;
+
+    // Bytes readable without blocking (FIONREAD); nullopt when unknown.
+    [[nodiscard]] virtual std::optional<std::size_t> Available() const { return std::nullopt; }
+
+    virtual void OnLastClose() noexcept {}
 };
 
 struct VfsIoStatistics final {
@@ -377,6 +408,16 @@ public:
     [[nodiscard]] std::uint64_t PipeReadinessGeneration() const;
     // Returns once the counter differs from `observed` or `timeout` elapses.
     void WaitPipeReadiness(std::uint64_t observed, std::chrono::nanoseconds timeout) const;
+    // Bumps the readiness counter for descriptor objects whose state changed.
+    void NotifyReadiness() const;
+    // Installs an upper-layer object as a new descriptor in the calling thread's table.
+    [[nodiscard]] std::int32_t OpenObject(std::shared_ptr<VfsDescriptorObject> object, VfsOpenStatus status);
+    // EBADF when the descriptor is not open; null when it is not an object.
+    [[nodiscard]] std::shared_ptr<VfsDescriptorObject> DescriptorObject(std::int32_t descriptor) const;
+    // F_SETFL O_NONBLOCK on the shared open description.
+    void SetNonBlocking(std::int32_t descriptor, bool non_blocking);
+    // O_NONBLOCK of the descriptor plus the calling thread's interrupt check.
+    [[nodiscard]] VfsIoContext IoContext(std::int32_t descriptor) const;
     [[nodiscard]] std::size_t Read(std::int32_t descriptor, std::span<std::byte> destination);
     [[nodiscard]] std::size_t ReadAt(std::int32_t descriptor, std::uint64_t offset, std::span<std::byte> destination);
     [[nodiscard]] std::size_t Write(std::int32_t descriptor, std::span<const std::byte> source);

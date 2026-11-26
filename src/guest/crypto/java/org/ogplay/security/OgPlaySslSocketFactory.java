@@ -60,10 +60,10 @@ public final class OgPlaySslSocketFactory extends SSLSocketFactory {
     }
 
     public String[] getDefaultCipherSuites() {
-        return NativeTls.defaultCipherSuites();
+        return Tls.defaultCipherSuites();
     }
 
     public String[] getSupportedCipherSuites() {
-        return NativeTls.supportedCipherSuites();
+        return Tls.supportedCipherSuites();
     }
 }

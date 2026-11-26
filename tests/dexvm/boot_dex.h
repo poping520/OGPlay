@@ -31,8 +31,8 @@ inline std::vector<std::vector<std::uint8_t>> ReadBootDex() {
 
 // The source JAR names in bootdex.jar DEX order.
 inline std::vector<std::uint8_t> ReadBootDexFromSource(std::string_view source) {
-    constexpr std::array<std::string_view, 8> sources{
-        "ogplay.jar",    "core.jar",       "conscrypt.jar",        "ext.jar",
+    constexpr std::array<std::string_view, 9> sources{
+        "ogplay.jar",    "core.jar",       "conscrypt.jar",        "okhttp.jar",        "ext.jar",
         "framework.jar", "framework2.jar", "telephony-common.jar", "android.policy.jar"};
     const auto found = std::ranges::find(sources, source);
     if (found == sources.end()) throw std::invalid_argument("unknown boot DEX source: " + std::string(source));

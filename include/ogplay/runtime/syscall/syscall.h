@@ -26,6 +26,10 @@
 #include "ogplay/runtime/common/supervisor_call_progress.h"
 #include "ogplay/runtime/vfs/vfs.h"
 
+namespace ogplay::runtime::net {
+class GuestNetworkStack;
+}
+
 namespace ogplay::runtime {
 
 class VirtualProcessKernel;
@@ -195,12 +199,16 @@ private:
 
 [[nodiscard]] A32SyscallDispatcher CreateAndroidArmSyscallDispatcher(core::CapabilityLedger& ledger,
                                                                      AndroidProcessIdentity identity = {});
+// Deterministic wall-clock origin (2014-05-13) for tests and diagnostics; a
+// production session places its origin at the host's UTC time instead.
 inline constexpr std::int64_t kAndroidWallEpochMillis = 1'400'000'000'000LL;
 
+// CLOCK_REALTIME and gettimeofday report wall_epoch_millis plus the session uptime.
 void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher, hal::Clock& clock, memory::AddressSpace& address_space,
                              std::function<void(std::uint64_t, std::chrono::nanoseconds)> admit_sleep = {},
                              std::function<std::uint64_t()> monotonic_nanos = {},
-                             std::function<void(std::uint64_t, std::chrono::nanoseconds)> account_sleep = {});
+                             std::function<void(std::uint64_t, std::chrono::nanoseconds)> account_sleep = {},
+                             std::int64_t wall_epoch_millis = kAndroidWallEpochMillis);
 void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::AddressSpace& address_space);
 void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher, cpu::FutexTable& futex_table,
                                memory::MemoryBus& memory_bus,
@@ -234,7 +242,13 @@ struct GuestPollWaitHooks final {
     std::function<void(std::uint64_t, std::chrono::nanoseconds)> account_timeout;
 };
 
-// Also binds poll(168)/ppoll(336) over the same VFS and stdio/log endpoints.
+// ARM socket syscalls (281-297, accept4) and ioctl FIONREAD/FIONBIO over the
+// guest socket stack, whose sockets are descriptors of the same VFS.
+void BindAndroidSocketSyscalls(A32SyscallDispatcher& dispatcher, net::GuestNetworkStack& network,
+                               memory::AddressSpace& address_space);
+
+// Also binds poll(168)/ppoll(336), _newselect(142) and epoll over the same VFS
+// and stdio/log endpoints.
 void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher, VirtualFileSystem& vfs,
                              memory::AddressSpace& address_space, GuestIoSink io_sink = {},
                              GuestPollWaitHooks poll_wait = {});

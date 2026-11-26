@@ -21,6 +21,9 @@ public:
     // Host metadata only; guest time remains instance ticks.
     [[nodiscard]] static std::string UtcTimestamp();
     [[nodiscard]] static std::uint64_t SteadyTimestampNs();
+    // Host UTC wall time in Unix milliseconds. Read once per session to place
+    // the guest's wall clock; guest time then advances with its own uptime.
+    [[nodiscard]] static std::int64_t HostUnixTimeMillis();
     [[nodiscard]] virtual std::uint64_t Ticks() const = 0;
     [[nodiscard]] virtual std::uint64_t TicksPerSecond() const = 0;
     [[nodiscard]] virtual bool IsPaused() const = 0;

@@ -257,8 +257,9 @@ A32SyscallOutcome A32SyscallDispatcher::DispatchOutcome(const A32SyscallFrame& f
         outcome.return_value = -kLinuxEnosys;
     } else {
         std::optional<VfsThreadBinding> descriptor_scope;
-        const auto descriptor_group =
-            found->second.group == SyscallGroup::file || found->second.group == SyscallGroup::poll;
+        const auto descriptor_group = found->second.group == SyscallGroup::file ||
+                                      found->second.group == SyscallGroup::poll ||
+                                      found->second.group == SyscallGroup::network;
         if (auto* vfs = *filesystem_binding; vfs != nullptr && descriptor_group) {
             const auto table = *descriptor_table_binding ? (*descriptor_table_binding)(frame.thread_id)
                                                          : kVfsApplicationDescriptorTable;
@@ -334,7 +335,8 @@ A32SyscallDispatcher CreateAndroidArmSyscallDispatcher(core::CapabilityLedger& l
 void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher, hal::Clock& clock, memory::AddressSpace& address_space,
                              std::function<void(std::uint64_t, std::chrono::nanoseconds)> admit_sleep,
                              std::function<std::uint64_t()> monotonic_nanos,
-                             std::function<void(std::uint64_t, std::chrono::nanoseconds)> account_sleep) {
+                             std::function<void(std::uint64_t, std::chrono::nanoseconds)> account_sleep,
+                             const std::int64_t wall_epoch_millis) {
     constexpr std::int32_t kEfault = 14;
     constexpr std::int32_t kEinval = 22;
     constexpr std::int32_t kEoverflow = 75;
@@ -359,12 +361,11 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher, hal::Clock& clock
         }
         return value;
     };
-    const auto current = [&clock, frequency, nanos = std::move(monotonic_nanos)](bool wall_time) {
+    const auto epoch_nanos = static_cast<std::uint64_t>(std::max<std::int64_t>(wall_epoch_millis, 0)) * 1'000'000U;
+    const auto current = [&clock, frequency, epoch_nanos, nanos = std::move(monotonic_nanos)](bool wall_time) {
         if (nanos) {
-            const auto elapsed = nanos();
-            const auto epoch_seconds = wall_time ? static_cast<std::uint64_t>(kAndroidWallEpochMillis / 1000) : 0U;
-            return std::pair<std::uint64_t, std::uint64_t>{elapsed / 1'000'000'000 + epoch_seconds,
-                                                           elapsed % 1'000'000'000};
+            const auto elapsed = nanos() + (wall_time ? epoch_nanos : 0U);
+            return std::pair<std::uint64_t, std::uint64_t>{elapsed / 1'000'000'000, elapsed % 1'000'000'000};
         }
         const auto ticks = clock.Ticks();
         const auto seconds = ticks / frequency;
@@ -1094,6 +1095,7 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher, VirtualFileSystem
         constexpr std::uint32_t kGetDescriptorFlags = 1;
         constexpr std::uint32_t kSetDescriptorFlags = 2;
         constexpr std::uint32_t kGetStatusFlags = 3;
+        constexpr std::uint32_t kSetStatusFlags = 4;
         constexpr std::int32_t kDescriptorCloseOnExec = 1;
         const auto descriptor = std::bit_cast<std::int32_t>(frame.arguments[0]);
         try {
@@ -1103,6 +1105,20 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher, VirtualFileSystem
                 vfs.SetCloseOnExec(descriptor, (frame.arguments[2] & kDescriptorCloseOnExec) != 0);
                 return 0;
             case kGetStatusFlags: return status_flags(vfs.DescriptorStatus(descriptor));
+            case kSetStatusFlags: {
+                // Linux F_SETFL ignores access mode and creation flags. Only
+                // O_NONBLOCK changes are supported; O_APPEND/O_ASYNC/O_DIRECT/
+                // O_NOATIME changes stay unimplemented.
+                constexpr std::uint32_t kAppend = 0x400;
+                constexpr std::uint32_t kNonBlocking = 0x800;
+                constexpr std::uint32_t kUnsupported = 0x2000 | 0x10000 | 0x40000;
+                const auto status = vfs.DescriptorStatus(descriptor);
+                const auto requested = frame.arguments[2];
+                if ((requested & kUnsupported) != 0 || ((requested & kAppend) != 0) != status.append)
+                    return -kLinuxEnosys;
+                vfs.SetNonBlocking(descriptor, (requested & kNonBlocking) != 0);
+                return 0;
+            }
             default: return -kLinuxEnosys;
             }
         } catch (const VfsError& error) {

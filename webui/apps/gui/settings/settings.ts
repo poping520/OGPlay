@@ -76,7 +76,7 @@ const labels: Record<string, string> = {
   dark: 'setting.choice.dark', light: 'setting.choice.light', system: 'setting.choice.system', compact: 'setting.choice.compact', comfortable: 'setting.choice.comfortable',
   switch: 'Switch', threaded: 'Threaded',
   windowed: 'setting.choice.windowed', fullscreen: 'setting.choice.fullscreen', aspect: 'setting.choice.aspect', stretch: 'setting.choice.stretch', automatic: 'setting.choice.automatic', 'hardware-only': 'setting.choice.hardwareOnly', 'software-only': 'setting.choice.softwareOnly',
-  disabled: 'setting.choice.disabled', loopback: 'setting.choice.loopback', allow: 'setting.choice.allow', realtime: 'setting.choice.realtime', fixed: 'setting.choice.fixed', portrait: 'setting.choice.portrait', landscape: 'setting.choice.landscape', unlimited: 'setting.choice.unlimited',
+  disabled: 'setting.choice.disabled', loopback: 'setting.choice.loopback', allow: 'setting.choice.allow', host: 'setting.choice.host', guest: 'setting.choice.guest', realtime: 'setting.choice.realtime', fixed: 'setting.choice.fixed', portrait: 'setting.choice.portrait', landscape: 'setting.choice.landscape', unlimited: 'setting.choice.unlimited',
   '3d': 'setting.choice.3d', css: 'setting.choice.css', console: 'setting.choice.console', glass: 'setting.choice.glass', cradle: 'setting.choice.cradle', badge: 'setting.choice.badge',
   'top-left': 'setting.choice.topLeft', 'top-right': 'setting.choice.topRight', 'bottom-left': 'setting.choice.bottomLeft', 'bottom-right': 'setting.choice.bottomRight',
 };

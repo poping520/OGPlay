@@ -35,18 +35,27 @@ SHA-1 KDF，固定派生 32-byte key，不使用 PBKDF2。无盐规格返回延�
 UTF-16 单元、盐最多 65536 bytes、迭代 1..1000000，超限明确失败。此服务不提供 PBE Cipher，
 不冒充 BC Provider；DES/RC/GCM 等公开规格可用不代表对应算法已注册。
 
-默认 CA 来自 owner 注入的版本化 `OGPLAYCA` 包，路径为 `/system/etc/security/cacerts.ogplay`；
-缺失或损坏时 TrustManagerFactory.init(null) 失败，不读取宿主证书库。AndroidCAStore 保持
-API19 只读；写/删/store 抛 UnsupportedOperationException。
+TLS 引擎每进程选定一次（`Tls` 门面，启动器 `tls_mode`）：默认宿主引擎（`HostTls`，宿主 OpenSSL 3，
+TLS 1.3，TLSv1.2 为最高启用版本时同时提供 1.3），或 guest 引擎（`NativeTls`，guest libssl，最高 TLS 1.2）。
+两者都用内存缓冲交换密文，密文经 SSLSocket 自身（非分层时为 ROM `Socket` 父类流）收发，网络开关只在
+socket 栈。宿主引擎握手不验证对端：握手后把证书链与 authType（TLS 1.3 按叶子密钥报
+ECDHE_RSA/ECDHE_ECDSA）交给上下文的 TrustManager，失败为 SSLHandshakeException；会话恢复不重复校验。
+guest 引擎沿用握手内回调。`TrustManagerFactory.init(null)` 在宿主引擎下返回 `HostX509TrustManager`，
+服务端链交宿主信任根判定（不校验主机名，HTTPS 仍由 HostnameVerifier 负责），客户端链拒绝；
+guest 引擎下默认 CA 来自 owner 注入的版本化 `OGPLAYCA` 包 `/system/etc/security/cacerts.ogplay`，
+缺失或损坏时失败。显式 KeyStore 初始化时两种引擎都用该 KeyStore 做 guest libcrypto 路径验证。
+AndroidCAStore 保持 API19 只读；写/删/store 抛 UnsupportedOperationException。
+read/write 的 WANT 状态以负码（`Tls.IO_*`）表示；guest libssl 仍以正码报告 WANT，2/3 字节读写与之
+有歧义，这是 guest 引擎的已知限制。
 
 已完成 KeyStore/BKS 发布条件并注册默认 BKS。提供 OGPlayJSSE：PKIX
-TrustManagerFactory、真实 libcrypto 路径验证与只读 AndroidCAStore；客户端 SSLSocket/
-HTTPS 经 raw NetworkRuntime 完成 loopback TLS 1.2 握手与 GET。校验时间走统一 Clock；
+TrustManagerFactory、真实 libcrypto 路径验证与只读 AndroidCAStore；客户端 SSLSocket；HTTPS 由
+ROM okhttp 经 HttpsURLConnection 默认工厂使用本 Provider，本目录不再含 HTTP 客户端。校验时间走统一 Clock；
 `SSLContext.init` 与 `DefaultContext` 都不覆盖调用方已设置的全局 HTTPS 工厂；协议/SNI
 作用于 native SSL；TrustManager 在握手内执行；session 以二进制 id 缓存并经
 `SSL_set_session` 恢复，超时在查询/枚举/恢复路径上检查。请求头在 `connect()` 前快照，
 因为 `URLConnection.getRequestProperties()` 在已连接后抛 Already connected。
-不包含 AndroidKeyStore、通用 CertPathValidator.PKIX、SSLEngine、server TLS 或公开互联网 CA。
+不包含 AndroidKeyStore、通用 CertPathValidator.PKIX、SSLEngine 或 server TLS。
 
 Session 超时按统一 Clock 与原创建时间计算；恢复复用原 Session 对象，查询不续期。
 缓存容量 0 表示无限，只有超过容量才淘汰；二进制 ID 使用不可变字节键。

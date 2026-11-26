@@ -17,8 +17,11 @@
   复核入口：CPU/GC/线程主题与现有游戏关闭路径；Windows 的稳定 payload 路径尚未实跑。
 - **位置服务**：位置更新订阅仍缺能力。
   复核入口：水果忍者的位置订阅路径，当前启动首错另见 CURRENT。
-- **网络与 TLS 发布**：默认离线；公开 CA 来源/更新责任和随附 OpenSSL 1.0.1 补丁维护未闭合，loopback 客户端成功不能作为在线发布依据。
-  复核入口：`tests/fixtures/tls/loopback_https.py` 与 guest crypto；SSLEngine、server TLS、AndroidKeyStore、完整 PKIX 不支持。
+- **网络与 TLS**：默认离线（`network_policy=allow` 才经宿主出口）；默认 TLS 为宿主 OpenSSL 3.5 与宿主信任根，
+  Linux 无 OpenSSL SDK 时宿主引擎不可用。guest 引擎（`tls_mode=guest`）仍是 OpenSSL 1.0.1 + 随附 CA，不承诺公网，
+  且 2/3 字节读写与 WANT 状态码歧义未修。游戏 .so 静态链接的 TLS 只获得 socket，不经宿主信任；URL 仍为替换类
+  （jar: 资源、file: 未接 ROM）。SSLEngine、server TLS、AndroidKeyStore、完整 PKIX、组播成员、宿主监听、对外 IPv6 不支持。
+  复核入口：`tests/runtime/guest_network_tests.cpp`、`tests/runtime/tls_trust_tests.cpp`（含 TLS-04 宿主引擎）。
 - **文件与 Looper**：Java Posix 与 native 共用 PRIVATE R/RW、只读 fd 的 SHARED R 文件映射及区间校验。
   共享回写、文件执行映射、MS_INVALIDATE、跨进程文件锁、目录树 rename、WAL/跨进程共享以及 NDK Looper 非 pipe fd 仍未实现。
   复核入口：VFS/syscall/guest_looper 主题；临时沙盒的 Dungeon Hunter `/sdcard` 路径仍待相同启动复核。

@@ -130,13 +130,14 @@ ogplay_suppress_source_warnings(third_party/yyjson/src/yyjson.c)
 ogplay_add_module(ogplay_hal Hal
     src/hal/clock.cpp
     src/hal/fs.cpp
+    src/hal/host_network.cpp
     src/hal/sdl_audio_output.cpp
     src/hal/sdl_window_input.cpp
     src/hal/thread.cpp
 )
 if(WIN32)
     target_sources(ogplay_hal PRIVATE src/hal/rgb_surface_storage.cpp)
-    target_link_libraries(ogplay_hal PRIVATE bcrypt d2d1 dwmapi dwrite shell32)
+    target_link_libraries(ogplay_hal PRIVATE bcrypt d2d1 dwmapi dwrite shell32 ws2_32)
     target_sources(ogplay_hal PRIVATE
         src/hal/windows/file_lock.cpp
         src/hal/windows/file_clone.cpp
@@ -180,6 +181,18 @@ elseif(UNIX)
         src/hal/linux/virtual_memory.cpp)
 else()
     message(FATAL_ERROR "OGPlay has no virtual memory HAL for this host platform")
+endif()
+target_sources(ogplay_hal PRIVATE src/hal/host_tls.cpp)
+if(OGPLAY_HAS_HOST_TLS)
+    target_compile_definitions(ogplay_hal PRIVATE OGPLAY_HAS_HOST_TLS=1)
+    target_link_libraries(ogplay_hal PRIVATE OpenSSL::Host)
+    if(APPLE)
+        target_link_libraries(ogplay_hal PRIVATE "-framework Security")
+    elseif(WIN32)
+        target_link_libraries(ogplay_hal PRIVATE crypt32)
+    endif()
+else()
+    target_compile_definitions(ogplay_hal PRIVATE OGPLAY_HAS_HOST_TLS=0)
 endif()
 if(OGPLAY_ENABLE_SDL3)
     target_compile_definitions(ogplay_hal PRIVATE OGPLAY_HAS_SDL3=1)
@@ -470,7 +483,6 @@ ogplay_add_module(ogplay_runtime Runtime
     src/runtime/dexvm/class_loader_facade.cpp
     src/runtime/dexvm/big_int_runtime.cpp
     src/runtime/dexvm/io_runtime.cpp
-    src/runtime/dexvm/network_runtime.cpp
     src/runtime/dexvm/proxy_runtime.cpp
     src/runtime/dexvm/unsafe_runtime.cpp
     src/runtime/dexvm/guest_memory.cpp
@@ -527,6 +539,9 @@ ogplay_add_module(ogplay_runtime Runtime
     src/runtime/process/process_commands.cpp
     src/runtime/process/shell.cpp
     src/runtime/process/virtual_process_kernel.cpp
+    src/runtime/net/dns_proxy.cpp
+    src/runtime/net/guest_network.cpp
+    src/runtime/syscall/syscall_socket.cpp
     src/runtime/vfs/sandbox_store.cpp
     src/runtime/vfs/vfs.cpp
     src/runtime/vfs/host_file_backing.cpp

@@ -211,6 +211,16 @@ mkdir/unlink/rmdir/rename 立即落元数据。unlink/覆盖后的存活句柄�
 EPIPE（不产生 SIGPIPE）；pipe2 的 O_NONBLOCK 端以 EAGAIN 代替阻塞。阻塞不持打开状态操作锁，
 以 10 ms 片检查绑定的中断谓词并返回 EINTR；未绑定线程不可中断。
 
+## 描述符对象
+
+`OpenObject` 把上层拥有的 `VfsDescriptorObject`（socket、epoll 实例）装入调用线程的 FD 表：
+编号、dup、fork 共享、close-on-exec 与 O_NONBLOCK 归 VFS，读写、就绪与关闭语义归对象。读写
+在不持 VFS 锁时调用对象并传入 `VfsIoContext`（O_NONBLOCK 与线程绑定的中断谓词），可阻塞；
+`PipePollEvents`/`PipeBuffered` 转为对象的 `PollEvents`/`Available`；fstat 报 S_IFSOCK|0777；
+定位、租约、截断沿 pipe 规则失败。最后一个共享打开状态退役时对象收到一次 `OnLastClose`。
+`SetNonBlocking` 改写共享打开状态的 O_NONBLOCK（F_SETFL），`NotifyReadiness` 递增就绪计数，
+供对象在状态变化后唤醒 poll 等待方；对象自身不在 VFS 锁内回调 VFS。
+
 PipePollEvents 是不消费数据的快照查询：返回读/写/错误/挂断/无效位，普通文件或目录返回不支持。
 读端有数据或无写端为可读，无写端同时报挂断；写端无读端报错误，剩余空间 ≥4096 才报可写。
 PipeReadinessGeneration 是进程内单调计数，管道读写、端退役后递增并唤醒 WaitPipeReadiness；

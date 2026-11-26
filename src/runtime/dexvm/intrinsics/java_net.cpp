@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <chrono>
 #include <cctype>
 #include <cstdint>
 #include <cstring>
@@ -27,6 +28,9 @@
 
 #include "ogplay/core/text.h"
 #include "ogplay/runtime/dexvm/io_runtime.h"
+#include "ogplay/runtime/dexvm/network_runtime.h"
+#include "ogplay/runtime/net/guest_network.h"
+#include "ogplay/runtime/vfs/vfs.h"
 
 namespace ogplay::runtime::dexvm::intrinsics {
 namespace {
@@ -262,28 +266,6 @@ IntrinsicClassDecl Declare_java_net_HttpURLConnection_Shell() {
     return std::move(IntrinsicClassBuilder::Class("Ljava/net/HttpURLConnection;", "Ljava/net/URLConnection;")
                          .MergesBootClass())
         .Build();
-}
-
-IntrinsicClassDecl Declare_java_net_ProxySelector_Class() {
-    auto builder =
-        IntrinsicClassBuilder::Class("Ljava/net/ProxySelector;", "Ljava/lang/Object;", {}, kAccPublic | kAccAbstract);
-    builder.Constructor("()V", NoopVoid());
-    builder.StaticMethod("getDefault", "()Ljava/net/ProxySelector;", [](IntrinsicContext&) {
-        // OGPlay has no process-wide proxy service. Apache's API 19
-        // route planner treats a null selector as a direct route.
-        return VmValue::Ref(VmObjectRef{});
-    });
-    builder.StaticMethod("setDefault", "(Ljava/net/ProxySelector;)V", [](IntrinsicContext& context) {
-        if (context.arguments[0].ref.IsValid()) {
-            if (auto* ledger = context.vm.Ledger())
-                ledger->RecordUnimplemented("java.net.ProxySelector.setDefault(Ljava/net/ProxySelector;)V", 0);
-            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "custom proxy selectors are unsupported"};
-        }
-        return VmValue::Void();
-    });
-    builder.UnimplementedVirtual("select", "(Ljava/net/URI;)Ljava/util/List;");
-    builder.UnimplementedVirtual("connectFailed", "(Ljava/net/URI;Ljava/net/SocketAddress;Ljava/io/IOException;)V");
-    return std::move(builder).Build();
 }
 
 [[noreturn]] void MalformedUrl(const std::string_view spec, const std::string_view reason) {
@@ -526,6 +508,90 @@ IntrinsicClassDecl Declare_java_net_URL_Class() {
     builder.FinalMethod("toExternalForm", "()Ljava/lang/String;", external_form);
     builder.FinalOverrideMethod("toString", "()Ljava/lang/String;", external_form);
 
+    // URLStreamHandler.toExternalForm(url, true): escape only characters URI
+    // forbids (spaces, quotes, non-ASCII, ...); existing %XX stay as they are.
+    const auto lenient_form = [external_form](IntrinsicContext& context) {
+        const auto text = context.vm.StringUtf8(external_form(context).ref);
+        constexpr std::string_view kLegal =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:/?#[]@!$&'()*+,;=%";
+        std::string escaped;
+        for (const auto value : text) {
+            const auto byte = static_cast<unsigned char>(value);
+            if (byte < 0x80U && kLegal.find(static_cast<char>(byte)) != std::string_view::npos) {
+                escaped.push_back(static_cast<char>(byte));
+                continue;
+            }
+            constexpr char kHex[] = "0123456789ABCDEF";
+            escaped.push_back('%');
+            escaped.push_back(kHex[byte >> 4U]);
+            escaped.push_back(kHex[byte & 0xfU]);
+        }
+        return escaped;
+    };
+    const auto new_uri = [](IntrinsicContext& context, const std::string& text) {
+        const auto uri = context.vm.NewIntrinsicInstance("Ljava/net/URI;");
+        const auto roots = context.vm.ProtectReferences(std::array{uri});
+        InvokeDirect(context.vm, "Ljava/net/URI;", "<init>", "(Ljava/lang/String;)V",
+                     {VmValue::Ref(uri), VmValue::Ref(context.vm.NewStringUtf8(text))});
+        return VmValue::Ref(uri);
+    };
+    builder.FinalMethod("toURI", "()Ljava/net/URI;", [external_form, new_uri](IntrinsicContext& context) {
+        return new_uri(context, context.vm.StringUtf8(external_form(context).ref));
+    });
+    builder.FinalMethod("toURILenient", "()Ljava/net/URI;", [lenient_form, new_uri](IntrinsicContext& context) {
+        return new_uri(context, lenient_form(context));
+    });
+    // URL(URL context, String spec[, handler]): absolute specs parse alone;
+    // relative ones resolve against the context as java.net.URI does.
+    const auto relative = [lenient_form](IntrinsicContext& context) {
+        IntrinsicCall call(context);
+        const auto base = call.Ref(0);
+        const auto spec_ref = call.Ref(1);
+        if (!spec_ref.IsValid()) MalformedUrl({}, "spec == null");
+        if (context.arguments.size() > 2 && call.Ref(2).IsValid()) {
+            if (auto* ledger = context.vm.Ledger()) ledger->RecordUnimplemented("dexvm.url.custom_handler", 0);
+            MalformedUrl({}, "custom URLStreamHandler is unsupported");
+        }
+        std::string spec(core::TrimAsciiWhitespace(context.vm.StringUtf8(spec_ref)));
+        const auto colon = spec.find(':');
+        const auto delimiter = spec.find_first_of("/?#");
+        const bool absolute =
+            colon != std::string::npos && colon > 0 && (delimiter == std::string::npos || colon < delimiter);
+        std::string resolved = spec;
+        if (!absolute) {
+            if (!base.IsValid()) MalformedUrl(spec, "Protocol not found");
+            IntrinsicContext base_context{context.vm, base, {}};
+            const auto base_uri = context.vm.NewIntrinsicInstance("Ljava/net/URI;");
+            const auto roots = context.vm.ProtectReferences(std::array{base_uri});
+            InvokeDirect(context.vm, "Ljava/net/URI;", "<init>", "(Ljava/lang/String;)V",
+                         {VmValue::Ref(base_uri), VmValue::Ref(context.vm.NewStringUtf8(lenient_form(base_context)))});
+            std::string escaped;
+            for (const auto value : spec) {
+                const auto byte = static_cast<unsigned char>(value);
+                if (byte <= 0x20U || byte >= 0x7fU || value == '"' || value == '<' || value == '>' || value == '\\' ||
+                    value == '^' || value == '`' || value == '{' || value == '|' || value == '}') {
+                    constexpr char kHex[] = "0123456789ABCDEF";
+                    escaped.push_back('%');
+                    escaped.push_back(kHex[byte >> 4U]);
+                    escaped.push_back(kHex[byte & 0xfU]);
+                } else {
+                    escaped.push_back(value);
+                }
+            }
+            const auto target =
+                detail::InvokeGuest(context.vm, base_uri, "resolve", "(Ljava/lang/String;)Ljava/net/URI;",
+                                    {VmValue::Ref(context.vm.NewStringUtf8(escaped))})
+                    .ref;
+            resolved =
+                context.vm.StringUtf8(detail::InvokeGuest(context.vm, target, "toString", "()Ljava/lang/String;").ref);
+        }
+        InvokeDirect(context.vm, "Ljava/net/URL;", "<init>", "(Ljava/lang/String;)V",
+                     {VmValue::Ref(context.receiver), VmValue::Ref(context.vm.NewStringUtf8(resolved))});
+        return VmValue::Void();
+    };
+    builder.Constructor("(Ljava/net/URL;Ljava/lang/String;)V", relative);
+    builder.Constructor("(Ljava/net/URL;Ljava/lang/String;Ljava/net/URLStreamHandler;)V", relative);
+
     const auto open_connection = [protocol](IntrinsicContext& context) -> VmValue {
         IntrinsicCall call(context);
         const auto protocol_text = call.Vm().StringUtf8(call.GetRef(protocol));
@@ -539,20 +605,19 @@ IntrinsicClassDecl Declare_java_net_URL_Class() {
         if (protocol_text == "file") {
             throw VmJavaThrow{"Ljava/io/IOException;", "file URL I/O is not implemented"};
         }
-        // HTTP(S) construction is value-only. Policy is enforced by
-        // NetworkRuntime at DNS/connect/I/O, after callers own a
-        // connection they can configure and disconnect on failure.
-        const char* descriptor = protocol_text == "https"  ? "Lorg/ogplay/security/OgPlayHttpsURLConnection;"
-                                 : protocol_text == "http" ? "Lorg/ogplay/security/OgPlayHttpURLConnection;"
-                                                           : nullptr;
-        if (descriptor == nullptr) {
+        // API 19 URL.setupStreamHandler loads these okhttp.jar handlers by
+        // name; openConnection only builds the object, I/O starts at connect.
+        const char* handler_descriptor = protocol_text == "https"  ? "Lcom/android/okhttp/HttpsHandler;"
+                                         : protocol_text == "http" ? "Lcom/android/okhttp/HttpHandler;"
+                                                                   : nullptr;
+        if (handler_descriptor == nullptr) {
             throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "URLConnection protocol is not implemented"};
         }
-        auto connection = call.Vm().NewIntrinsicInstance(descriptor);
-        const auto roots = call.Vm().ProtectReferences(std::array{connection, call.Receiver()});
-        InvokeDirect(call.Vm(), descriptor, "<init>", "(Ljava/net/URL;)V",
-                     {VmValue::Ref(connection), VmValue::Ref(call.Receiver())});
-        return VmValue::Ref(connection);
+        const auto handler = call.Vm().NewIntrinsicInstance(handler_descriptor);
+        const auto roots = call.Vm().ProtectReferences(std::array{handler, call.Receiver()});
+        InvokeDirect(call.Vm(), handler_descriptor, "<init>", "()V", {VmValue::Ref(handler)});
+        return detail::InvokeGuest(call.Vm(), handler, "openConnection", "(Ljava/net/URL;)Ljava/net/URLConnection;",
+                                   {VmValue::Ref(call.Receiver())});
     };
     builder.FinalMethod("openConnection", "()Ljava/net/URLConnection;", open_connection);
     builder.FinalMethod("openStream", "()Ljava/io/InputStream;", [](IntrinsicContext& context) {
@@ -758,9 +823,6 @@ IntrinsicClassDecl Declare_java_net_URLDecoder_Class() {
     return std::move(builder).Build();
 }
 
-[[noreturn]] void ThrowNetwork(const NetworkRuntimeError& error);
-NetworkRuntime::Endpoint EndpointFrom(IntrinsicContext& call, VmObjectRef address, std::int32_t port);
-
 VmValue InvokeDirect(Interpreter& vm, const char* owner, const char* name, const char* signature,
                      std::vector<VmValue> arguments) {
     const auto method = vm.Linker().FindDirectMethod(vm.Linker().ResolveDescriptor(owner), name, signature);
@@ -898,14 +960,695 @@ std::string NumericAddress(Interpreter& vm, const VmObjectRef address) {
     throw DexVmError(DexVmErrorReason::internal_invariant, "InetAddress has invalid byte length");
 }
 
-[[noreturn]] void ThrowGai(Interpreter& vm, const std::string_view function, const std::string_view message) {
+[[noreturn]] void ThrowGai(Interpreter& vm, const std::string_view function, const std::int32_t error,
+                           const std::string_view message) {
     const auto function_ref = vm.NewStringUtf8(function);
     const auto function_root = vm.ProtectReferences(std::array{function_ref});
     const auto exception = vm.NewIntrinsicInstance("Llibcore/io/GaiException;");
     const auto exception_root = vm.ProtectReferences(std::array{exception});
     InvokeDirect(vm, "Llibcore/io/GaiException;", "<init>", "(Ljava/lang/String;I)V",
-                 {VmValue::Ref(exception), VmValue::Ref(function_ref), VmValue::Int(8)});
+                 {VmValue::Ref(exception), VmValue::Ref(function_ref), VmValue::Int(error)});
     throw VmJavaThrow{"Llibcore/io/GaiException;", std::string(message), exception};
+}
+
+// bionic libc/netbsd/net/getaddrinfo.c ai_errlist.
+const char* Api19GaiStrerror(const std::int32_t error) {
+    switch (error) {
+    case 0: return "Success";
+    case 1: return "Address family for hostname not supported";
+    case 2: return "Temporary failure in name resolution";
+    case 3: return "Invalid value for ai_flags";
+    case 4: return "Non-recoverable failure in name resolution";
+    case 5: return "ai_family not supported";
+    case 6: return "Memory allocation failure";
+    case 7: return "No address associated with hostname";
+    case 8: return "hostname nor servname provided, or not known";
+    case 9: return "servname not supported for ai_socktype";
+    case 10: return "ai_socktype not supported";
+    case 11: return "System error returned in errno";
+    case 12: return "Invalid value for hints";
+    case 13: return "Resolved protocol is unknown";
+    case 14: return "Argument buffer overflow";
+    default: return "Unknown error";
+    }
+}
+
+// bionic strerror text for the errnos file and socket natives report.
+const char* Api19Strerror(const std::int32_t error) {
+    switch (error) {
+    case 1: return "Operation not permitted";
+    case 2: return "No such file or directory";
+    case 4: return "Interrupted system call";
+    case 5: return "I/O error";
+    case 9: return "Bad file number";
+    case 11: return "Try again";
+    case 12: return "Out of memory";
+    case 13: return "Permission denied";
+    case 14: return "Bad address";
+    case 17: return "File exists";
+    case 19: return "No such device";
+    case 20: return "Not a directory";
+    case 21: return "Is a directory";
+    case 22: return "Invalid argument";
+    case 24: return "Too many open files";
+    case 25: return "Not a typewriter";
+    case 28: return "No space left on device";
+    case 29: return "Illegal seek";
+    case 30: return "Read-only file system";
+    case 32: return "Broken pipe";
+    case 38: return "Function not implemented";
+    case 88: return "Socket operation on non-socket";
+    case 89: return "Destination address required";
+    case 90: return "Message too long";
+    case 91: return "Protocol wrong type for socket";
+    case 92: return "Protocol not available";
+    case 93: return "Protocol not supported";
+    case 94: return "Socket type not supported";
+    case 95: return "Operation not supported on transport endpoint";
+    case 97: return "Address family not supported by protocol";
+    case 98: return "Address already in use";
+    case 99: return "Cannot assign requested address";
+    case 100: return "Network is down";
+    case 101: return "Network is unreachable";
+    case 103: return "Software caused connection abort";
+    case 104: return "Connection reset by peer";
+    case 106: return "Transport endpoint is already connected";
+    case 107: return "Transport endpoint is not connected";
+    case 110: return "Connection timed out";
+    case 111: return "Connection refused";
+    case 113: return "No route to host";
+    case 114: return "Operation already in progress";
+    case 115: return "Operation now in progress";
+    default: return "Unknown error";
+    }
+}
+
+// ---- libcore.io.Posix socket natives over runtime/net ---------------------
+
+constexpr std::int32_t kEbadf = 9;
+constexpr std::int32_t kEnodev = 19;
+constexpr std::int32_t kEnosysErrno = 38;
+constexpr std::int32_t kEaiNoName = 8;
+constexpr std::int32_t kEaiNoData = 7;
+constexpr std::int32_t kAiNumericHost = 4;
+constexpr std::int32_t kAiAddrConfig = 0x400;
+// Bounds one Java transfer's host scratch; sockets may return short counts.
+constexpr std::size_t kMaxSocketTransfer = 256U * 1024U;
+
+net::GuestNetworkStack& RequireStack(IntrinsicContext& call, const std::string_view function) {
+    if (auto* stack = call.vm.Network().Stack()) return *stack;
+    if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.posix.network", 0);
+    ThrowErrno(call.vm, function, kEnosysErrno, "guest socket stack is not injected");
+}
+
+template <class Operation>
+auto Unlocked(IntrinsicContext& call, Operation&& operation) {
+    const auto depth = call.vm.ExecutionLock().ReleaseForBlocking();
+    try {
+        auto result = operation();
+        call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+        return result;
+    } catch (...) {
+        call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+        throw;
+    }
+}
+
+std::int32_t SocketHandle(IntrinsicContext& call, const VmObjectRef descriptor) {
+    return FileDescriptorHandle(call, descriptor);
+}
+
+// libcore NET_FAILURE_RETRY: an operation on a descriptor closed meanwhile is "Socket closed".
+[[noreturn]] void ThrowSocketErrno(IntrinsicContext& call, const VmObjectRef descriptor,
+                                   const std::string_view function, const std::int64_t result) {
+    const auto error = static_cast<std::int32_t>(-result);
+    if (error == kEbadf && descriptor.IsValid() && FileDescriptorHandle(call, descriptor) < 0)
+        throw VmJavaThrow{"Ljava/net/SocketException;", "Socket closed"};
+    ThrowErrno(call.vm, function, error, std::string(function) + " failed: " + Api19Strerror(error));
+}
+
+std::int64_t CheckSocket(IntrinsicContext& call, const VmObjectRef descriptor, const std::string_view function,
+                         const std::int64_t result) {
+    if (result < 0) ThrowSocketErrno(call, descriptor, function, result);
+    return result;
+}
+
+[[nodiscard]] VmObjectRef GetRefField(Interpreter& vm, const VmObjectRef object, const std::string& name,
+                                      const std::string& descriptor) {
+    const auto& field = ObjectField(vm, object, name, descriptor);
+    return VmObjectRef{vm.Model().InstanceSlots(object)[field.slot].bits};
+}
+
+void SetRefField(Interpreter& vm, const VmObjectRef object, const std::string& name, const std::string& descriptor,
+                 const VmObjectRef value) {
+    const auto& field = ObjectField(vm, object, name, descriptor);
+    vm.Model().InstanceSlots(object)[field.slot] = {value.Value(), SlotTag::ref};
+}
+
+std::int32_t SocketDomain(net::GuestNetworkStack& stack, const std::int32_t fd) {
+    std::vector<std::byte> value;
+    constexpr int kSoDomain = 39;
+    if (stack.GetOption(fd, net::kSolSocket, kSoDomain, value) != 0 || value.size() < 4) return net::kAfInet6;
+    return static_cast<std::int32_t>(std::to_integer<std::uint32_t>(value[0]) |
+                                     (std::to_integer<std::uint32_t>(value[1]) << 8U));
+}
+
+// libcore inetAddressToSockaddr: IPv6 sockets see IPv4 addresses IPv4-mapped.
+net::GuestSocketAddress SockaddrOf(IntrinsicContext& call, const VmObjectRef address, const std::int32_t port,
+                                   const std::int32_t domain) {
+    if (!address.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "address == null"};
+    if (port < 0 || port > 65535) ThrowErrno(call.vm, "sockaddr", 22);
+    const auto bytes_ref = detail::InvokeGuest(call.vm, address, "getAddress", "()[B").ref;
+    const auto bytes = call.vm.Model().ReadByteRegion(bytes_ref, 0, call.vm.Model().ArrayLength(bytes_ref));
+    net::GuestSocketAddress result;
+    result.port = static_cast<std::uint16_t>(port);
+    if (bytes.size() == 4) {
+        if (domain == net::kAfInet6) {
+            result.family = net::kAfInet6;
+            result.address[10] = 0xff;
+            result.address[11] = 0xff;
+            for (std::size_t index = 0; index < 4; ++index)
+                result.address[12 + index] = std::to_integer<std::uint8_t>(bytes[index]);
+        } else {
+            result.family = net::kAfInet;
+            for (std::size_t index = 0; index < 4; ++index)
+                result.address[index] = std::to_integer<std::uint8_t>(bytes[index]);
+        }
+        return result;
+    }
+    if (bytes.size() != 16) throw DexVmError(DexVmErrorReason::internal_invariant, "InetAddress has invalid length");
+    result.family = net::kAfInet6;
+    for (std::size_t index = 0; index < 16; ++index)
+        result.address[index] = std::to_integer<std::uint8_t>(bytes[index]);
+    result.scope_id = static_cast<std::uint32_t>(detail::InvokeGuest(call.vm, address, "getScopeId", "()I").AsInt());
+    return result;
+}
+
+// libcore sockaddrToInetAddress: IPv4-mapped addresses become Inet4Address.
+VmObjectRef InetAddressOf(IntrinsicContext& call, const net::GuestSocketAddress& address) {
+    if (address.family == net::kAfUnix) {
+        std::vector<std::byte> path;
+        if (address.abstract_name) path.push_back(std::byte{0});
+        for (const auto value : address.path)
+            path.push_back(static_cast<std::byte>(value));
+        const auto array = call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[B"),
+                                                             JniPrimitiveKind::byte, static_cast<JniSize>(path.size()));
+        call.vm.Model().WriteByteRegion(array, 0, path);
+        const auto root = call.vm.ProtectReferences(std::array{array});
+        const auto object = call.vm.NewIntrinsicInstance("Ljava/net/InetUnixAddress;");
+        const auto object_root = call.vm.ProtectReferences(std::array{object});
+        InvokeDirect(call.vm, "Ljava/net/InetUnixAddress;", "<init>", "([B)V",
+                     {VmValue::Ref(object), VmValue::Ref(array)});
+        return object;
+    }
+    const bool mapped = address.family == net::kAfInet6 &&
+                        std::all_of(address.address.begin(), address.address.begin() + 10,
+                                    [](const std::uint8_t value) { return value == 0; }) &&
+                        address.address[10] == 0xff && address.address[11] == 0xff;
+    std::vector<std::byte> bytes;
+    if (address.family == net::kAfInet || mapped) {
+        const auto offset = mapped ? 12U : 0U;
+        for (std::size_t index = 0; index < 4; ++index)
+            bytes.push_back(static_cast<std::byte>(address.address[offset + index]));
+    } else {
+        for (const auto value : address.address)
+            bytes.push_back(static_cast<std::byte>(value));
+    }
+    return NewAddress(call.vm, bytes);
+}
+
+VmObjectRef SocketAddressOf(IntrinsicContext& call, const net::GuestSocketAddress& address) {
+    const auto inet = InetAddressOf(call, address);
+    const auto inet_root = call.vm.ProtectReferences(std::array{inet});
+    const auto result = call.vm.NewIntrinsicInstance("Ljava/net/InetSocketAddress;");
+    const auto result_root = call.vm.ProtectReferences(std::array{result});
+    InvokeDirect(call.vm, "Ljava/net/InetSocketAddress;", "<init>", "(Ljava/net/InetAddress;I)V",
+                 {VmValue::Ref(result), VmValue::Ref(inet), VmValue::Int(address.port)});
+    return result;
+}
+
+// libcore fillInetSocketAddress writes the private fields directly.
+void FillSocketAddress(IntrinsicContext& call, const VmObjectRef target, const net::GuestSocketAddress& address) {
+    if (!target.IsValid() || address.family == net::kAfUnspec) return;
+    const auto inet = InetAddressOf(call, address);
+    const auto root = call.vm.ProtectReferences(std::array{inet});
+    SetRefField(call.vm, target, "addr", "Ljava/net/InetAddress;", inet);
+    SetIntField(call.vm, target, "port", address.port);
+}
+
+VmObjectRef NewSocketDescriptor(IntrinsicContext& call, const std::int32_t fd) {
+    const auto object = call.vm.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
+    SetIntField(call.vm, object, "descriptor", fd);
+    return object;
+}
+
+std::int32_t OptionInt(IntrinsicContext& call, const VmObjectRef fd, const std::string_view function) {
+    auto& stack = RequireStack(call, function);
+    std::vector<std::byte> value;
+    CheckSocket(call, fd, function,
+                stack.GetOption(SocketHandle(call, fd), call.arguments[1].AsInt(), call.arguments[2].AsInt(), value));
+    std::uint32_t result{};
+    for (std::size_t index = 0; index < std::min<std::size_t>(4, value.size()); ++index)
+        result |= std::to_integer<std::uint32_t>(value[index]) << (index * 8U);
+    return static_cast<std::int32_t>(result);
+}
+
+std::vector<std::byte> Words(std::initializer_list<std::int32_t> values) {
+    std::vector<std::byte> bytes;
+    for (const auto value : values)
+        for (unsigned shift = 0; shift < 32; shift += 8)
+            bytes.push_back(static_cast<std::byte>((static_cast<std::uint32_t>(value) >> shift) & 0xffU));
+    return bytes;
+}
+
+void SetOption(IntrinsicContext& call, const std::string_view function, const std::vector<std::byte>& value) {
+    auto& stack = RequireStack(call, function);
+    const auto fd = call.arguments[0].ref;
+    CheckSocket(call, fd, function,
+                stack.SetOption(SocketHandle(call, fd), call.arguments[1].AsInt(), call.arguments[2].AsInt(), value));
+}
+
+void AppendPosixSocketNatives(IntrinsicClassBuilder& posix) {
+    posix.VirtualMethod(
+        "socket", "(III)Ljava/io/FileDescriptor;",
+        [](IntrinsicContext& call) {
+            auto& stack = RequireStack(call, "socket");
+            const auto fd =
+                stack.Socket(call.arguments[0].AsInt(), call.arguments[1].AsInt(), call.arguments[2].AsInt());
+            if (fd < 0) ThrowErrno(call.vm, "socket", -fd);
+            return VmValue::Ref(NewSocketDescriptor(call, fd));
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "socketpair", "(IIILjava/io/FileDescriptor;Ljava/io/FileDescriptor;)V",
+        [](IntrinsicContext& call) {
+            auto& stack = RequireStack(call, "socketpair");
+            const auto first = IntrinsicCall(call).NonNullRef(3, "fd1");
+            const auto second = IntrinsicCall(call).NonNullRef(4, "fd2");
+            std::array<int, 2> pair{};
+            const auto result =
+                stack.SocketPair(call.arguments[0].AsInt(), call.arguments[1].AsInt(), call.arguments[2].AsInt(), pair);
+            if (result < 0) ThrowErrno(call.vm, "socketpair", -result);
+            SetIntField(call.vm, first, "descriptor", pair[0]);
+            SetIntField(call.vm, second, "descriptor", pair[1]);
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    for (const bool connect : {false, true}) {
+        posix.VirtualMethod(
+            connect ? "connect" : "bind", "(Ljava/io/FileDescriptor;Ljava/net/InetAddress;I)V",
+            [connect](IntrinsicContext& call) {
+                const auto function = connect ? "connect" : "bind";
+                auto& stack = RequireStack(call, function);
+                const auto fd_ref = call.arguments[0].ref;
+                const auto fd = SocketHandle(call, fd_ref);
+                const auto address =
+                    SockaddrOf(call, call.arguments[1].ref, call.arguments[2].AsInt(), SocketDomain(stack, fd));
+                const auto result =
+                    connect ? Unlocked(call, [&] { return stack.Connect(fd, address); }) : stack.Bind(fd, address);
+                CheckSocket(call, fd_ref, function, result);
+                return VmValue::Void();
+            },
+            kAccPublic | kAccNative);
+    }
+    posix.VirtualMethod(
+        "listen", "(Ljava/io/FileDescriptor;I)V",
+        [](IntrinsicContext& call) {
+            auto& stack = RequireStack(call, "listen");
+            const auto fd = call.arguments[0].ref;
+            CheckSocket(call, fd, "listen", stack.Listen(SocketHandle(call, fd), call.arguments[1].AsInt()));
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "accept", "(Ljava/io/FileDescriptor;Ljava/net/InetSocketAddress;)Ljava/io/FileDescriptor;",
+        [](IntrinsicContext& call) {
+            auto& stack = RequireStack(call, "accept");
+            const auto fd_ref = call.arguments[0].ref;
+            const auto fd = SocketHandle(call, fd_ref);
+            net::GuestSocketAddress peer;
+            const auto accepted = Unlocked(call, [&] { return stack.Accept(fd, &peer, 0); });
+            CheckSocket(call, fd_ref, "accept", accepted);
+            const auto descriptor = NewSocketDescriptor(call, accepted);
+            const auto root = call.vm.ProtectReferences(std::array{descriptor});
+            FillSocketAddress(call, call.arguments[1].ref, peer);
+            return VmValue::Ref(descriptor);
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "shutdown", "(Ljava/io/FileDescriptor;I)V",
+        [](IntrinsicContext& call) {
+            auto& stack = RequireStack(call, "shutdown");
+            const auto fd = call.arguments[0].ref;
+            CheckSocket(call, fd, "shutdown", stack.ShutdownSocket(SocketHandle(call, fd), call.arguments[1].AsInt()));
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    for (const bool peer : {false, true}) {
+        posix.VirtualMethod(
+            peer ? "getpeername" : "getsockname", "(Ljava/io/FileDescriptor;)Ljava/net/SocketAddress;",
+            [peer](IntrinsicContext& call) {
+                const auto function = peer ? "getpeername" : "getsockname";
+                auto& stack = RequireStack(call, function);
+                const auto fd = call.arguments[0].ref;
+                net::GuestSocketAddress address;
+                const auto handle = SocketHandle(call, fd);
+                CheckSocket(call, fd, function,
+                            peer ? stack.PeerName(handle, address) : stack.LocalName(handle, address));
+                return VmValue::Ref(SocketAddressOf(call, address));
+            },
+            kAccPublic | kAccNative);
+    }
+    posix.DirectMethod(
+        "sendtoBytes", "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIILjava/net/InetAddress;I)I",
+        [](IntrinsicContext& call) {
+            auto& stack = RequireStack(call, "sendto");
+            const auto fd_ref = call.arguments[0].ref;
+            const auto fd = SocketHandle(call, fd_ref);
+            const auto count =
+                std::min<std::int32_t>(call.arguments[3].AsInt(), static_cast<std::int32_t>(kMaxSocketTransfer));
+            const auto source =
+                PosixBytes(call, call.arguments[1].ref, call.arguments[2].AsInt(), std::max(count, 0), false);
+            std::vector<std::byte> bytes(source.begin(), source.end());
+            std::optional<net::GuestSocketAddress> destination;
+            if (call.arguments[5].ref.IsValid())
+                destination =
+                    SockaddrOf(call, call.arguments[5].ref, call.arguments[6].AsInt(), SocketDomain(stack, fd));
+            const auto flags = call.arguments[4].AsInt();
+            const auto sent = Unlocked(call, [&] {
+                return stack.Send(fd, bytes, flags | net::kMsgNoSignal, destination ? &*destination : nullptr);
+            });
+            return VmValue::Int(static_cast<std::int32_t>(CheckSocket(call, fd_ref, "sendto", sent)));
+        },
+        kAccPrivate | kAccNative);
+    posix.DirectMethod(
+        "recvfromBytes", "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIILjava/net/InetSocketAddress;)I",
+        [](IntrinsicContext& call) {
+            auto& stack = RequireStack(call, "recvfrom");
+            const auto fd_ref = call.arguments[0].ref;
+            const auto fd = SocketHandle(call, fd_ref);
+            const auto requested = call.arguments[3].AsInt();
+            // Validate the destination range before blocking, as JNI region access would.
+            static_cast<void>(PosixBytes(call, call.arguments[1].ref, call.arguments[2].AsInt(), requested, true));
+            std::vector<std::byte> bytes(
+                std::min<std::size_t>(static_cast<std::size_t>(std::max(requested, 0)), kMaxSocketTransfer));
+            const auto flags = call.arguments[4].AsInt();
+            net::GuestSocketAddress source;
+            const auto received = Unlocked(call, [&] { return stack.Receive(fd, bytes, flags, &source); });
+            CheckSocket(call, fd_ref, "recvfrom", received);
+            const auto copied = std::min<std::size_t>(static_cast<std::size_t>(received), bytes.size());
+            auto destination = PosixBytes(call, call.arguments[1].ref, call.arguments[2].AsInt(),
+                                          static_cast<std::int32_t>(copied), true);
+            std::copy_n(bytes.begin(), copied, destination.begin());
+            FillSocketAddress(call, call.arguments[5].ref, source);
+            return VmValue::Int(static_cast<std::int32_t>(received));
+        },
+        kAccPrivate | kAccNative);
+    posix.VirtualMethod(
+        "poll", "([Llibcore/io/StructPollfd;I)I",
+        [](IntrinsicContext& call) {
+            auto& stack = RequireStack(call, "poll");
+            auto& filesystem = stack.FileSystem();
+            const auto array = IntrinsicCall(call).NonNullRef(0, "fds");
+            const auto timeout_ms = call.arguments[1].AsInt();
+            const auto length = call.vm.Model().ArrayLength(array);
+            struct Entry final {
+                VmObjectRef pollfd;
+                std::int32_t fd{-1};
+                std::uint16_t events{};
+                std::uint16_t revents{};
+            };
+            std::vector<Entry> entries;
+            for (std::int32_t index = 0; index < length; ++index) {
+                const auto pollfd = call.vm.Model().GetObjectElement(array, static_cast<JniSize>(index));
+                if (!pollfd.IsValid()) continue;
+                const auto descriptor = GetRefField(call.vm, pollfd, "fd", "Ljava/io/FileDescriptor;");
+                const auto events = static_cast<std::uint16_t>(GetCat1Field(call.vm, pollfd, "events", "S"));
+                entries.push_back({pollfd, descriptor.IsValid() ? FileDescriptorHandle(call, descriptor) : -1, events});
+            }
+            // Linux poll bits; PipePollEvents: read=1, write=2, error=4, hangup=8, invalid=16.
+            const auto evaluate = [&]() {
+                std::int32_t ready{};
+                for (auto& entry : entries) {
+                    entry.revents = 0;
+                    if (entry.fd < 0) continue;
+                    std::uint16_t mask{};
+                    try {
+                        const auto bits = filesystem.PipePollEvents(entry.fd);
+                        if (!bits) {
+                            mask = 0x0001 | 0x0004 | 0x0040 | 0x0100;
+                        } else if ((*bits & 16U) != 0U) {
+                            mask = 0x0020;
+                        } else {
+                            if ((*bits & 1U) != 0U) mask |= 0x0001 | 0x0040;
+                            if ((*bits & 2U) != 0U) mask |= 0x0004 | 0x0100;
+                            if ((*bits & 4U) != 0U) mask |= 0x0008;
+                            if ((*bits & 8U) != 0U) mask |= 0x0010;
+                        }
+                    } catch (const VfsError&) {
+                        mask = 0x0020;
+                    }
+                    entry.revents = static_cast<std::uint16_t>(mask & (entry.events | 0x0008 | 0x0010 | 0x0020));
+                    if (entry.revents != 0) ++ready;
+                }
+                return ready;
+            };
+            const auto start = std::chrono::steady_clock::now();
+            const auto ready = Unlocked(call, [&] {
+                for (;;) {
+                    const auto generation = filesystem.PipeReadinessGeneration();
+                    const auto count = evaluate();
+                    if (count != 0 || timeout_ms == 0) return count;
+                    auto slice = std::chrono::milliseconds(10);
+                    if (timeout_ms > 0) {
+                        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - start);
+                        if (elapsed.count() >= timeout_ms) return 0;
+                        slice = std::min(slice, std::chrono::milliseconds(timeout_ms) - elapsed);
+                    }
+                    filesystem.WaitPipeReadiness(generation, slice);
+                }
+            });
+            for (const auto& entry : entries)
+                SetShortField(call.vm, entry.pollfd, "revents", static_cast<std::int16_t>(entry.revents));
+            return VmValue::Int(ready);
+        },
+        kAccPublic | kAccNative);
+
+    posix.VirtualMethod(
+        "getsockoptInt", "(Ljava/io/FileDescriptor;II)I",
+        [](IntrinsicContext& call) { return VmValue::Int(OptionInt(call, call.arguments[0].ref, "getsockopt")); },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "getsockoptByte", "(Ljava/io/FileDescriptor;II)I",
+        [](IntrinsicContext& call) {
+            return VmValue::Int(OptionInt(call, call.arguments[0].ref, "getsockopt") & 0xff);
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "getsockoptLinger", "(Ljava/io/FileDescriptor;II)Llibcore/io/StructLinger;",
+        [](IntrinsicContext& call) {
+            auto& stack = RequireStack(call, "getsockopt");
+            const auto fd = call.arguments[0].ref;
+            std::vector<std::byte> value;
+            CheckSocket(
+                call, fd, "getsockopt",
+                stack.GetOption(SocketHandle(call, fd), call.arguments[1].AsInt(), call.arguments[2].AsInt(), value));
+            value.resize(8);
+            const auto word = [&](const std::size_t offset) {
+                std::uint32_t result{};
+                for (std::size_t index = 0; index < 4; ++index)
+                    result |= std::to_integer<std::uint32_t>(value[offset + index]) << (index * 8U);
+                return static_cast<std::int32_t>(result);
+            };
+            const auto linger = call.vm.NewIntrinsicInstance("Llibcore/io/StructLinger;");
+            const auto root = call.vm.ProtectReferences(std::array{linger});
+            InvokeDirect(call.vm, "Llibcore/io/StructLinger;", "<init>", "(II)V",
+                         {VmValue::Ref(linger), VmValue::Int(word(0)), VmValue::Int(word(4))});
+            return VmValue::Ref(linger);
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "getsockoptTimeval", "(Ljava/io/FileDescriptor;II)Llibcore/io/StructTimeval;",
+        [](IntrinsicContext& call) {
+            auto& stack = RequireStack(call, "getsockopt");
+            const auto fd = call.arguments[0].ref;
+            std::vector<std::byte> value;
+            CheckSocket(
+                call, fd, "getsockopt",
+                stack.GetOption(SocketHandle(call, fd), call.arguments[1].AsInt(), call.arguments[2].AsInt(), value));
+            value.resize(8);
+            std::int64_t seconds{}, micros{};
+            for (std::size_t index = 0; index < 4; ++index) {
+                seconds |= static_cast<std::int64_t>(std::to_integer<std::uint32_t>(value[index]) << (index * 8U));
+                micros |= static_cast<std::int64_t>(std::to_integer<std::uint32_t>(value[4 + index]) << (index * 8U));
+            }
+            return InvokeDirect(call.vm, "Llibcore/io/StructTimeval;", "fromMillis", "(J)Llibcore/io/StructTimeval;",
+                                {VmValue::Long(seconds * 1000 + micros / 1000)});
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "getsockoptUcred", "(Ljava/io/FileDescriptor;II)Llibcore/io/StructUcred;",
+        [](IntrinsicContext& call) {
+            auto& stack = RequireStack(call, "getsockopt");
+            const auto fd = call.arguments[0].ref;
+            std::vector<std::byte> value;
+            CheckSocket(
+                call, fd, "getsockopt",
+                stack.GetOption(SocketHandle(call, fd), call.arguments[1].AsInt(), call.arguments[2].AsInt(), value));
+            value.resize(12);
+            const auto word = [&](const std::size_t offset) {
+                std::uint32_t result{};
+                for (std::size_t index = 0; index < 4; ++index)
+                    result |= std::to_integer<std::uint32_t>(value[offset + index]) << (index * 8U);
+                return static_cast<std::int32_t>(result);
+            };
+            const auto ucred = call.vm.NewIntrinsicInstance("Llibcore/io/StructUcred;");
+            const auto root = call.vm.ProtectReferences(std::array{ucred});
+            InvokeDirect(call.vm, "Llibcore/io/StructUcred;", "<init>", "(III)V",
+                         {VmValue::Ref(ucred), VmValue::Int(word(0)), VmValue::Int(word(4)), VmValue::Int(word(8))});
+            return VmValue::Ref(ucred);
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "getsockoptInAddr", "(Ljava/io/FileDescriptor;II)Ljava/net/InetAddress;",
+        [](IntrinsicContext& call) {
+            // IP_MULTICAST_IF: no interface was selected (INADDR_ANY).
+            static_cast<void>(RequireStack(call, "getsockopt"));
+            return VmValue::Ref(NewAddress(call.vm, std::array<std::byte, 4>{}));
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "setsockoptInt", "(Ljava/io/FileDescriptor;III)V",
+        [](IntrinsicContext& call) {
+            SetOption(call, "setsockopt", Words({call.arguments[3].AsInt()}));
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "setsockoptByte", "(Ljava/io/FileDescriptor;III)V",
+        [](IntrinsicContext& call) {
+            SetOption(call, "setsockopt", Words({call.arguments[3].AsInt() & 0xff}));
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "setsockoptLinger", "(Ljava/io/FileDescriptor;IILlibcore/io/StructLinger;)V",
+        [](IntrinsicContext& call) {
+            const auto linger = IntrinsicCall(call).NonNullRef(3, "linger");
+            SetOption(
+                call, "setsockopt",
+                Words({GetCat1Field(call.vm, linger, "l_onoff", "I"), GetCat1Field(call.vm, linger, "l_linger", "I")}));
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "setsockoptTimeval", "(Ljava/io/FileDescriptor;IILlibcore/io/StructTimeval;)V",
+        [](IntrinsicContext& call) {
+            const auto timeval = IntrinsicCall(call).NonNullRef(3, "timeval");
+            SetOption(call, "setsockopt",
+                      Words({static_cast<std::int32_t>(GetLongField(call.vm, timeval, "tv_sec")),
+                             static_cast<std::int32_t>(GetLongField(call.vm, timeval, "tv_usec"))}));
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "setsockoptIpMreqn", "(Ljava/io/FileDescriptor;III)V",
+        [](IntrinsicContext& call) {
+            // IP_MULTICAST_IF by interface index; stored without egress effect.
+            SetOption(call, "setsockopt", Words({call.arguments[3].AsInt()}));
+            return VmValue::Void();
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "setsockoptGroupReq", "(Ljava/io/FileDescriptor;IILlibcore/io/StructGroupReq;)V",
+        [](IntrinsicContext& call) -> VmValue {
+            static_cast<void>(RequireStack(call, "setsockopt"));
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.posix.multicast_group", 0);
+            ThrowErrno(call.vm, "setsockopt", kEnodev, "multicast group membership is not supported");
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "setsockoptIfreq", "(Ljava/io/FileDescriptor;IILjava/lang/String;)V",
+        [](IntrinsicContext& call) -> VmValue {
+            // SO_BINDTODEVICE needs CAP_NET_RAW, which an application does not hold.
+            static_cast<void>(RequireStack(call, "setsockopt"));
+            ThrowErrno(call.vm, "setsockopt", 1);
+        },
+        kAccPublic | kAccNative);
+
+    posix.VirtualMethod(
+        "getaddrinfo", "(Ljava/lang/String;Llibcore/io/StructAddrinfo;)[Ljava/net/InetAddress;",
+        [](IntrinsicContext& call) {
+            const auto host_ref = call.arguments[0].ref;
+            const auto hints = call.arguments[1].ref;
+            if (!host_ref.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "node == null"};
+            const auto host = call.vm.StringUtf8(host_ref);
+            const auto flags = hints.IsValid() ? GetCat1Field(call.vm, hints, "ai_flags", "I") : 0;
+            const auto family = hints.IsValid() ? GetCat1Field(call.vm, hints, "ai_family", "I") : 0;
+            const auto numeric = net::ParseNumericAddress(host);
+            net::GuestResolveResult result;
+            if (numeric) {
+                result.found = true;
+                result.addresses.push_back(*numeric);
+            } else if ((flags & kAiNumericHost) != 0) {
+                ThrowGai(call.vm, "getaddrinfo", kEaiNoName,
+                         "getaddrinfo failed: " + std::string(Api19GaiStrerror(kEaiNoName)));
+            } else if (auto* stack = call.vm.Network().Stack()) {
+                result = Unlocked(call, [&] { return stack->Resolve(host); });
+            }
+            const bool online =
+                call.vm.Network().Stack() && call.vm.Network().Stack()->Mode() == net::NetworkMode::online;
+            std::vector<net::GuestSocketAddress> addresses;
+            for (const auto& address : result.addresses) {
+                if (family != 0 && address.family != family) continue;
+                // AI_ADDRCONFIG: the emulated device has an IPv4 address only when online.
+                if ((flags & kAiAddrConfig) != 0 && !numeric && !net::IsLoopback(address) &&
+                    (address.family == net::kAfInet6 || !online))
+                    continue;
+                addresses.push_back(address);
+            }
+            // Bionic's proxied getaddrinfo reports every lookup failure as EAI_NODATA.
+            if (addresses.empty())
+                ThrowGai(call.vm, "getaddrinfo", kEaiNoData,
+                         "getaddrinfo failed: " + std::string(Api19GaiStrerror(kEaiNoData)));
+            const auto array = call.vm.Model().NewObjectArray(
+                call.vm.Linker().ResolveDescriptor("[Ljava/net/InetAddress;"),
+                call.vm.Linker().ResolveDescriptor("Ljava/net/InetAddress;"), static_cast<JniSize>(addresses.size()));
+            const auto roots = call.vm.ProtectReferences(std::array{array, host_ref});
+            for (std::size_t index = 0; index < addresses.size(); ++index) {
+                const auto& address = addresses[index];
+                std::vector<std::byte> bytes;
+                const auto size = address.family == net::kAfInet ? 4U : 16U;
+                for (std::size_t offset = 0; offset < size; ++offset)
+                    bytes.push_back(static_cast<std::byte>(address.address[offset]));
+                call.vm.Model().SetObjectElement(array, static_cast<JniSize>(index),
+                                                 NewAddress(call.vm, bytes, numeric ? VmObjectRef{0} : host_ref));
+            }
+            return VmValue::Ref(array);
+        },
+        kAccPublic | kAccNative);
+    posix.VirtualMethod(
+        "getnameinfo", "(Ljava/net/InetAddress;I)Ljava/lang/String;",
+        [](IntrinsicContext& call) {
+            const auto numeric_text = NumericAddress(call.vm, call.arguments[0].ref);
+            // bionic netdb.h.
+            constexpr std::int32_t kNiNumericHost = 2;
+            constexpr std::int32_t kNiNameReqd = 4;
+            const auto flags = call.arguments[1].AsInt();
+            if ((flags & kNiNumericHost) != 0) return VmValue::Ref(call.vm.NewStringUtf8(numeric_text));
+            std::optional<std::string> name;
+            if (auto* stack = call.vm.Network().Stack()) {
+                if (const auto parsed = net::ParseNumericAddress(numeric_text))
+                    name = Unlocked(call, [&] { return stack->ReverseLookup(*parsed); });
+            }
+            if (name) return VmValue::Ref(call.vm.NewStringUtf8(*name));
+            if ((flags & kNiNameReqd) != 0)
+                ThrowGai(call.vm, "getnameinfo", kEaiNoName,
+                         "getnameinfo failed: " + std::string(Api19GaiStrerror(kEaiNoName)));
+            return VmValue::Ref(call.vm.NewStringUtf8(numeric_text));
+        },
+        kAccPublic | kAccNative);
 }
 
 void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services) {
@@ -1143,8 +1886,8 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
             }
         },
         kAccPublic | kAccNative);
-    // IoUtils.setBlocking uses F_GETFL/F_SETFL. VFS status is immutable:
-    // accepting an unchanged status is honest; changing it is unsupported.
+    // IoUtils.setBlocking uses F_GETFL/F_SETFL: O_NONBLOCK changes go to the
+    // shared open description; other status changes are unsupported.
     for (const bool with_argument : {false, true}) {
         posix.VirtualMethod(
             with_argument ? "fcntlLong" : "fcntlVoid",
@@ -1156,7 +1899,20 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
                 try {
                     const auto flags = call.vm.IO().DescriptorFlags(fd);
                     if (!with_argument && cmd == 3) return VmValue::Int(flags);
-                    if (with_argument && cmd == 4 && call.arguments[2].AsLong() == flags) return VmValue::Int(0);
+                    if (with_argument && cmd == 4) {
+                        const auto requested = static_cast<std::int32_t>(call.arguments[2].AsLong());
+                        if (requested == flags) return VmValue::Int(0);
+                        // Linux F_SETFL ignores the access mode; only O_NONBLOCK may change here.
+                        constexpr std::int32_t kNonBlocking = 2048;
+                        auto* stack = call.vm.Network().Stack();
+                        if (stack && ((requested ^ flags) & ~(kNonBlocking | 3)) == 0) {
+                            stack->FileSystem().SetNonBlocking(FileDescriptorHandle(call, fd),
+                                                               (requested & kNonBlocking) != 0);
+                            return VmValue::Int(0);
+                        }
+                    }
+                } catch (const VfsError& error) {
+                    ThrowErrno(call.vm, "fcntl", error.ErrorNumber(), error.what());
                 } catch (const IoRuntimeError& error) {
                     ThrowErrno(call.vm, "fcntl", error.ErrorNumber(), error.what());
                 }
@@ -1473,59 +2229,7 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
             },
             kAccPrivate | kAccNative);
     }
-    // Datagram transport remains explicitly injected and subject to the existing network policy.
-    // No host sockets or new channel implementation is introduced.
-    for (const bool send : {false, true}) {
-        posix.DirectMethod(
-            send ? "sendtoBytes" : "recvfromBytes",
-            send ? "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIILjava/net/InetAddress;I)I"
-                 : "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIILjava/net/InetSocketAddress;)I",
-            [send](IntrinsicContext& call) {
-                const auto function = send ? "sendto" : "recvfrom";
-                const auto fd = call.arguments[0].ref;
-                if (FileDescriptorHandle(call, fd) < 0) ThrowErrno(call.vm, function, 9);
-                try {
-                    if (call.vm.Network().GetSocket(fd).closed) ThrowErrno(call.vm, function, 9);
-                } catch (const NetworkRuntimeError&) {
-                    ThrowErrno(call.vm, function, 9);
-                }
-                const auto flags = call.arguments[4].AsInt();
-                if (flags != 0) {
-                    if (auto* ledger = call.vm.Ledger())
-                        ledger->RecordUnimplemented(std::string("dexvm.posix.") + function + ".flags", 0);
-                    ThrowErrno(call.vm, function, 38);
-                }
-                auto bytes = PosixBytes(call, call.arguments[1].ref, call.arguments[2].AsInt(),
-                                        call.arguments[3].AsInt(), !send);
-                try {
-                    if (send) {
-                        const auto destination = call.arguments[5].ref;
-                        const auto endpoint = destination.IsValid()
-                                                  ? EndpointFrom(call, destination, call.arguments[6].AsInt())
-                                                  : call.vm.Network().GetSocket(fd).endpoint;
-                        call.vm.Network().SendPacket(endpoint, bytes);
-                        return VmValue::Int(static_cast<std::int32_t>(bytes.size()));
-                    }
-                    const auto packet = call.vm.Network().ReceivePacket(bytes.size());
-                    const auto amount = std::min(bytes.size(), packet.payload.size());
-                    if (amount) std::memcpy(bytes.data(), packet.payload.data(), amount);
-                    const auto source = call.arguments[5].ref;
-                    if (source.IsValid()) {
-                        const auto address_bytes = ParseAddress(packet.host);
-                        if (!address_bytes) throw NetworkRuntimeError("transport returned non-numeric datagram peer");
-                        const auto address = NewAddress(call.vm, *address_bytes, VmObjectRef{});
-                        const auto& field = ObjectField(call.vm, source, "addr", "Ljava/net/InetAddress;");
-                        call.vm.Model().InstanceSlots(source)[field.slot] = {address.Value(), SlotTag::ref};
-                        SetIntField(call.vm, source, "port", packet.port);
-                    }
-                    return VmValue::Int(static_cast<std::int32_t>(amount));
-                } catch (const NetworkRuntimeError& error) {
-                    ThrowNetwork(error);
-                }
-            },
-            kAccPrivate | kAccNative);
-    }
-
+    AppendPosixSocketNatives(posix);
     posix.VirtualMethod(
         "ioctlInt", "(Ljava/io/FileDescriptor;ILlibcore/util/MutableInt;)I",
         [](IntrinsicContext& call) {
@@ -1542,73 +2246,23 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
     posix.VirtualMethod(
         "strerror", "(I)Ljava/lang/String;",
         [](IntrinsicContext& call) {
-            const auto error = call.arguments[0].AsInt();
-            const char* text = error == 2    ? "No such file or directory"
-                               : error == 9  ? "Bad file descriptor"
-                               : error == 13 ? "Permission denied"
-                               : error == 17 ? "File exists"
-                               : error == 22 ? "Invalid argument"
-                                             : "I/O error";
-            return VmValue::Ref(call.vm.NewStringUtf8(text));
+            return VmValue::Ref(call.vm.NewStringUtf8(Api19Strerror(call.arguments[0].AsInt())));
         },
         kAccPublic | kAccNative);
     posix.VirtualMethod(
         "isatty", "(Ljava/io/FileDescriptor;)Z", [](IntrinsicContext&) { return VmValue::Int(0); },
         kAccPublic | kAccNative);
     posix.VirtualMethod(
-        "getaddrinfo", "(Ljava/lang/String;Llibcore/io/StructAddrinfo;)[Ljava/net/InetAddress;",
-        [](IntrinsicContext& call) {
-            const auto host_ref = call.arguments[0].ref;
-            const auto host = call.vm.StringUtf8(host_ref);
-            std::vector<std::string> values;
-            const bool numeric_input = ParseAddress(host).has_value();
-            if (numeric_input)
-                values.push_back(host);
-            else {
-                try {
-                    values = call.vm.Network().Resolve(host);
-                } catch (const NetworkRuntimeError& error) {
-                    ThrowGai(call.vm, "getaddrinfo", error.what());
-                }
-            }
-            const auto array = call.vm.Model().NewObjectArray(
-                call.vm.Linker().ResolveDescriptor("[Ljava/net/InetAddress;"),
-                call.vm.Linker().ResolveDescriptor("Ljava/net/InetAddress;"), static_cast<JniSize>(values.size()));
-            const auto roots = call.vm.ProtectReferences(std::array{array, host_ref});
-            for (std::size_t i = 0; i < values.size(); ++i) {
-                const auto bytes = ParseAddress(values[i]);
-                if (!bytes) ThrowGai(call.vm, "getaddrinfo", "transport returned a non-numeric address");
-                call.vm.Model().SetObjectElement(
-                    array, static_cast<JniSize>(i),
-                    NewAddress(call.vm, *bytes, numeric_input ? VmObjectRef{0} : host_ref));
-            }
-            return VmValue::Ref(array);
-        },
-        kAccPublic | kAccNative);
-    posix.VirtualMethod(
-        "socket", "(III)Ljava/io/FileDescriptor;",
-        [interfaces = services.network_interfaces](IntrinsicContext& call) {
-            const auto domain = call.arguments[0].AsInt();
-            if ((domain != 2 && domain != 10) || call.arguments[1].AsInt() != 2 || call.arguments[2].AsInt() != 0 ||
-                !interfaces) {
-                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("libcore.io.Posix.socket", 0);
-                ThrowErrno(call.vm, "socket", 38);
-            }
-            static_cast<void>(interfaces(call.vm));
-            const auto fd = call.vm.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
-            call.vm.IO().SetDescriptor(fd, {IoRuntime::DescriptorKind::interface_query, {}, 0, false, {}, {}, {}});
-            // Logical identity only: never a host or VFS fd. Other operations reject this kind.
-            SetIntField(call.vm, fd, "descriptor", 0);
-            return VmValue::Ref(fd);
-        },
-        kAccPublic | kAccNative);
-    posix.VirtualMethod(
         "ioctlInetAddress", "(Ljava/io/FileDescriptor;ILjava/lang/String;)Ljava/net/InetAddress;",
         [interfaces = services.network_interfaces](IntrinsicContext& call) {
             const auto* state = call.vm.IO().FindDescriptor(call.arguments[0].ref);
             const auto cmd = call.arguments[1].AsInt();
-            if (!state || state->closed || state->kind != IoRuntime::DescriptorKind::interface_query ||
-                (cmd != 0x8915 && cmd != 0x8919 && cmd != 0x891b) || !interfaces) {
+            auto* stack = call.vm.Network().Stack();
+            const bool socket =
+                (state && !state->closed && state->kind == IoRuntime::DescriptorKind::interface_query) ||
+                (stack && call.arguments[0].ref.IsValid() &&
+                 stack->IsSocket(FileDescriptorHandle(call, call.arguments[0].ref)));
+            if (!socket || (cmd != 0x8915 && cmd != 0x8919 && cmd != 0x891b) || !interfaces) {
                 if (auto* ledger = call.vm.Ledger())
                     ledger->RecordUnimplemented("libcore.io.Posix.ioctlInetAddress", 0);
                 ThrowErrno(call.vm, "ioctl", 38);
@@ -1628,18 +2282,6 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
         [](IntrinsicContext& call) {
             const auto parsed = ParseAddress(call.vm.StringUtf8(call.arguments[1].ref));
             return VmValue::Ref(parsed ? NewAddress(call.vm, *parsed) : VmObjectRef{0});
-        },
-        kAccPublic | kAccNative);
-    posix.VirtualMethod(
-        "getnameinfo", "(Ljava/net/InetAddress;I)Ljava/lang/String;",
-        [](IntrinsicContext& call) {
-            const auto numeric = NumericAddress(call.vm, call.arguments[0].ref);
-            if ((call.arguments[1].AsInt() & 2) != 0) return VmValue::Ref(call.vm.NewStringUtf8(numeric));
-            try {
-                return VmValue::Ref(call.vm.NewStringUtf8(call.vm.Network().Reverse(numeric)));
-            } catch (const NetworkRuntimeError& error) {
-                ThrowGai(call.vm, "getnameinfo", error.what());
-            }
         },
         kAccPublic | kAccNative);
     posix.VirtualMethod(
@@ -1670,316 +2312,11 @@ void AppendAddressNatives(std::vector<IntrinsicClassDecl>& catalog, const CoreIn
         kAccPublic | kAccNative);
     posix.VirtualMethod(
         "gai_strerror", "(I)Ljava/lang/String;",
-        [](IntrinsicContext& call) { return VmValue::Ref(call.vm.NewStringUtf8("name or service not known")); },
+        [](IntrinsicContext& call) {
+            return VmValue::Ref(call.vm.NewStringUtf8(Api19GaiStrerror(call.arguments[0].AsInt())));
+        },
         kAccPublic | kAccNative);
     catalog.push_back(std::move(posix).Build());
-}
-
-NetworkRuntime::Endpoint EndpointFrom(IntrinsicContext& call, const VmObjectRef address, const std::int32_t port);
-NetworkRuntime::Endpoint HostEndpoint(IntrinsicContext& call, VmObjectRef host_ref, std::int32_t port);
-
-NetworkRuntime::Endpoint SocketEndpoint(IntrinsicContext& call, VmObjectRef socket_address) {
-    if (!socket_address.IsValid()) throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "endpoint is null"};
-    if (!call.vm.Linker().IsAssignable(call.vm.Linker().ResolveDescriptor("Ljava/net/InetSocketAddress;"),
-                                       call.vm.Model().ObjectClass(socket_address)))
-        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "unsupported SocketAddress"};
-    const auto address = detail::InvokeGuest(call.vm, socket_address, "getAddress", "()Ljava/net/InetAddress;").ref;
-    const auto port = detail::InvokeGuest(call.vm, socket_address, "getPort", "()I").AsInt();
-    if (address.IsValid()) return EndpointFrom(call, address, port);
-    const auto host = detail::InvokeGuest(call.vm, socket_address, "getHostName", "()Ljava/lang/String;").ref;
-    if (!host.IsValid()) throw VmJavaThrow{"Ljava/net/UnknownHostException;", "unresolved socket endpoint"};
-    return HostEndpoint(call, host, port);
-}
-
-NetworkRuntime::Endpoint HostEndpoint(IntrinsicContext& call, VmObjectRef host_ref, std::int32_t port);
-
-[[noreturn]] void ThrowNetwork(const NetworkRuntimeError& error) {
-    throw VmJavaThrow{"Ljava/net/SocketException;", error.what()};
-}
-
-NetworkRuntime::Endpoint EndpointFrom(IntrinsicContext& call, const VmObjectRef address, const std::int32_t port) {
-    if (port < 0 || port > 65535) throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "port out of range"};
-    if (!address.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "address is null"};
-    try {
-        const auto numeric = detail::InvokeGuest(call.vm, address, "getHostAddress", "()Ljava/lang/String;").ref;
-        const auto numeric_root = call.vm.ProtectReferences(std::array{numeric});
-        const auto host = detail::InvokeGuest(call.vm, address, "getHostName", "()Ljava/lang/String;").ref;
-        NetworkRuntime::Endpoint endpoint{call.vm.StringUtf8(host), call.vm.StringUtf8(numeric), 0};
-        endpoint.port = static_cast<std::uint16_t>(port);
-        return endpoint;
-    } catch (const NetworkRuntimeError& error) {
-        ThrowNetwork(error);
-    }
-}
-
-NetworkRuntime::Endpoint HostEndpoint(IntrinsicContext& call, const VmObjectRef host_ref, const std::int32_t port) {
-    if (!host_ref.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "host is null"};
-    if (port < 0 || port > 65535) throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "port out of range"};
-    const auto host = call.vm.StringUtf8(host_ref);
-    try {
-        const auto addresses = call.vm.Network().Resolve(host);
-        return {host, addresses.front(), static_cast<std::uint16_t>(port)};
-    } catch (const NetworkRuntimeError& error) {
-        throw VmJavaThrow{"Ljava/net/UnknownHostException;", error.what()};
-    }
-}
-
-IntrinsicClassDecl Declare_java_net_SocketInputStream_Class() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/net/SocketInputStream;", "Ljava/io/InputStream;");
-    builder.FinalOverrideMethod("read", "([BII)I", [](IntrinsicContext& call) {
-        const auto array = call.arguments[0].ref;
-        const auto offset = call.arguments[1].AsInt();
-        const auto length = call.arguments[2].AsInt();
-        detail::CheckRegion(call.vm.Model().ArrayLength(array), offset, length);
-        const auto depth = call.vm.ExecutionLock().ReleaseForBlocking();
-        try {
-            const auto bytes = call.vm.Network().ReadStream(call.receiver, static_cast<std::size_t>(length));
-            call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
-            if (bytes.empty()) return VmValue::Int(-1);
-            call.vm.Model().WriteByteRegion(array, offset, bytes);
-            return VmValue::Int(static_cast<std::int32_t>(bytes.size()));
-        } catch (const NetworkRuntimeError& error) {
-            call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
-            ThrowNetwork(error);
-        } catch (...) {
-            call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
-            throw;
-        }
-    });
-    builder.FinalOverrideMethod("read", "()I", [](IntrinsicContext& call) {
-        const auto depth = call.vm.ExecutionLock().ReleaseForBlocking();
-        try {
-            const auto bytes = call.vm.Network().ReadStream(call.receiver, 1);
-            call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
-            return VmValue::Int(bytes.empty() ? -1 : static_cast<std::uint8_t>(bytes.front()));
-        } catch (const NetworkRuntimeError& error) {
-            call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
-            ThrowNetwork(error);
-        } catch (...) {
-            call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
-            throw;
-        }
-    });
-    return std::move(builder).Build();
-}
-
-IntrinsicClassDecl Declare_java_net_SocketOutputStream_Class() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/net/SocketOutputStream;", "Ljava/io/OutputStream;");
-    builder.FinalOverrideMethod("write", "([BII)V", [](IntrinsicContext& call) {
-        const auto array = call.arguments[0].ref;
-        const auto offset = call.arguments[1].AsInt();
-        const auto length = call.arguments[2].AsInt();
-        detail::CheckRegion(call.vm.Model().ArrayLength(array), offset, length);
-        const auto depth = call.vm.ExecutionLock().ReleaseForBlocking();
-        try {
-            call.vm.Network().WriteStream(call.receiver, call.vm.Model().ReadByteRegion(array, offset, length));
-            call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
-            return VmValue::Void();
-        } catch (const NetworkRuntimeError& error) {
-            call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
-            ThrowNetwork(error);
-        } catch (...) {
-            call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
-            throw;
-        }
-    });
-    builder.FinalOverrideMethod("write", "(I)V", [](IntrinsicContext& call) {
-        const auto byte = static_cast<std::byte>(call.arguments[0].AsInt());
-        const auto depth = call.vm.ExecutionLock().ReleaseForBlocking();
-        try {
-            call.vm.Network().WriteStream(call.receiver, std::span(&byte, 1));
-            call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
-            return VmValue::Void();
-        } catch (const NetworkRuntimeError& error) {
-            call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
-            ThrowNetwork(error);
-        } catch (...) {
-            call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
-            throw;
-        }
-    });
-    builder.FinalOverrideMethod("flush", "()V", NoopVoid());
-    return std::move(builder).Build();
-}
-
-IntrinsicClassDecl Declare_java_net_Socket_Class() {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/net/Socket;", "Ljava/lang/Object;", {"Ljava/io/Closeable;"});
-    const auto connect_owner = [](IntrinsicContext& call, NetworkRuntime::Endpoint endpoint) {
-        const auto depth = call.vm.ExecutionLock().ReleaseForBlocking();
-        try {
-            call.vm.Network().Connect(call.receiver, std::move(endpoint));
-            call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
-        } catch (const NetworkRuntimeError& error) {
-            call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
-            ThrowNetwork(error);
-        } catch (...) {
-            call.vm.ExecutionLock().ReacquireAfterBlocking(depth);
-            throw;
-        }
-    };
-    builder.Constructor("()V", [](IntrinsicContext& call) {
-        call.vm.Network().CreateSocket(call.receiver, false);
-        return VmValue::Void();
-    });
-    builder.Constructor("(Ljava/lang/String;I)V", [connect_owner](IntrinsicContext& call) {
-        call.vm.Network().CreateSocket(call.receiver, false);
-        connect_owner(call, HostEndpoint(call, call.arguments[0].ref, call.arguments[1].AsInt()));
-        return VmValue::Void();
-    });
-    builder.Constructor("(Ljava/net/InetAddress;I)V", [connect_owner](IntrinsicContext& call) {
-        call.vm.Network().CreateSocket(call.receiver, false);
-        connect_owner(call, EndpointFrom(call, call.arguments[0].ref, call.arguments[1].AsInt()));
-        return VmValue::Void();
-    });
-    builder.VirtualMethod("connect", "(Ljava/net/SocketAddress;)V", [connect_owner](IntrinsicContext& call) {
-        connect_owner(call, SocketEndpoint(call, call.arguments[0].ref));
-        return VmValue::Void();
-    });
-    builder.VirtualMethod("connect", "(Ljava/net/SocketAddress;I)V", [connect_owner](IntrinsicContext& call) {
-        try {
-            call.vm.Network().SetTimeout(call.receiver, call.arguments[1].AsInt());
-        } catch (const NetworkRuntimeError& error) {
-            ThrowNetwork(error);
-        }
-        connect_owner(call, SocketEndpoint(call, call.arguments[0].ref));
-        return VmValue::Void();
-    });
-    builder.VirtualMethod("getInputStream", "()Ljava/io/InputStream;", [](IntrinsicContext& call) {
-        const auto stream = call.vm.NewIntrinsicInstance("Ljava/net/SocketInputStream;");
-        try {
-            call.vm.Network().BindStream(stream, call.receiver, false);
-        } catch (const NetworkRuntimeError& error) {
-            ThrowNetwork(error);
-        }
-        return VmValue::Ref(stream);
-    });
-    builder.VirtualMethod("getOutputStream", "()Ljava/io/OutputStream;", [](IntrinsicContext& call) {
-        const auto stream = call.vm.NewIntrinsicInstance("Ljava/net/SocketOutputStream;");
-        try {
-            call.vm.Network().BindStream(stream, call.receiver, true);
-        } catch (const NetworkRuntimeError& error) {
-            ThrowNetwork(error);
-        }
-        return VmValue::Ref(stream);
-    });
-    builder.VirtualMethod("isConnected", "()Z", [](IntrinsicContext& call) {
-        try {
-            return VmValue::Int(call.vm.Network().GetSocket(call.receiver).connected ? 1 : 0);
-        } catch (const NetworkRuntimeError& error) {
-            ThrowNetwork(error);
-        }
-    });
-    builder.VirtualMethod("isClosed", "()Z", [](IntrinsicContext& call) {
-        try {
-            return VmValue::Int(call.vm.Network().GetSocket(call.receiver).closed ? 1 : 0);
-        } catch (const NetworkRuntimeError& error) {
-            ThrowNetwork(error);
-        }
-    });
-    builder.VirtualMethod("close", "()V", [](IntrinsicContext& call) {
-        call.vm.Network().CloseSocket(call.receiver);
-        return VmValue::Void();
-    });
-    builder.VirtualMethod("getPort", "()I", [](IntrinsicContext& call) {
-        try {
-            return VmValue::Int(call.vm.Network().GetSocket(call.receiver).endpoint.port);
-        } catch (const NetworkRuntimeError& error) {
-            ThrowNetwork(error);
-        }
-    });
-    builder.VirtualMethod("setSoTimeout", "(I)V", [](IntrinsicContext& call) {
-        try {
-            call.vm.Network().SetTimeout(call.receiver, call.arguments[0].AsInt());
-        } catch (const NetworkRuntimeError& error) {
-            ThrowNetwork(error);
-        }
-        return VmValue::Void();
-    });
-    builder.VirtualMethod("getSoTimeout", "()I", [](IntrinsicContext& call) {
-        try {
-            return VmValue::Int(call.vm.Network().GetSocket(call.receiver).timeout_ms);
-        } catch (const NetworkRuntimeError& error) {
-            ThrowNetwork(error);
-        }
-    });
-    return std::move(builder).Build();
-}
-
-IntrinsicClassDecl Declare_java_net_DatagramSocket_Class() {
-    auto builder =
-        IntrinsicClassBuilder::Class("Ljava/net/DatagramSocket;", "Ljava/lang/Object;", {"Ljava/io/Closeable;"});
-    builder.Constructor("()V", NoopVoid());
-    builder.VirtualMethod("send", "(Ljava/net/DatagramPacket;)V", [](IntrinsicContext& call) {
-        try {
-            const auto packet = call.arguments[0].ref;
-            const auto array = detail::InvokeGuest(call.vm, packet, "getData", "()[B").ref;
-            const auto roots = call.vm.ProtectReferences(std::array{packet, array});
-            const auto offset = detail::InvokeGuest(call.vm, packet, "getOffset", "()I").AsInt();
-            const auto length = detail::InvokeGuest(call.vm, packet, "getLength", "()I").AsInt();
-            const auto address = detail::InvokeGuest(call.vm, packet, "getAddress", "()Ljava/net/InetAddress;").ref;
-            const auto address_root = call.vm.ProtectReferences(std::array{address});
-            const auto port = detail::InvokeGuest(call.vm, packet, "getPort", "()I").AsInt();
-            call.vm.Network().SendPacket(EndpointFrom(call, address, port),
-                                         call.vm.Model().ReadByteRegion(array, offset, length));
-            return VmValue::Void();
-        } catch (const NetworkRuntimeError& error) {
-            ThrowNetwork(error);
-        }
-    });
-    builder.VirtualMethod("receive", "(Ljava/net/DatagramPacket;)V", [](IntrinsicContext& call) {
-        try {
-            const auto packet = call.arguments[0].ref;
-            const auto array = detail::InvokeGuest(call.vm, packet, "getData", "()[B").ref;
-            const auto roots = call.vm.ProtectReferences(std::array{packet, array});
-            const auto offset = detail::InvokeGuest(call.vm, packet, "getOffset", "()I").AsInt();
-            const auto length = detail::InvokeGuest(call.vm, packet, "getLength", "()I").AsInt();
-            const auto datagram = call.vm.Network().ReceivePacket(static_cast<std::size_t>(length));
-            const auto amount = std::min(datagram.payload.size(), static_cast<std::size_t>(length));
-            call.vm.Model().WriteByteRegion(array, offset, std::span(datagram.payload).first(amount));
-            detail::InvokeGuest(call.vm, packet, "setLength", "(I)V",
-                                {VmValue::Int(static_cast<std::int32_t>(amount))});
-            const auto host = call.vm.NewStringUtf8(datagram.host);
-            const auto host_root = call.vm.ProtectReferences(std::array{host});
-            const auto address = InvokeDirect(call.vm, "Ljava/net/InetAddress;", "getByName",
-                                              "(Ljava/lang/String;)Ljava/net/InetAddress;", {VmValue::Ref(host)})
-                                     .ref;
-            const auto address_root = call.vm.ProtectReferences(std::array{address});
-            detail::InvokeGuest(call.vm, packet, "setAddress", "(Ljava/net/InetAddress;)V", {VmValue::Ref(address)});
-            detail::InvokeGuest(call.vm, packet, "setPort", "(I)V", {VmValue::Int(datagram.port)});
-            return VmValue::Void();
-        } catch (const NetworkRuntimeError& error) {
-            ThrowNetwork(error);
-        }
-    });
-    builder.VirtualMethod("close", "()V", NoopVoid());
-    return std::move(builder).Build();
-}
-
-IntrinsicClassDecl Declare_javax_net_SocketFactory_Overrides(const CoreIntrinsicServices& services) {
-    auto builder = IntrinsicClassBuilder::Class("Ljavax/net/SocketFactory;", "Ljava/lang/Object;");
-    builder.MergesBootClass();
-    builder.StaticMethod("getDefault", "()Ljavax/net/SocketFactory;", [services](IntrinsicContext& call) {
-        if (services.singleton) {
-            return VmValue::Ref(services.singleton(call.vm, "socket_factory", "Ljavax/net/SocketFactory;"));
-        }
-        return VmValue::Ref(call.vm.NewIntrinsicInstance("Ljavax/net/SocketFactory;"));
-    });
-    builder.VirtualMethod("createSocket", "()Ljava/net/Socket;", [](IntrinsicContext& call) {
-        const auto socket = call.vm.NewIntrinsicInstance("Ljava/net/Socket;");
-        call.vm.Network().CreateSocket(socket, false);
-        return VmValue::Ref(socket);
-    });
-    builder.VirtualMethod("createSocket", "(Ljava/lang/String;I)Ljava/net/Socket;", [](IntrinsicContext& call) {
-        const auto socket = call.vm.NewIntrinsicInstance("Ljava/net/Socket;");
-        call.vm.Network().CreateSocket(socket, false);
-        try {
-            call.vm.Network().Connect(socket, HostEndpoint(call, call.arguments[0].ref, call.arguments[1].AsInt()));
-        } catch (const NetworkRuntimeError& error) {
-            ThrowNetwork(error);
-        }
-        return VmValue::Ref(socket);
-    });
-    return std::move(builder).Build();
 }
 
 using namespace detail;
@@ -2052,7 +2389,6 @@ IntrinsicClassDecl Declare_java_lang_ProcessManager_Natives(const CoreIntrinsicS
 
 void AppendJavaNetPlatform(std::vector<IntrinsicClassDecl>& catalog, const CoreIntrinsicServices& services) {
     catalog.push_back(Declare_java_net_HttpURLConnection_Shell());
-    catalog.push_back(Declare_java_net_ProxySelector_Class());
     catalog.push_back(Declare_java_net_URL_Class());
     auto connection = Declare_java_net_URLConnection_Fields();
     catalog.push_back(std::move(connection.declaration));
@@ -2061,10 +2397,14 @@ void AppendJavaNetPlatform(std::vector<IntrinsicClassDecl>& catalog, const CoreI
     catalog.push_back(Declare_java_net_URLEncoder_Class());
     catalog.push_back(Declare_java_net_URLDecoder_Class());
     AppendAddressNatives(catalog, services);
-    catalog.push_back(Declare_java_net_SocketInputStream_Class());
-    catalog.push_back(Declare_java_net_SocketOutputStream_Class());
-    catalog.push_back(Declare_java_net_Socket_Class());
-    catalog.push_back(Declare_java_net_DatagramSocket_Class());
-    catalog.push_back(Declare_javax_net_SocketFactory_Overrides(services));
+    // IoBridge.closeSocket wakes threads blocked on the descriptor. Closing a
+    // guest socket already fails its blocked operations, so nothing else is owed.
+    auto monitor = IntrinsicClassBuilder::Class("Llibcore/io/AsynchronousCloseMonitor;", "Ljava/lang/Object;", {},
+                                                kAccPublic | kAccFinal);
+    monitor.MergesBootClass();
+    monitor.StaticMethod(
+        "signalBlockedThreads", "(Ljava/io/FileDescriptor;)V", [](IntrinsicContext&) { return VmValue::Void(); },
+        kAccPublic | kAccStatic | kAccNative);
+    catalog.push_back(std::move(monitor).Build());
 }
 }  // namespace ogplay::runtime::dexvm::intrinsics

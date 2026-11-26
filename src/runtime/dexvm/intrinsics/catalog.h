@@ -15,6 +15,8 @@ std::u16string DecodeCharset(std::span<const std::byte> bytes, const std::string
 std::vector<std::byte> EncodeCharset(std::u16string_view text, const std::string& charset);
 
 void AppendJavaCrypto(std::vector<IntrinsicClassDecl>& catalog);
+// org.ogplay.security.HostTls: the host TLS engine and host trust behind OGPlayJSSE.
+IntrinsicClassDecl Declare_org_ogplay_security_HostTls_Natives();
 void AppendJavaLangWrapperNatives(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaIoStreams(std::vector<IntrinsicClassDecl>& catalog);
 void AppendJavaIoFiles(std::vector<IntrinsicClassDecl>& catalog);

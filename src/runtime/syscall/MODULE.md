@@ -7,8 +7,8 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
 
 ## 依赖
 
-依赖 `cpu`、`memory`、`hal`、`runtime/vfs` 与 `runtime/process`；不得依赖 Bionic、JNI、framework、
-execution 或 integration。
+依赖 `cpu`、`memory`、`hal`、`runtime/vfs`、`runtime/net` 与 `runtime/process`；不得依赖 Bionic、JNI、
+framework、execution 或 integration。
 
 ## 不变量
 
@@ -20,7 +20,8 @@ execution 或 integration。
   idle。类别清单集中在 dispatcher，未知 family 禁止自动续期。
 - guest 地址必须经受检内存访问。带 DexVM 的 Android 会话注入同一个纳秒 uptime；
   CLOCK_MONOTONIC、CLOCK_BOOTTIME 与 System.nanoTime 同源，CLOCK_REALTIME、
-  gettimeofday 与 System.currentTimeMillis 共用固定纪元。独立 native 入口读取注入的 Clock。
+  gettimeofday 与 System.currentTimeMillis 共用会话的墙钟原点（生产会话为启动时的宿主 UTC，
+  测试默认 `kAndroidWallEpochMillis`）加 uptime。独立 native 入口读取注入的 Clock。
 - 非固定 `mmap2` 按 Linux ARM 自顶向下布局，在 `[0x60000000,0xb7000000)` 内从高端调用 memory 的原子
   first-fit 映射，新映射通常紧贴已有映射下沿；该区耗尽后回退为 `[0x60000000,4 GiB)` 自底向上。
   依据真实账本避开已占区（包括 TLS/栈/PROT_NONE）及 owner 注入的保留窗口；无单调游标或独立空闲表，
@@ -87,6 +88,17 @@ execution 或 integration。
   到期且请求超时非零时调用 account_timeout，owner 时限先到按普通超时返回、不记账。只有实际
   等待后报告 advanced。ppoll 受检读取 32-bit timespec（NULL 无限、非法 EINVAL），返回时回写
   剩余时间；非空 sigmask 需 sigsuspend 式换掩码，返回 ENOSYS 记账。
+  `_newselect`(142) 与 epoll(250/251/252/346/357) 共用同一掩码与等待：select 按 Linux POLLIN/OUT
+  集合回写三个 fd_set 与剩余 timeval，未打开 fd 返回 EBADF。epoll 实例是 VFS 描述符对象，兴趣表
+  按创建表的 fd 号登记（ARM EABI epoll_event 16 字节、data 在偏移 8）；普通文件/目录 EPERM，
+  关闭的 fd 不再上报；EPOLLONESHOT 上报后停用，EPOLLET 按电平触发上报（排空到 EAGAIN 的调用方
+  不可区分）；epoll_pwait 非空 sigmask 返回 ENOSYS 记账。
+- `BindAndroidSocketSyscalls`（`syscall_socket.cpp`）把 ARM socket(281)–recvmsg(297)、accept4(366)
+  与 ioctl(54) 绑定到 `runtime/net` 栈；socket 与 VFS 文件同表，read/write/close/poll/dup 通用。
+  sockaddr/msghdr/iovec 全部受检读写，单次传输上限 256 KiB（可返回短计数），地址按 Linux
+  move_addr_to_user 截断后回写完整长度；sendmsg 的 SCM_RIGHTS 等辅助数据 EOPNOTSUPP。
+  ioctl 支持 FIONREAD/FIONBIO，TCGETS 返回 ENOTTY，其余 ENOSYS 记账。network 组与 file/poll 组
+  一样在分派时绑定 FD 表与信号中断谓词。
 - 线程状态只能按 running → exit-requested → exited → reap 前进。exit-requested 必须持久保存
   来源（host/exit/exit_group）、requester、退出码和 syscall PC/LR；进程组退出的每个受影响
   线程共享同一请求事实，供即时错误与后续诊断读取。宿主失败通知可由已 exited 但未 reap
@@ -139,13 +151,14 @@ fcntl(55)/fcntl64(221) 共用 F_GETFL：按真实 VFS/端点状态返回 ARM O_A
 O_NONBLOCK、O_DIRECTORY、O_NOFOLLOW、O_LARGEFILE，不含创建标志与 FD_CLOEXEC；F_GETFD/F_SETFD 读写
 表项的 FD_CLOEXEC。open/openat 的 O_CLOEXEC、dup3 的 O_CLOEXEC 与 pipe2 的 O_CLOEXEC/O_NONBLOCK 同样生效；
 dup2(63)/dup3(358) 替换目标表项，dup3 拒绝相同编号与其他标志（EINVAL）。
-未知/已关闭 fd 返回 EBADF；其他 fcntl 命令继续 ENOSYS 并记账。
+F_SETFL 只改变共享打开状态的 O_NONBLOCK（忽略访问模式与创建标志）；改变 O_APPEND/O_ASYNC/
+O_DIRECT/O_NOATIME 返回 ENOSYS 并记账。未知/已关闭 fd 返回 EBADF；其他 fcntl 命令继续 ENOSYS 并记账。
 open/openat 显式解码 ARM O_APPEND=0x400，传入 VFS 打开状态，不由 syscall seek 模拟。
 writev 完整预检向量/输入，在共享资源预算内合并后只提交一次 Write；向量上限 64，
 每段至多 1 MiB，坏输入/超预算在写入前失败。大于 64 KiB scratch 的 append write/
 pwrite64 也在共享预算内一次暂存并提交，保持整条追加记录的节点锁；非 append IO
 沿用原分块/短 IO 语义。pwrite64 保持顺序 offset，append fd 使用 Linux EOF 写入规则。
-不提供 fcntl 状态修改、跨进程/NFS 追加或通用 Linux open flags。
+不提供 O_NONBLOCK 以外的 fcntl 状态修改、跨进程/NFS 追加或通用 Linux open flags。
 
 `BindAndroidFileMetadataSyscalls`（`syscall_file_metadata.cpp`）把
 mkdir/rmdir/unlink/rename 及其 `*at` 变体、stat64 家族、`statfs64`/`fstatfs64`、`getdents64`、

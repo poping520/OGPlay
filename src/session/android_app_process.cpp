@@ -256,6 +256,7 @@ public:
         const auto android_id = request.platform.android_id;
         const auto strict_webview_errors = request.platform.strict_webview_errors;
         const auto google_play = request.platform.google_play;
+        const auto host_tls = request.platform.host_tls;
         request.boundary_options.compressed_texture_family = ResolveManifestCompressedTextureFamily(manifest);
         if (request.logger != nullptr) {
             std::string declarations;
@@ -327,6 +328,8 @@ public:
                         request.system_libraries, request.logger);
                     native_libraries->PublishSystemLibraries();
                     context->session = session.get();
+                    context->network = session->Network();
+                    context->host_tls = host_tls;
                     context->pcm_playback = &session->PcmPlayback();
                     context->encoded_audio_playback = &session->SoundPoolMixer();
                     context->encoded_music = &session->EncodedMusic();

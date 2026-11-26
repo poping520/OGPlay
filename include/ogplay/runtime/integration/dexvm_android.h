@@ -491,7 +491,11 @@ struct DexVmAndroidContext final {
 
     [[nodiscard]] std::int64_t UptimeMillis() const noexcept { return uptime_nanos.load() / 1'000'000; }
 
-    [[nodiscard]] std::int64_t WallTimeMillis() const noexcept { return kAndroidWallEpochMillis + UptimeMillis(); }
+    // Wall-clock origin shared with native CLOCK_REALTIME; production sessions
+    // place it at host UTC time, tests keep the deterministic default.
+    std::int64_t wall_epoch_millis{kAndroidWallEpochMillis};
+
+    [[nodiscard]] std::int64_t WallTimeMillis() const noexcept { return wall_epoch_millis + UptimeMillis(); }
 
     // System.exit(): the guest asked for the process, not an activity.
     std::atomic<bool> exit_requested{false};
@@ -517,10 +521,10 @@ struct DexVmAndroidContext final {
     // save sandbox when one is attached). ADR-0020 retired the separate
     // session-memory overlay that used to shadow it.
     VirtualFileSystem* vfs{};
-    // Default-offline network capability. Production code can only enable it
-    // by publishing both an explicit policy and a narrow injected transport.
-    dexvm::NetworkPolicy network_policy;
-    dexvm::NetworkTransport* network_transport{};
+    // The process socket stack (runtime/net); its mode also selects the
+    // emulated connectivity state: online reports a connected Wi-Fi network.
+    net::GuestNetworkStack* network{};
+    bool host_tls{true};
     std::optional<AndroidOfflineConnectivity> offline_connectivity{AndroidOfflineConnectivity{}};
     std::shared_ptr<GuestNetworkEnvironment> network_environment;
 

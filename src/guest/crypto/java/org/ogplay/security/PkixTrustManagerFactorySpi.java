@@ -10,14 +10,21 @@ import javax.net.ssl.ManagerFactoryParameters;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactorySpi;
 
-/** PKIX TrustManagerFactory SPI. init(null) loads the injected AndroidCAStore snapshot. */
+/**
+ * PKIX TrustManagerFactory SPI. init(null) uses the host roots with the host engine,
+ * otherwise the injected AndroidCAStore snapshot.
+ */
 public final class PkixTrustManagerFactorySpi extends TrustManagerFactorySpi {
     private KeyStore keyStore;
     private boolean initialized;
+    private boolean hostDefault;
 
     public void engineInit(KeyStore ks) throws KeyStoreException {
+        hostDefault = ks == null && Tls.HOST;
         if (ks != null) {
             keyStore = ks;
+        } else if (hostDefault) {
+            keyStore = null;
         } else {
             keyStore = KeyStore.getInstance("AndroidCAStore");
             try {
@@ -39,8 +46,11 @@ public final class PkixTrustManagerFactorySpi extends TrustManagerFactorySpi {
     }
 
     public TrustManager[] engineGetTrustManagers() {
-        if (!initialized || keyStore == null) {
+        if (!initialized || (keyStore == null && !hostDefault)) {
             throw new IllegalStateException("TrustManagerFactory is not initialized");
+        }
+        if (hostDefault) {
+            return new TrustManager[] { new HostX509TrustManager() };
         }
         try {
             return new TrustManager[] { new X509TrustManagerImpl(keyStore) };

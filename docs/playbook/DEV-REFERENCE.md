@@ -112,8 +112,9 @@ Java 层不做路线选择，一律随 ROM 执行；下表只用于宿主接缝�
 
 ### 示例：证书信任与 TLS
 
-保留 AOSP SSL/KeyStore 公开 API，自有 Java Provider 连接 guest libssl/libcrypto 和唯一
-NetworkRuntime；AndroidCAStore 使用版本化 CA 包和只读视图，无需复制 Android 系统服务。
+保留 AOSP SSL/KeyStore 公开 API，自有 Java Provider 连接宿主 TLS 引擎（默认，宿主信任根）或
+guest libssl/libcrypto，密文经唯一 guest socket 栈；AndroidCAStore 使用版本化 CA 包和只读视图，无需复制
+Android 系统服务。
 AndroidKeyStore 若确有需求，可另做应用隔离的软件密钥底座，不必作为 TLS 前置依赖。
 
 但 AndroidCAStore/AndroidKeyStore 类型本身可被应用访问：查询、异常、隔离与密钥导出等

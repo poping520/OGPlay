@@ -765,6 +765,7 @@ std::optional<std::uint32_t> VirtualFileSystem::Impl::PipePollEvents(std::int32_
         if (found == table.entries.end()) return 16U;
         open = found->second;
     }
+    if (open->object) return open->object->PollEvents() & 15U;
     if (!open->pipe_state) return std::nullopt;
     std::scoped_lock contents(open->pipe_state->mutex);
     const auto& state = *open->pipe_state;
@@ -828,7 +829,11 @@ std::size_t VirtualFileSystem::Impl::Read(const std::int32_t descriptor, const s
         if (open->file) CollectMappedWritesLocked(*open->file, mapped);
     }
     WriteBackMappings(mapped);
-    // Pipe IO may block, so it never holds the open-state operation lock.
+    // Pipe and object IO may block, so it never holds the open-state operation lock.
+    if (open->object) {
+        if (!open->readable) throw VfsError(kEbadf, "VFS descriptor is not readable");
+        return open->object->Read(destination, {open->non_blocking, ThreadInterrupt()});
+    }
     if (open->pipe_state) return ReadPipe(*open, destination);
     if (open->endpoint) {
         if (!open->readable) throw VfsError(kEbadf, "VFS stream endpoint is not readable");
@@ -924,6 +929,10 @@ std::size_t VirtualFileSystem::Impl::Write(const std::int32_t descriptor, const 
     {
         std::scoped_lock lock(mutex_);
         open = FindDescriptor(descriptor);
+    }
+    if (open->object) {
+        if (!open->writable) throw VfsError(kEbadf, "VFS descriptor is not writable");
+        return open->object->Write(source, {open->non_blocking, ThreadInterrupt()});
     }
     if (open->pipe_state) return WritePipe(*open, source);
     if (open->endpoint) {
@@ -1240,7 +1249,7 @@ std::shared_ptr<OpenFile> VirtualFileSystem::Impl::DetachDescriptorLocked(Descri
 void VirtualFileSystem::Impl::RetireOpenFile(const std::shared_ptr<OpenFile>& open) {
     // Pipe ends signal their peers when the open description retires
     // (PipeEnd); a still-shared description keeps the end open.
-    if (open->pipe_state || open->endpoint) return;
+    if (open->pipe_state || open->endpoint || open->object) return;
     std::scoped_lock operation(open->mutex);
     if (!open->file) return;
     {
@@ -1536,6 +1545,52 @@ void VirtualFileSystem::Impl::WaitPipeInterruptible(const std::uint64_t observed
     if (interrupted != nullptr && *interrupted && (*interrupted)()) throw VfsError(kEintr, "VFS pipe wait interrupted");
 }
 
+std::function<bool()> VirtualFileSystem::Impl::ThreadInterrupt() const {
+    const auto* binding = FindThreadBinding(this);
+    if (binding == nullptr || binding->interrupted == nullptr || !*binding->interrupted) return {};
+    return *binding->interrupted;
+}
+
+std::int32_t VirtualFileSystem::Impl::OpenObject(std::shared_ptr<VfsDescriptorObject> object,
+                                                 const VfsOpenStatus status) {
+    if (!object) throw VfsError(kEinval, "VFS descriptor object is empty");
+    std::scoped_lock lock(mutex_);
+    auto node = std::make_shared<File>(File{{}, 0, {}, {}, true, VfsSource::runtime, false, {}});
+    node->node_id = node->inode = AllocateNodeIdLocked();
+    auto open = std::make_shared<OpenFile>(std::move(node), 0, status.read, status.write, nullptr, true);
+    open->non_blocking = status.non_blocking;
+    open->object = object;
+    open->object_pin = std::make_unique<ObjectPin>(std::move(object));
+    const auto descriptor = AllocateDescriptor();
+    CurrentTableLocked().entries.emplace(descriptor, std::move(open));
+    return descriptor;
+}
+
+std::shared_ptr<VfsDescriptorObject> VirtualFileSystem::Impl::DescriptorObject(const std::int32_t descriptor) const {
+    std::scoped_lock lock(mutex_);
+    return FindDescriptor(descriptor)->object;
+}
+
+void VirtualFileSystem::Impl::SetNonBlocking(const std::int32_t descriptor, const bool non_blocking) {
+    std::shared_ptr<OpenFile> open;
+    {
+        std::scoped_lock lock(mutex_);
+        open = FindDescriptor(descriptor);
+    }
+    // Shared by dup and fork, as the Linux open-description flag is.
+    open->non_blocking = non_blocking;
+    NotifyPipeReadiness();
+}
+
+VfsIoContext VirtualFileSystem::Impl::IoContext(const std::int32_t descriptor) const {
+    std::shared_ptr<OpenFile> open;
+    {
+        std::scoped_lock lock(mutex_);
+        open = FindDescriptor(descriptor);
+    }
+    return {open->non_blocking, ThreadInterrupt()};
+}
+
 VfsThreadBinding::VfsThreadBinding(const VirtualFileSystem& vfs, const VfsDescriptorTableId table,
                                    std::function<bool()> interrupted)
     : owner_(vfs.impl_.get()), table_(table), interrupted_(std::move(interrupted)) {
@@ -1821,9 +1876,30 @@ std::optional<std::size_t> VirtualFileSystem::PipeBuffered(const std::int32_t de
         std::scoped_lock lock(impl_->mutex_);
         open = impl_->FindDescriptor(descriptor);
     }
+    if (open->object) return open->object->Available();
     if (!open->pipe_state) return std::nullopt;
     std::scoped_lock contents(open->pipe_state->mutex);
     return open->pipe_state->buffer.size();
+}
+
+void VirtualFileSystem::NotifyReadiness() const {
+    impl_->NotifyPipeReadiness();
+}
+
+std::int32_t VirtualFileSystem::OpenObject(std::shared_ptr<VfsDescriptorObject> object, const VfsOpenStatus status) {
+    return impl_->OpenObject(std::move(object), status);
+}
+
+std::shared_ptr<VfsDescriptorObject> VirtualFileSystem::DescriptorObject(const std::int32_t descriptor) const {
+    return impl_->DescriptorObject(descriptor);
+}
+
+void VirtualFileSystem::SetNonBlocking(const std::int32_t descriptor, const bool non_blocking) {
+    impl_->SetNonBlocking(descriptor, non_blocking);
+}
+
+VfsIoContext VirtualFileSystem::IoContext(const std::int32_t descriptor) const {
+    return impl_->IoContext(descriptor);
 }
 
 std::uint64_t VirtualFileSystem::PipeReadinessGeneration() const {

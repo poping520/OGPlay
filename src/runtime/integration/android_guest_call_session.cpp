@@ -1,6 +1,7 @@
 #include "ogplay/runtime/common/guest_address_layout.h"
 #include "ogplay/runtime/integration/java_payload_provider.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
+#include "ogplay/hal/host_network.h"
 
 #include <algorithm>
 #include <array>
@@ -834,6 +835,18 @@ public:
                                                          write ? memory::AccessType::write : memory::AccessType::read);
             }};
         guest_memory_.SetAccess(direct_memory_access_);
+        net::GuestNetworkConfig network{.mode = request.platform.network_mode,
+                                        .pid = static_cast<std::int32_t>(dispatcher_.identity.process_id),
+                                        .uid = dispatcher_.identity.user_id,
+                                        .gid = dispatcher_.identity.user_id,
+                                        .logger = request.boundary_options.logger};
+        if (network.mode == net::NetworkMode::online) {
+            if (request.platform.host_network == nullptr) host_network_ = hal::CreateSystemHostNetwork();
+            network.host =
+                request.platform.host_network != nullptr ? request.platform.host_network : host_network_.get();
+        }
+        network_ = std::make_unique<net::GuestNetworkStack>(*filesystem_, network);
+        wall_epoch_millis_ = request.platform.wall_epoch_millis;
         BindSyscalls();
         if (diagnostics_) {
             diagnostics_->SetFutexProvider([this] { return futex_table_.TrySnapshot(); });
@@ -1988,7 +2001,8 @@ public:
             monotonic_nanos_,
             [this](std::uint64_t, std::chrono::nanoseconds slept) {
                 if (native_sleep_observer_) native_sleep_observer_(slept);
-            });
+            },
+            wall_epoch_millis_);
         BindAndroidMemorySyscalls(dispatcher_, address_space_);
         const auto cleanup_wait_limit = [this](std::uint64_t thread) -> std::optional<std::chrono::nanoseconds> {
             if (thread != kRootThreadId || std::this_thread::get_id() != owner_thread_ || cleanup_depth_ == 0U)
@@ -2010,6 +2024,7 @@ public:
                                 [this](const GuestIoRecord& record) { LogGuestIo(record); },
                                 {.wait_limit = cleanup_wait_limit, .account_timeout = account_wait});
         BindAndroidFileMetadataSyscalls(dispatcher_, *filesystem_, address_space_);
+        BindAndroidSocketSyscalls(dispatcher_, *network_, address_space_);
         BindAndroidThreadLifecycleSyscalls(dispatcher_, lifecycle_);
         BindAndroidArmPrivateSyscalls(dispatcher_, address_space_,
                                       [this](const std::uint64_t thread_id, const memory::GuestAddress pointer) {
@@ -2243,6 +2258,8 @@ public:
 
     VirtualFileSystem* Filesystem() noexcept { return filesystem_; }
 
+    net::GuestNetworkStack* Network() noexcept { return network_.get(); }
+
     const GuestCpuConfig& CpuConfig() const noexcept { return cpu_environment_.Config(); }
 
     const GuestMemorySnapshot& MemorySnapshot() const noexcept { return memory_snapshot_; }
@@ -2429,6 +2446,7 @@ public:
         boundary_.RetireGuestGraphics();
         static_cast<void>(boundary_.PcmPlayback().InterruptBlockingWaits());
         static_cast<void>(InterruptBlockingWaits());
+        if (network_) network_->Stop();
     }
 
     void RunTeardownCleanup(const std::function<void()>& cleanup) { RunCleanup(cleanup, true); }
@@ -2803,6 +2821,11 @@ private:
     std::function<std::uint64_t()> monotonic_nanos_;
     std::function<void(std::chrono::nanoseconds)> native_sleep_observer_;
     VirtualFileSystem* filesystem_{};
+    // The guest socket stack and, online, its host egress. Sockets are VFS
+    // descriptors, so the stack must not outlive *filesystem_.
+    std::unique_ptr<hal::HostNetwork> host_network_;
+    std::unique_ptr<net::GuestNetworkStack> network_;
+    std::int64_t wall_epoch_millis_{kAndroidWallEpochMillis};
     core::Logger* logger_{};
     std::shared_ptr<const GuestProcessEnvironment> initial_environment_;
     std::unique_ptr<FrameworkDirectAssetHle> direct_assets_;
@@ -3087,6 +3110,10 @@ void AndroidGuestProcess::SetAuxiliaryAudioMix(std::function<void(std::span<std:
 
 VirtualFileSystem* AndroidGuestProcess::Filesystem() noexcept {
     return impl_->Filesystem();
+}
+
+net::GuestNetworkStack* AndroidGuestProcess::Network() noexcept {
+    return impl_->Network();
 }
 
 VirtualProcessKernel& AndroidGuestProcess::VirtualProcesses() noexcept {
@@ -3498,6 +3525,10 @@ audio::OpenSlesPcmMixer& AndroidGuestCallSession::PcmPlayback() noexcept {
 
 void AndroidGuestCallSession::SetAuxiliaryAudioMix(std::function<void(std::span<std::int64_t>, std::uint32_t)> mix) {
     process_->SetAuxiliaryAudioMix(std::move(mix));
+}
+
+net::GuestNetworkStack* AndroidGuestCallSession::Network() noexcept {
+    return process_->Network();
 }
 
 VirtualFileSystem* AndroidGuestCallSession::Filesystem() noexcept {

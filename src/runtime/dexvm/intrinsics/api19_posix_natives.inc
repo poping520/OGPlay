@@ -1,9 +1,6 @@
 // Generated from fixed API 19 core.jar Posix native shape.
 posix.UnimplementedDirect("umaskImpl", "(I)I");
-posix.UnimplementedVirtual("accept", "(Ljava/io/FileDescriptor;Ljava/net/InetSocketAddress;)Ljava/io/FileDescriptor;");
-posix.UnimplementedVirtual("bind", "(Ljava/io/FileDescriptor;Ljava/net/InetAddress;I)V");
 posix.UnimplementedVirtual("chown", "(Ljava/lang/String;II)V");
-posix.UnimplementedVirtual("connect", "(Ljava/io/FileDescriptor;Ljava/net/InetAddress;I)V");
 posix.UnimplementedVirtual("dup2", "(Ljava/io/FileDescriptor;I)Ljava/io/FileDescriptor;");
 posix.UnimplementedVirtual("execv", "(Ljava/lang/String;[Ljava/lang/String;)V");
 posix.UnimplementedVirtual("execve", "(Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;)V");
@@ -12,27 +9,17 @@ posix.UnimplementedVirtual("fstatvfs", "(Ljava/io/FileDescriptor;)Llibcore/io/St
 posix.UnimplementedVirtual("getegid", "()I");
 posix.UnimplementedVirtual("geteuid", "()I");
 posix.UnimplementedVirtual("getgid", "()I");
-posix.UnimplementedVirtual("getpeername", "(Ljava/io/FileDescriptor;)Ljava/net/SocketAddress;");
 if (!services.process_id) posix.UnimplementedVirtual("getpid", "()I");
 posix.UnimplementedVirtual("getpwnam", "(Ljava/lang/String;)Llibcore/io/StructPasswd;");
-posix.UnimplementedVirtual("getsockname", "(Ljava/io/FileDescriptor;)Ljava/net/SocketAddress;");
-posix.UnimplementedVirtual("getsockoptByte", "(Ljava/io/FileDescriptor;II)I");
-posix.UnimplementedVirtual("getsockoptInAddr", "(Ljava/io/FileDescriptor;II)Ljava/net/InetAddress;");
-posix.UnimplementedVirtual("getsockoptInt", "(Ljava/io/FileDescriptor;II)I");
-posix.UnimplementedVirtual("getsockoptLinger", "(Ljava/io/FileDescriptor;II)Llibcore/io/StructLinger;");
-posix.UnimplementedVirtual("getsockoptTimeval", "(Ljava/io/FileDescriptor;II)Llibcore/io/StructTimeval;");
-posix.UnimplementedVirtual("getsockoptUcred", "(Ljava/io/FileDescriptor;II)Llibcore/io/StructUcred;");
 if (!services.current_thread_id) posix.UnimplementedVirtual("gettid", "()I");
 if (!services.process_uid) posix.UnimplementedVirtual("getuid", "()I");
 posix.UnimplementedVirtual("if_indextoname", "(I)Ljava/lang/String;");
 if (!services.kill_process) posix.UnimplementedVirtual("kill", "(II)V");
 posix.UnimplementedVirtual("lchown", "(Ljava/lang/String;II)V");
-posix.UnimplementedVirtual("listen", "(Ljava/io/FileDescriptor;I)V");
 posix.UnimplementedVirtual("mincore", "(JJ[B)V");
 posix.UnimplementedVirtual("mlock", "(JJ)V");
 posix.UnimplementedVirtual("munlock", "(JJ)V");
 posix.UnimplementedVirtual("pipe", "()[Ljava/io/FileDescriptor;");
-posix.UnimplementedVirtual("poll", "([Llibcore/io/StructPollfd;I)I");
 posix.UnimplementedVirtual("readv", "(Ljava/io/FileDescriptor;[Ljava/lang/Object;[I[I)I");
 posix.UnimplementedVirtual("sendfile",
                            "(Ljava/io/FileDescriptor;Ljava/io/FileDescriptor;Llibcore/util/MutableLong;J)J");
@@ -41,16 +28,7 @@ posix.UnimplementedVirtual("setenv", "(Ljava/lang/String;Ljava/lang/String;Z)V")
 posix.UnimplementedVirtual("seteuid", "(I)V");
 posix.UnimplementedVirtual("setgid", "(I)V");
 posix.UnimplementedVirtual("setsid", "()I");
-posix.UnimplementedVirtual("setsockoptByte", "(Ljava/io/FileDescriptor;III)V");
-posix.UnimplementedVirtual("setsockoptGroupReq", "(Ljava/io/FileDescriptor;IILlibcore/io/StructGroupReq;)V");
-posix.UnimplementedVirtual("setsockoptIfreq", "(Ljava/io/FileDescriptor;IILjava/lang/String;)V");
-posix.UnimplementedVirtual("setsockoptInt", "(Ljava/io/FileDescriptor;III)V");
-posix.UnimplementedVirtual("setsockoptIpMreqn", "(Ljava/io/FileDescriptor;III)V");
-posix.UnimplementedVirtual("setsockoptLinger", "(Ljava/io/FileDescriptor;IILlibcore/io/StructLinger;)V");
-posix.UnimplementedVirtual("setsockoptTimeval", "(Ljava/io/FileDescriptor;IILlibcore/io/StructTimeval;)V");
 posix.UnimplementedVirtual("setuid", "(I)V");
-posix.UnimplementedVirtual("shutdown", "(Ljava/io/FileDescriptor;I)V");
-posix.UnimplementedVirtual("socketpair", "(IIILjava/io/FileDescriptor;Ljava/io/FileDescriptor;)V");
 posix.UnimplementedVirtual("strsignal", "(I)Ljava/lang/String;");
 posix.UnimplementedVirtual("symlink", "(Ljava/lang/String;Ljava/lang/String;)V");
 posix.UnimplementedVirtual("tcdrain", "(Ljava/io/FileDescriptor;)V");

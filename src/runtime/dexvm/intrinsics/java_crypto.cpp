@@ -321,79 +321,6 @@ IntrinsicClassDecl Declare_org_ogplay_security_NativeTrust_Overrides() {
 IntrinsicClassDecl Declare_org_ogplay_security_NativeTls_Overrides() {
     auto b = IntrinsicClassBuilder::Class(kTlsNative);
     b.MergesBootClass();
-    b.StaticMethod("markTls", "(Ljava/net/Socket;)V", [](IntrinsicContext& c) {
-        const auto socket = IntrinsicCall(c).NonNullRef(0, "socket");
-        try {
-            c.vm.Network().GetSocket(socket).tls = true;
-        } catch (const NetworkRuntimeError&) {
-            c.vm.Network().CreateSocket(socket, true);
-        }
-        return VmValue::Void();
-    });
-    b.StaticMethod("connectRaw", "(Ljava/net/Socket;Ljava/net/SocketAddress;I)V", [](IntrinsicContext& c) {
-        IntrinsicCall call(c);
-        const auto socket = call.NonNullRef(0, "socket");
-        const auto endpoint = call.NonNullRef(1, "endpoint");
-        const auto timeout = call.Int(2);
-        try {
-            if (timeout < 0) throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "timeout < 0"};
-            auto& net = c.vm.Network();
-            try {
-                net.GetSocket(socket).tls = true;
-            } catch (const NetworkRuntimeError&) {
-                net.CreateSocket(socket, true);
-            }
-            if (timeout > 0) net.SetTimeout(socket, timeout);
-            const auto host = InvokeGuest(c.vm, endpoint, "getHostName", "()Ljava/lang/String;").ref;
-            const auto port = InvokeGuest(c.vm, endpoint, "getPort", "()I").AsInt();
-            if (!host.IsValid()) throw VmJavaThrow{"Ljava/net/UnknownHostException;", "unresolved socket endpoint"};
-            const auto host_name = c.vm.StringUtf8(host);
-            if (host_name.empty()) throw VmJavaThrow{"Ljava/net/UnknownHostException;", "unresolved socket endpoint"};
-            if (port < 0 || port > 65535)
-                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "port out of range"};
-            const auto addresses = net.Resolve(host_name);
-            const auto depth = c.vm.ExecutionLock().ReleaseForBlocking();
-            try {
-                net.Connect(socket, {host_name, addresses.front(), static_cast<std::uint16_t>(port)});
-                c.vm.ExecutionLock().ReacquireAfterBlocking(depth);
-            } catch (...) {
-                c.vm.ExecutionLock().ReacquireAfterBlocking(depth);
-                throw;
-            }
-        } catch (const NetworkRuntimeError& error) {
-            throw VmJavaThrow{"Ljava/net/SocketException;", error.what()};
-        }
-        return VmValue::Void();
-    });
-    b.StaticMethod("socketInput", "(Ljava/net/Socket;)Ljava/io/InputStream;", [](IntrinsicContext& c) {
-        const auto socket = IntrinsicCall(c).NonNullRef(0, "socket");
-        const auto stream = c.vm.NewIntrinsicInstance("Ljava/net/SocketInputStream;");
-        try {
-            c.vm.Network().BindStream(stream, socket, false);
-        } catch (const NetworkRuntimeError& error) {
-            throw VmJavaThrow{"Ljava/net/SocketException;", error.what()};
-        }
-        return VmValue::Ref(stream);
-    });
-    b.StaticMethod("socketOutput", "(Ljava/net/Socket;)Ljava/io/OutputStream;", [](IntrinsicContext& c) {
-        const auto socket = IntrinsicCall(c).NonNullRef(0, "socket");
-        const auto stream = c.vm.NewIntrinsicInstance("Ljava/net/SocketOutputStream;");
-        try {
-            c.vm.Network().BindStream(stream, socket, true);
-        } catch (const NetworkRuntimeError& error) {
-            throw VmJavaThrow{"Ljava/net/SocketException;", error.what()};
-        }
-        return VmValue::Ref(stream);
-    });
-    b.StaticMethod("requireTls", "(Ljava/lang/String;)V", [](IntrinsicContext& c) {
-        const auto host = IntrinsicCall(c).NonNullRef(0, "host");
-        try {
-            c.vm.Network().RequireTls(c.vm.StringUtf8(host));
-        } catch (const NetworkRuntimeError& error) {
-            throw VmJavaThrow{"Ljava/net/SocketException;", error.what()};
-        }
-        return VmValue::Void();
-    });
     b.GuestNativeStatic("seed", "([B)V");
     b.GuestNativeStatic("createContext", "([Ljava/lang/String;[Ljava/lang/String;)J");
     b.GuestNativeStatic("createSsl", "(JLjava/lang/String;)J");
@@ -497,6 +424,7 @@ void AppendJavaCrypto(std::vector<IntrinsicClassDecl>& catalog) {
     catalog.push_back(Declare_org_ogplay_security_NativeKeyStoreCrypto_Natives());
     catalog.push_back(Declare_org_ogplay_security_NativeTrust_Overrides());
     catalog.push_back(Declare_org_ogplay_security_NativeTls_Overrides());
+    catalog.push_back(Declare_org_ogplay_security_HostTls_Natives());
     catalog.push_back(Declare_com_android_org_conscrypt_OpenSSLCipherContext_Overrides());
     for (const auto& entry : kVerificationSignatures)
         catalog.push_back(DeclareVerificationSpiClass(entry.algorithm));

@@ -828,12 +828,6 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model, NativeM
                                  {},  // File resources and decoders contain no Java references.
                                  [state = impl_.get()](const VmObjectRef owner) { state->io.Sweep(owner); },
                                  [](const VmObjectRef, const VmObjectRef) {}});
-    RegisterIntrinsicStateTable({"network",
-                                 [state = impl_.get()](const VmObjectRef owner, const VmRootVisitor& visit) {
-                                     state->network.Trace(owner, visit);
-                                 },
-                                 [state = impl_.get()](const VmObjectRef owner) { state->network.Sweep(owner); },
-                                 {}});
     RegisterIntrinsicStateTable({"zip",
                                  {},
                                  [state = impl_.get()](const VmObjectRef owner) { state->zip.Sweep(owner); },

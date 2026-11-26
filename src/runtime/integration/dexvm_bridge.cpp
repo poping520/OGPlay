@@ -1758,7 +1758,7 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
         return object;
     });
     if (android_context != nullptr) {
-        impl_->vm->Network().Configure(android_context->network_policy, android_context->network_transport);
+        impl_->vm->Network().Configure(android_context->network, android_context->host_tls);
     }
     RegisterAndroidAudioTrackStateTable(*impl_->vm, android_context);
     RegisterAndroidSurfaceStreamStateTable(*impl_->vm, android_context);

@@ -1,10 +1,6 @@
 package org.ogplay.security;
 
 import java.io.ByteArrayInputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.Socket;
-import java.net.SocketAddress;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
@@ -19,19 +15,6 @@ final class NativeTls {
     static final int FAILED = -1;
 
     private NativeTls() {}
-
-    /** Host overlay: mark this Socket as a TLS policy channel. Transport stays raw. */
-    static void markTls(Socket socket) {}
-
-    /** Host overlay: enforce allow_tls/allowed_hosts without connecting this socket. */
-    static void requireTls(String host) {}
-
-    /** Host overlay: connect over the unique raw NetworkRuntime channel. */
-    static void connectRaw(Socket socket, SocketAddress endpoint, int timeout) {}
-
-    static InputStream socketInput(Socket socket) { return null; }
-
-    static OutputStream socketOutput(Socket socket) { return null; }
 
     static native void seed(byte[] entropy);
 

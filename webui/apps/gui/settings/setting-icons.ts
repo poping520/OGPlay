@@ -71,6 +71,7 @@ export const SETTING_ICONS: Record<string, string> = {
   timezone: '<circle cx="12" cy="12" r="9"/><path d="M3 12h3M18 12h3M12 7v5l3 3"/>',
   // network, diagnostics, control and advanced
   network_policy: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
+  tls_mode: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4M12 15v2"/>',
   log_level: '<path d="M3 5h18l-7 8v6l-4 2v-8z"/>',
   jsonl: '<path d="M8 3H7a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2 2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1M16 3h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2 2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-1"/>',
   stall_timeout: '<path d="M6 3h12M6 21h12M7 3v3l5 6 5-6V3M7 21v-3l5-6 5 6v3"/>',

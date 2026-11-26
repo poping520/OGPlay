@@ -214,8 +214,10 @@ TPIDRURW、CP14、VFP/NEON 等后端缺口继续明确失败，避免伪装成�
   接口查询描述符，由 IoRuntime 管理，只允许三项 IPv4 地址 ioctl 与幂等 close。
   本地查询不执行网络 IO，不受 transport NetworkPolicy 限制；缺拓扑/在线状态
   仍记账并明确失败。地址对象由既有 ROM InetAddress 构造路径建立。
-- 后果：ROM NetworkInterface 可枚举离线回环，普通算法仍归 Java；不增加通用 socket、
-  netlink/getifaddrs/if_indextoname 或在线 provider。接口范围见 [DexVM 契约](../../src/runtime/dexvm/MODULE.md)。
+- 后果：ROM NetworkInterface 可枚举离线回环，普通算法仍归 Java；不增加 netlink/getifaddrs/
+  if_indextoname。接口范围见 [DexVM 契约](../../src/runtime/dexvm/MODULE.md)。
+- 修订：通用 socket 与在线出口已按用户决定由 `runtime/net` 提供；接口查询可在任何 guest socket 上进行，
+  联网模式的接口表另含 wlan0（见 [integration 契约](../../src/runtime/integration/MODULE.md)）。
 
 <a id="adr-0169"></a>
 

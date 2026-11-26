@@ -22,8 +22,8 @@ ADR-0134 的 Web 按键编辑器，由 run-apk 的 loopback 服务以 `/controls
 - 保存：编辑对象为内置默认与用户层合并后的布局；control.apply 发送 zone/binding，
   删除内置按键时写 action=none。保存到既有用户 input.toml，重新打开/重启加载用户文件。
   TOML/JSON 的 template 字段都明确拒绝。
-- 中英文：使用 ui-kit i18n 核心，只注册 controls 英文表；收到 control.get 前（含无效令牌页面）
-  按 navigator.language 的 zh 前缀选择中文，其余英文；收到后使用游戏固定的 language，
+- 多语言：使用 ui-kit i18n 核心，只注册 controls 自己的九份消息目录（`messages/<标签>.ts`，ID 前缀 `controls.`）；收到 control.get 前（含无效令牌页面）
+  按 navigator.language 以宿主同一规则选择语言；收到后使用游戏固定的 language，
   同步 document.title 与 html lang，不跟随启动器后续切换，不改变 guest Locale。
 - 不含导入导出、社区预设与离线编辑。
 - 外观：先导入 ui-kit theme.css（磨砂黑令牌、`.pill`、`.seg`、`.led`），style.css 只补编辑器布局与舞台绘制；

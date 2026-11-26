@@ -12,9 +12,9 @@ const loadCart3D = () => loading ??= new Promise<void>((resolve, reject) => {
   const script = document.createElement('script');
   script.src = bundle;
   script.onload = () => resolve();
-  script.onerror = () => reject(new Error(t('cart3d.js 缺失或无法加载。')));
+  script.onerror = () => reject(new Error(t('cartridge.missingScript')));
   document.head.append(script);
-}).then(() => window.OGPlayCart3D ?? Promise.reject(new Error(t('cart3d.js 没有注册 3D 卡带。'))));
+}).then(() => window.OGPlayCart3D ?? Promise.reject(new Error(t('cartridge.notRegistered'))));
 
 // The 3D bundle loads only when the setting asks for it. While the setting or the bundle is still on its way the
 // cartridge slots stay empty ('waiting') instead of flashing the CSS cartridge; only "css" or a failure (missing
@@ -29,7 +29,7 @@ export function useCart3D(mode: CartMode, report: (reason: unknown) => void): Ca
     loadCart3D().then(value => { if (live) setApi(value); }, reason => {
       if (!live) return;
       setApi('failed');
-      report(`${t('3D 卡带不可用，已改用 CSS 卡带。')}\n${reason instanceof Error ? reason.message : String(reason)}`);
+      report(`${t('cartridge.fallbackCss')}\n${reason instanceof Error ? reason.message : String(reason)}`);
     });
     return () => { live = false; };
   }, [mode]);
@@ -44,7 +44,7 @@ export function cartFace(item: LibraryItem, tone: string, color: [number, number
     id: item.installation_id, name: item.display_name, package: item.package || item.installation_id, version: versionLabel(item),
     imported: item.imported_at?.slice(0, 10) ?? '', color, tone, status: item.status,
     // Printed words follow the launcher language; they are part of the key so a switch reprints the label.
-    captions: { version: t('版本'), imported: t('导入'), tagline: t('安卓老游戏兼容层') },
+    captions: { version: t('common.version'), imported: t('cartridge.imported'), tagline: t('common.tagline') },
   };
   return { ...face, icon: item.icon, key: JSON.stringify([face, iconIds.get(item.icon)]) };
 }
@@ -69,7 +69,7 @@ export function Hero3D({ api, item, tone, shown, neighbours, inspect }: {
     api.show(face);
     api.prefetch(neighbours.flatMap(([game, gameTone]) => { const color = knownIconColor(game.icon); return color ? [cartFace(game, gameTone, color)] : []; }));
   }, [api, face?.key]);
-  return <div class="stage3d" ref={stage} aria-hidden="true" title={t('点击查看卡带')}
+  return <div class="stage3d" ref={stage} aria-hidden="true" title={t('cartridge.clickToView')}
     onPointerDown={event => { press.current = { x: event.clientX, y: event.clientY }; }}
     onPointerUp={event => { const from = press.current; press.current = null; if (from && Math.hypot(event.clientX - from.x, event.clientY - from.y) < 6) inspect(); }} />;
 }

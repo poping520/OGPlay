@@ -557,12 +557,13 @@ TEST_CASE("gui_launch resolves UI language for the process and localized window 
     LibraryStore store(tree.path);
     const auto executable = tree.path / "ogplay";
     Write(executable, "exe");
-    for (const auto tag : {"zh-CN", "en-US", "system"}) {
+    for (const auto tag : {"zh-CN", "zh-TW", "en-US", "system"}) {
         SetSetting(config, "language", std::string(tag));
         const auto resolved = ResolveLaunch(store, entry, config);
         const auto language = ResolveUiLanguage(tag);
         CHECK(resolved.options.ui_language == language);
-        CHECK(resolved.options.window_title == (language == UiLanguage::zh_CN ? "中文游戏" : "English Game"));
+        if (language == UiLanguage::zh_CN || language == UiLanguage::zh_TW || language == UiLanguage::en_US)
+            CHECK(resolved.options.window_title == (language == UiLanguage::en_US ? "English Game" : "中文游戏"));
         const auto args = FormatGameRunArgs(resolved.options);
         const auto flag = std::find(args.begin(), args.end(), "--ui-language");
         REQUIRE(flag != args.end());
@@ -597,7 +598,10 @@ TEST_CASE("gui_launch app language inherits global settings with an explicit fol
     settings.values.clear();
     SaveGameSettings(directory, settings);
     CHECK(ResolveLaunch(store, entry, config).options.app_language == UiLanguage::en_US);
-    CHECK_THROWS(SetSetting(config, "locale", std::string("fr-FR")));
+    SetSetting(config, "locale", std::string("ja-JP"));
+    CHECK(ResolveLaunch(store, entry, config).options.app_language == UiLanguage::ja_JP);
+    SetSetting(config, "locale", std::string("en-US"));
+    CHECK_THROWS(SetSetting(config, "locale", std::string("de-DE")));
     settings.values["locale"] = std::string("invalid");
     CHECK_THROWS(SaveGameSettings(directory, settings));
     Write(directory / "settings.toml", "schema = 1\nlocale = \"\"\n");

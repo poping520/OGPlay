@@ -8,6 +8,9 @@
 删除条目保留引用的外部目录，库内 `data/` 随条目删除；sandbox 默认保留，`delete_saves` 时先删除。
 `ClearSaves` 在排他库锁内持实例运行锁清空 sandbox 覆盖层（SandboxStore::Clear），保留 meta 身份（id、ANDROID_ID）、库内 APK/数据包、设置与日志；运行中或损坏条目拒绝。
 导入优先沿用无库条目且 meta package 一致的残留 sandbox 的最小编号 id（ReusableInstallationId，ADR-0145）。settings 校验、未知键和预留字段规则为两个 EXE 的唯一来源：读取 config/settings/meta 文件时跳过未知键，写入与修改请求仍拒绝未知键；ResolveLaunch 产出值，参数格式仅由 FormatGameRunArgs 维护。
+SettingDefinition 的 label/pending 为英文（CLI、日志），界面文案只在 Web UI 目录：字段另带 `unit`、`reserved`（预留原因代码）与
+`global_default`（全局页读作“默认 …”，实例定义去掉该前缀并清除标记）。用户可见的库错误（压缩包、数据目录、写入空间）
+除英文 what() 外携带 `UiMessage`。
 验证：ogplay_app_tests 的库、锁与参数主题；真实 APK 有界复跑。
 
 Profile 摘要只含 id，不提供显示名或 required external。显示名称来自
@@ -17,7 +20,7 @@ APK label 为资源时，默认配置值为 `display_name`，各语言资源（`
 `display_name.<locale>`。`LocalizedDisplayName` 按启动器语言依次取完全匹配、仅语言、同语言其他地区、
 默认值；运行窗口标题和 GUI（webui `gameName` 同规则）都按此显示。
 解释器设置用 `default` 选择通用默认值，`switch/threaded` 为用户显式覆盖。
-应用语言复用 locale 设置：全局默认 ui（跟随本次启动的界面语言），也可选择 zh-CN/en-US；
+应用语言复用 locale 设置：全局默认 ui（跟随本次启动的界面语言），也可选择界面语言的任一标签；
 实例值 > 全局值 > 默认，经 ResolveLaunch/FormatGameRunArgs 传递 --app-language。恢复全局删除实例覆盖；
 实例显式 ui 即使全局指定另一种语言也跟随界面。旧预留 locale 的空字符串读作无覆盖，新的非法选项明确拒绝。
 

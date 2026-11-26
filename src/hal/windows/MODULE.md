@@ -25,7 +25,7 @@
   生成 HICON 并 WM_SETICON；持有到下次设置或窗口销毁后释放。窗口跨显示器改变 DPI 时不重选尺寸（系统缩放）。
 - 窗口外观（`window_chrome.h`）：启动器、辅助窗口和 SDL 游戏窗口经 DWM 使用启动器配色的深色标题栏；
   配色需 Windows 11、深色模式需 Windows 10 1809，更旧系统保持系统默认，失败不影响建窗。
-- 游戏关闭确认（`game_window.cpp`）：在拥有线程运行自绘模态框（Direct2D/DirectWrite），禁用游戏窗口并以分层窗口压暗；
+- 游戏关闭确认（`game_window.cpp`）：在拥有线程运行自绘模态框（Direct2D/DirectWrite，按文案 language 选字体回退区域），禁用游戏窗口并以分层窗口压暗；
   默认焦点在取消，方向键/Tab 切换，回车/空格确认焦点按钮，Esc 与 Alt+F4 取消，游玩时按住的按键（重复消息）不作答。
   无 HWND 或无法创建/重绘时抛错，由调用方按 `ConfirmClose` 契约处理。
 - `SetHostApplicationIdentity`：`SetCurrentProcessExplicitAppUserModelID`，游戏进程与启动器分属不同任务栏组。

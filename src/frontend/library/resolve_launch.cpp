@@ -83,7 +83,9 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
     const bool mcp = std::get<bool>(Setting(config, "mcp_enabled"));
     const bool manual = std::get<bool>(EffectiveGameSetting(settings, global, entry, "mcp_manual_step"));
     if (mode != LaunchMode::preflight) {
-        if (manual && !mcp) throw std::invalid_argument("MCP 手动步进需要启用 MCP。");
+        if (manual && !mcp)
+            throw UiError<std::invalid_argument>(UiMessage{"host.error.mcpManualNeedsMcp"},
+                                                 "MCP manual stepping requires MCP");
         if (mcp) {
             o.mcp_port = static_cast<std::uint16_t>(std::get<std::uint32_t>(Setting(config, "mcp_port")));
             result.mcp_port = o.mcp_port;

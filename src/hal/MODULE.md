@@ -19,7 +19,7 @@
   不暴露 native handle，不创建 guest。macOS/Windows 均在 UI 线程派发 RPC；冒烟可记录响应并保存 PNG。
 - `WebViewShellText` 由上层传入菜单/托盘初值，`SetShellText` 仅在主线程更新；HAL 无翻译表。
   macOS 重建主菜单并保留快捷键、selector 与 windowsMenu 注册；Windows 在弹出托盘菜单时用当前文字。
-  RPC 异常回退的 next_step 同样由 WebViewHostOptions 提供。
+  RPC 异常回退的 next_step_id（Web UI 消息 ID）同样由 WebViewHostOptions 提供。
 - `WebViewHost::OpenDashboard/CloseDashboard`：按实例复用独立 loopback 窗口，仅允许指定
   端口 `/dash/` 导航，禁止弹窗且不绑定启动器 RPC；启动器结束（关闭按钮只隐藏主窗口；macOS 经退出菜单，Windows 经通知区域图标菜单）同时回收监控窗口。
 - `WebViewHost::OpenKeyEditor/CloseKeyEditor`：同上规则的按键设置窗口，仅允许 `/controls/`；

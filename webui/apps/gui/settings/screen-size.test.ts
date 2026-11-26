@@ -3,7 +3,7 @@ import { aspectName, longSide, presetSize, screenFields } from './screen-size';
 import type { SettingField } from './settings';
 
 const field = (key: string, choices: string[] = []): SettingField =>
-  ({ key, group: 'graphics', label: key, pending: '', initial: '', choices, min: 0, max: 0, directory: false, hidden: false });
+  ({ key, group: 'graphics', unit: '', reserved: '', global_default: false, initial: '', choices, min: 0, max: 0, directory: false, hidden: false });
 const phone = { width: 2376, height: 1080 };
 
 // Same cases as tests/frontend/game_run_args_tests.cpp: the page shows what the game process will use.

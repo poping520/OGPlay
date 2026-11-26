@@ -1,17 +1,17 @@
-import { t } from '../shared/i18n';
+import { t, type UiText } from '../shared/i18n';
 import { settingsError, type SettingField, type SettingValue } from './settings';
 export interface GameSettings {
   schema: number; installation_id: string; display_name: string; profile_id: string | null;
   revision: string; config_path: string; fields: SettingField[];
   values: Record<string, SettingValue>; inherited: Record<string, SettingValue>;
   facts: Record<string, string>;
-  previews: Record<string, { argv: string[]; error: string }>;
+  previews: Record<string, { argv: string[]; error: UiText | null }>;
   reserved_visible: boolean;                     // false in release builds
 }
 // Most-changed, effective groups first; developer switches last.
 export const gameGroups = [
-  ['display', '显示'], ['data', '数据与沙盒'], ['input', '输入'], ['audio', '音频'], ['performance', '性能'],
-  ['device', '虚拟设备'], ['compatibility', '兼容性'], ['network', '网络'], ['advanced', '高级'],
+  ['display', 'settings.group.display'], ['data', 'settings.group.data'], ['input', 'settings.group.input'], ['audio', 'settings.group.audio'], ['performance', 'settings.group.performance'],
+  ['device', 'settings.group.device'], ['compatibility', 'settings.group.compatibility'], ['network', 'settings.group.network'], ['advanced', 'settings.group.advanced'],
 ] as const;
 
 export function inheritSetting(values: Record<string, SettingValue>, key: string): Record<string, SettingValue> {
@@ -28,5 +28,5 @@ export function gameSettingsError(saved: Pick<GameSettings, 'fields' | 'inherite
   const effective = { ...saved.inherited, ...draft };
   const error = settingsError(saved.fields, effective);
   if (error) return error;
-  return effective.mcp_manual_step === true && effective.mcp_enabled !== true ? t('MCP 手动步进需要启用 MCP。') : null;
+  return effective.mcp_manual_step === true && effective.mcp_enabled !== true ? t('host.error.mcpManualNeedsMcp') : null;
 }

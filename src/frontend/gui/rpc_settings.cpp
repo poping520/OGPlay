@@ -71,8 +71,9 @@ app::JsonWriter::Value FieldList(app::JsonWriter& writer, const std::vector<Sett
         const auto item = writer.Object(), choices = writer.Array();
         writer.AddString(item, "key", field.key);
         writer.AddString(item, "group", field.group);
-        writer.AddString(item, "label", field.label);
-        writer.AddString(item, "pending", field.pending);
+        writer.AddString(item, "unit", field.unit);
+        writer.AddString(item, "reserved", field.reserved);
+        writer.AddBool(item, "global_default", field.global_default);
         writer.Add(item, "initial", Json(writer, field.initial));
         writer.AddBool(item, "directory", field.directory);
         writer.AddBool(item, "hidden", std::find(hidden.begin(), hidden.end(), field.key) != hidden.end());
@@ -112,7 +113,7 @@ app::ConsoleResponse GuiRpcService::GameSettingsRequest(std::string_view method,
             }
         if (replacement.values.size() != values->Size()) throw std::invalid_argument("unknown instance setting");
     }
-    if (ImportBusy() || (save && SettingsBusy())) throw std::runtime_error("正在分析或入库，请稍后重试。");
+    if (ImportBusy() || (save && SettingsBusy())) throw GuiTextError({"host.error.busy"});
     const auto entries = store_.LoadEntries();
     const auto found =
         std::find_if(entries.begin(), entries.end(), [&](const auto& entry) { return entry.key == *id->String(); });
@@ -134,7 +135,7 @@ app::ConsoleResponse GuiRpcService::GameSettingsRequest(std::string_view method,
         return writer.Serialize(root);
     };
     if (save) {
-        if (revision() != expected) throw std::runtime_error("游戏或全局设置已变化，请重新载入后保存。");
+        if (revision() != expected) throw GuiTextError({"host.error.settingsChanged"});
         // The page never sees the settings of capabilities left out here; their overrides stay as they are.
         for (const auto& [key, value] : settings.values)
             if (!SettingAvailable(platform_, key)) replacement.values[key] = value;
@@ -146,7 +147,7 @@ app::ConsoleResponse GuiRpcService::GameSettingsRequest(std::string_view method,
         ValidateGameSettings(changed, true);
         if (std::get<bool>(EffectiveGameSetting(replacement, global, entry, "mcp_manual_step")) &&
             !std::get<bool>(EffectiveGameSetting(replacement, global, entry, "mcp_enabled")))
-            throw std::invalid_argument("MCP 手动步进需要启用 MCP。");
+            throw GuiArgumentError({"host.error.mcpManualNeedsMcp"});
         SaveGameSettings(entry.directory, replacement);
         settings = std::move(replacement);
     }
@@ -182,9 +183,9 @@ app::ConsoleResponse GuiRpcService::GameSettingsRequest(std::string_view method,
             const auto plan = BuildLaunchPlan(game_executable_, store_.Root(), entry, global, mode, platform_);
             for (const auto& arg : plan.argv)
                 writer.Append(argv, writer.String(arg));
-            writer.AddString(preview, "error", "");
+            writer.AddNull(preview, "error");
         } catch (const std::exception& error) {
-            writer.AddString(preview, "error", error.what());
+            writer.Add(preview, "error", UiTextJson(writer, error));
         }
         writer.Add(preview, "argv", argv);
         writer.Add(previews, name, preview);
@@ -211,7 +212,7 @@ app::ConsoleResponse IconPreview(const app::JsonValue params) {
     const auto branding = BundledDataPaths().root / "branding";
     const auto read = [](const std::filesystem::path& path) {
         std::ifstream file(path, std::ios::binary);
-        if (!file) throw GuiTextError("图标素材缺失：{path}", {{"path", PathText(path)}});
+        if (!file) throw GuiTextError({"host.error.iconMissing", {{"path", PathText(path)}}});
         std::vector<std::byte> bytes;
         for (char c; file.get(c);)
             bytes.push_back(static_cast<std::byte>(c));
@@ -222,7 +223,7 @@ app::ConsoleResponse IconPreview(const app::JsonValue params) {
     const auto root = writer.Object(), result = writer.Object();
     for (const auto style : {RunningIconStyle::cradle, RunningIconStyle::badge}) {
         const auto png = EncodeRgbaPng(ComposeRunningIcon(game, cartridge, style, 192));
-        if (png.empty()) throw std::runtime_error("预览图标编码失败");
+        if (png.empty()) throw GuiTextError({"host.error.iconEncode"});
         writer.AddString(result, std::string(RunningIconStyleName(style)),
                          "data:image/png;base64," + EncodeBase64(png));
     }
@@ -262,8 +263,8 @@ app::ConsoleResponse GuiRpcService::SettingsRequest(std::string_view method, app
     }
     auto config = LoadLibraryConfig(store_.Root());
     if (method == "settings.set") {
-        if (SettingsBusy()) throw std::runtime_error("正在分析或入库，请稍后保存设置。");
-        if (Revision(config) != expected) throw std::runtime_error("设置已被其他窗口修改，请重新载入后再保存。");
+        if (SettingsBusy()) throw GuiTextError({"host.error.busySettings"});
+        if (Revision(config) != expected) throw GuiTextError({"host.error.settingsChangedElsewhere"});
         const auto previous_language = ResolveUiLanguage(std::get<std::string>(Setting(config, "language")));
         const bool showed_demos = std::get<bool>(Setting(config, "show_demo_games"));
         for (const auto& field : SettingDefinitions())

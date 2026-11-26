@@ -282,12 +282,13 @@ GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args) {
             const auto value = args[++index];
             if (value != "ui") {
                 options.app_language = ParseUiLanguage(value);
-                if (!options.app_language) throw std::invalid_argument("--app-language requires ui, zh-CN or en-US");
+                if (!options.app_language)
+                    throw std::invalid_argument("--app-language requires ui or a supported language tag");
             }
         } else if (option == "--ui-language" && index + 1 < args.size()) {
             if (options.ui_language) throw std::invalid_argument("run-apk accepts --ui-language only once");
             options.ui_language = ParseUiLanguage(args[++index]);
-            if (!options.ui_language) throw std::invalid_argument("--ui-language requires zh-CN or en-US");
+            if (!options.ui_language) throw std::invalid_argument("--ui-language requires a supported language tag");
         } else if (option == "--window-title" && index + 1 < args.size()) {
             if (options.window_title.has_value())
                 throw std::invalid_argument("run-apk accepts --window-title only once");

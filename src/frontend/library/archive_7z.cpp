@@ -15,15 +15,21 @@ namespace {
     switch (error.code) {
     case OGPLAY_7Z_CANCELLED: ThrowImportCancelled();
     case OGPLAY_7Z_ENCRYPTED:
-        throw LibraryError(LibraryErrorCode::invalid_argument, "暂不支持加密的压缩包，请先解压。");
+        throw LibraryError(LibraryErrorCode::invalid_argument, "encrypted archives are not supported",
+                           UiMessage{"host.error.archiveEncrypted"});
     case OGPLAY_7Z_MULTIVOLUME:
-        throw LibraryError(LibraryErrorCode::invalid_argument, "暂不支持分卷压缩包，请先合并或解压。");
+        throw LibraryError(LibraryErrorCode::invalid_argument, "multi-volume archives are not supported",
+                           UiMessage{"host.error.archiveMultiVolume"});
     case OGPLAY_7Z_UNSUPPORTED:
         throw LibraryError(LibraryErrorCode::invalid_argument,
-                           "压缩包使用了暂不支持的压缩方法：" + std::string(error.message));
+                           "unsupported archive compression method: " + std::string(error.message),
+                           UiMessage{"host.error.archiveMethod", {{"detail", std::string(error.message)}}});
     case OGPLAY_7Z_IO:
     case OGPLAY_7Z_NO_MEMORY: throw LibraryError(LibraryErrorCode::io_error, error.message);
-    default: throw LibraryError(LibraryErrorCode::invalid_argument, "压缩包无法解码：" + std::string(error.message));
+    default:
+        throw LibraryError(LibraryErrorCode::invalid_argument,
+                           "cannot decode the archive: " + std::string(error.message),
+                           UiMessage{"host.error.archiveDecode", {{"detail", std::string(error.message)}}});
     }
 }
 
@@ -100,7 +106,8 @@ public:
         try {
             reader_.file = hal::OpenHostReadFile(path);
         } catch (const std::exception&) {
-            throw LibraryError(LibraryErrorCode::not_found, "无法打开所选文件。", path);
+            throw LibraryError(LibraryErrorCode::not_found, "cannot open the chosen file",
+                               UiMessage{"host.error.openFile"}, path);
         }
         const ogplay_7z_input input{&reader_, reader_.file->Info().size, ArchiveReader::Read};
         ogplay_7z_error error{};
@@ -121,7 +128,8 @@ public:
             const auto normalized = NormalizeArchivePath(name);
             if (!normalized)
                 throw LibraryError(LibraryErrorCode::invalid_argument,
-                                   "压缩包含不安全的路径：" + DecodeArchiveName(name));
+                                   "unsafe archive path: " + DecodeArchiveName(name),
+                                   UiMessage{"host.error.archiveUnsafePath", {{"path", DecodeArchiveName(name)}}});
             if (entry.directory || entry.special || name.ends_with('/') || name.ends_with('\\') || normalized->empty())
                 continue;
             files_.push_back({*normalized, entry.size});
@@ -137,7 +145,8 @@ public:
         state.progress = progress;
         for (const auto& item : files) {
             if (!state.files.emplace(indices_.at(item.index), &item).second)
-                throw LibraryError(LibraryErrorCode::invalid_argument, "压缩包里有重复的文件。", item.destination);
+                throw LibraryError(LibraryErrorCode::invalid_argument, "duplicate file in the archive",
+                                   UiMessage{"host.error.archiveDuplicate"}, item.destination);
         }
         std::vector<uint32_t> indices;
         indices.reserve(state.files.size());

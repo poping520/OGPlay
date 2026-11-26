@@ -205,8 +205,8 @@ note = "库启动的游戏进程开局写未完成的 last-run.json，结束写�
 
 [frontend.gui_language]
 status = "partial"
-test = "tests/frontend/ui_text_tests.cpp; tests/frontend/game_run_args_tests.cpp; tests/frontend/gui_launch_tests.cpp; tests/frontend/gui_rpc_tests.cpp; tests/frontend/control_requests_tests.cpp; webui/apps/gui/shared/i18n.test.ts; webui/apps/controls/i18n.test.ts; frontend.gui_webui_manifest; frontend.gui_smoke; frontend.gui_library_smoke"
-note = "启动器、宿主状态/错误、原生菜单/托盘/选择器、游戏关闭确认及按键页支持中英文；language 默认 system，由宿主解析首选语言，显式语言保留。保存后菜单即时更新；独立 locale 应用语言默认跟随界面，也可固定中英文并按实例覆盖，启动后固定。Dashboard 页面未翻译；CLI、日志、系统控件文字不接翻译。Windows 构建及定向验证已通过，原生外壳交互待完整验收。"
+test = "tests/frontend/ui_text_tests.cpp; webui/packages/ui-kit/icu.test.ts; tests/frontend/game_run_args_tests.cpp; tests/frontend/gui_launch_tests.cpp; tests/frontend/gui_rpc_tests.cpp; tests/frontend/control_requests_tests.cpp; webui/apps/gui/shared/i18n.test.ts; webui/apps/controls/i18n.test.ts; frontend.gui_webui_manifest; frontend.gui_smoke; frontend.gui_library_smoke"
+note = "启动器、宿主状态/错误、原生菜单/托盘/选择器、游戏关闭确认及按键页支持简繁中、英、日、韩、俄、西、巴葡、法九种语言（Android 启动壳字符串同步）。Web UI 以语义 ID 取 ICU 消息（含复数），宿主只发消息 ID、参数与设置 schema 代码；language 默认 system，按首选 locale 归入最接近语言；应用语言默认跟随界面，可按实例固定。新增七语为机器翻译，未经母语审校；Dashboard 未翻译，CLI、日志不接翻译；非中英界面未做长文本截断检查，原生外壳交互待完整验收。"
 
 [frontend.gui_shell]
 status = "complete"

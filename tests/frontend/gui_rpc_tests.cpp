@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <set>
 #include <thread>
 #include "ogplay/app/encoding.h"
 #include "frontend/gui/rpc.h"
@@ -48,7 +49,7 @@ struct Fixture {
          },
          [this](const auto& value) {
              if (fail_template_launch)
-                 throw frontend::GuiTextError("图标素材缺失：{path}", {{"path", "/missing/icon.png"}});
+                 throw frontend::GuiTextError({"host.error.iconMissing", {{"path", "/missing/icon.png"}}});
              if (fail_launch) throw std::runtime_error("spawn failed");
              ++launches;
              plan = value;
@@ -802,7 +803,8 @@ TEST_CASE("GUI import takes the APK and data pack out of a game archive") {
     const auto failure = poll("3");
     const auto failed = failure.Root().Member("result");
     REQUIRE(failed->Member("state")->String() == "failed");
-    CHECK(failed->Member("message")->String() == "压缩包使用了暂不支持的压缩方法：Reduce1");
+    CHECK(failed->Member("failure")->Member("id")->String() == "host.error.archiveMethod");
+    CHECK(failed->Member("failure")->Member("params")->Member("detail")->String() == "Reduce1");
     CHECK_FALSE(failed->Member("progress"));
     CHECK(fixture.store.LoadEntries().size() == imported_count);
 }
@@ -1098,7 +1100,7 @@ TEST_CASE("INP-7 GUI opens the key editor only for a running instance whose edit
     REQUIRE(response.Root().Member("error").has_value());
     CHECK(response.Root().Member("error")->Member("code")->Integer() == -32004);
     fixture.dashboards.push_back(
-        {"game", 123, std::nullopt, "disabled", "MCP off", "starting", "等待按键设置服务启动。"});
+        {"game", 123, std::nullopt, "disabled", "MCP off", "starting", "host.keyEditor.waiting"});
     CHECK(open().Root().Member("error")->Member("code")->Integer() == -32002);
     CHECK(fixture.opened_editor.empty());
     fixture.dashboards[0].editor_status = "ready";
@@ -1150,16 +1152,16 @@ TEST_CASE("gui_rpc system_language accompanies get and set and notifies only on 
     CHECK(std::get<std::string>(Setting(LoadLibraryConfig(fixture.root), "language")) == "system");
 }
 
-TEST_CASE("gui_rpc error params keep the template separate from status values") {
+TEST_CASE("gui_rpc errors name the message and the next step, with parameters kept apart") {
     Fixture fixture;
     fixture.context.running_packages = {"org.example.game"};
     const auto document = Decode(fixture.rpc.Handle(
         R"({"jsonrpc":"2.0","id":3,"method":"library.launch","params":{"installation_id":"org.example.game"}})"));
     const auto error = document.Root().Member("error");
     REQUIRE(error);
-    CHECK(error->Member("message")->String() == "游戏当前不可启动（{status}）");
+    CHECK(error->Member("message_id")->String() == "host.error.notLaunchable");
     CHECK(error->Member("params")->Member("status")->String() == "running");
-    CHECK(error->Member("next_step")->String() == "检查运行状态、Profile 和数据包目录。");
+    CHECK(error->Member("next_step_id")->String() == "host.next.checkLaunchState");
     CHECK(fixture.launches == 0);
     fixture.context.running_packages.clear();
     fixture.fail_template_launch = true;
@@ -1167,7 +1169,8 @@ TEST_CASE("gui_rpc error params keep the template separate from status values") 
         R"({"jsonrpc":"2.0","id":4,"method":"library.launch","params":{"installation_id":"org.example.game"}})"));
     const auto failure = exception.Root().Member("error");
     REQUIRE(failure);
-    CHECK(failure->Member("message")->String() == "图标素材缺失：{path}");
+    CHECK(failure->Member("message_id")->String() == "host.error.iconMissing");
+    CHECK(failure->Member("next_step_id")->String() == "host.next.checkLibrary");
     CHECK(failure->Member("params")->Member("path")->String() == "/missing/icon.png");
 }
 
@@ -1310,4 +1313,34 @@ TEST_CASE("gui_platform android leaves out desktop and developer capabilities") 
     CHECK(fixture.plan->control_token.empty());
     CHECK_FALSE(fixture.plan->key_editor_port.has_value());
     CHECK_FALSE(fixture.plan->mcp_port.has_value());
+}
+
+TEST_CASE("gui_rpc setting schema has its wording in the web UI source catalog") {
+    // The host sends keys and codes only; settings.ts words them as setting.<key>.label/.defaultLabel/.hint,
+    // setting.unit.<unit> and setting.reserved.<reserved>.
+    std::ifstream file(std::filesystem::path(OGPLAY_SOURCE_DIR) / "webui/apps/gui/shared/messages/zh-CN.ts");
+    REQUIRE(file);
+    const std::string catalog{std::istreambuf_iterator<char>(file), {}};
+    const auto has = [&](const std::string& id) { return catalog.find("\"" + id + "\":") != std::string::npos; };
+    std::set<std::string> keys;
+    for (const auto* definitions : {&app::SettingDefinitions(), &app::GameSettingDefinitions()}) {
+        for (const auto& field : *definitions) {
+            keys.insert(field.key);
+            CHECK_MESSAGE(has("setting." + field.key + ".label"), field.key);
+            if (field.global_default) CHECK_MESSAGE(has("setting." + field.key + ".defaultLabel"), field.key);
+            if (!field.unit.empty()) CHECK_MESSAGE(has("setting.unit." + field.unit), field.key);
+            if (!field.reserved.empty()) CHECK_MESSAGE(has("setting.reserved." + field.reserved), field.key);
+            CHECK(field.label.find_first_of("\xE4\xE5\xE6\xE7\xE8\xE9") == std::string::npos);  // English for CLI
+        }
+    }
+    for (const auto& field : app::GameSettingDefinitions())
+        CHECK_FALSE(field.global_default);
+    // Every field message belongs to a field the host still has.
+    for (std::size_t at = catalog.find("\"setting."); at != std::string::npos;
+         at = catalog.find("\"setting.", at + 1)) {
+        const auto start = at + 9, end = catalog.find('.', start);
+        const auto key = catalog.substr(start, end - start);
+        if (key == "unit" || key == "reserved" || key == "choice") continue;
+        CHECK_MESSAGE(keys.contains(key), key);
+    }
 }

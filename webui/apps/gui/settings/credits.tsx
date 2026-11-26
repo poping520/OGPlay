@@ -23,8 +23,8 @@ function dependencyCount(node: CreditNode): number {
 
 export function creditSummary(node: CreditNode): string {
   const count = dependencyCount(node);
-  return [node.project.version, node.project.license ?? t('多种许可证'),
-    count > 1 ? t('{n} 个依赖', { n: count }) : count ? t('1 个依赖') : ''].filter(Boolean).join(' · ');
+  return [node.project.version, node.project.license ?? t('settings.credits.severalLicenses'),
+    count ? t('settings.credits.dependencyCount', { n: count }) : ''].filter(Boolean).join(' · ');
 }
 
 function Project({ node }: { node: CreditNode }) {
@@ -39,11 +39,11 @@ function Project({ node }: { node: CreditNode }) {
   return <details class="fact credit" onToggle={event => load((event.currentTarget as HTMLDetailsElement).open)}>
     <summary><span>{project.name}</span><small>{creditSummary(node)}</small></summary>
     {project.original_url ? <>
-      <p class="credit-url">{t('当前使用仓库')}：{project.url}</p>
-      <p class="credit-url">{t('原始仓库')}：{project.original_url}</p>
+      <p class="credit-url">{t('settings.credits.currentRepo')}：{project.url}</p>
+      <p class="credit-url">{t('settings.credits.originalRepo')}：{project.original_url}</p>
     </> : <p class="credit-url">{project.url}</p>}
-    {children.length > 0 && <><h5>{t('依赖项')}</h5>{children.map(child => <Project key={child.project.id} node={child} />)}<h5>{t('许可证')}</h5></>}
-    {error ? <pre>{error}</pre> : !notices ? <pre>{t('正在读取…')}</pre> : notices.map(notice =>
+    {children.length > 0 && <><h5>{t('settings.credits.dependencies')}</h5>{children.map(child => <Project key={child.project.id} node={child} />)}<h5>{t('settings.credits.license')}</h5></>}
+    {error ? <pre>{error}</pre> : !notices ? <pre>{t('common.reading')}</pre> : notices.map(notice =>
       <div key={notice.title}>{notices.length > 1 && <h5>{notice.title}</h5>}<pre>{notice.text}</pre></div>)}
   </details>;
 }
@@ -55,8 +55,8 @@ export function Credits() {
     rpc<{ projects: CreditProject[] }>('about.credits').then(result => setProjects(result.projects),
       reason => setError(reason instanceof Error ? reason.message : String(reason)));
   }, []);
-  return <Note icon="info" title={t('开源致谢')}>
-    <p>{t('OGPlay 使用了以下开源项目，感谢它们的作者与贡献者。展开可查看许可证全文及其依赖的项目。')}</p>
+  return <Note icon="info" title={t('settings.credits.title')}>
+    <p>{t('settings.credits.intro')}</p>
     {error ? <p class="credit-error">{error}</p> : projects && creditTree(projects).map(node => <Project key={node.project.id} node={node} />)}
   </Note>;
 }

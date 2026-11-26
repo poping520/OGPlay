@@ -4,65 +4,65 @@ import { t } from '../shared/i18n';
 
 export type Filter = 'all' | 'launchable' | 'attention';
 export type Sort = 'name' | 'newest' | 'oldest';
-export const filters: readonly (readonly [Filter, string])[] = [['all', '全部'], ['launchable', '可启动'], ['attention', '待排查']];
+export const filters: readonly (readonly [Filter, string])[] = [['all', 'library.filter.all'], ['launchable', 'library.filter.launchable'], ['attention', 'library.filter.attention']];
 export const statuses: Record<string, { label: string; tone: string }> = {
-  damaged: { label: '条目损坏', tone: 'danger' },
-  profile_catalog_unavailable: { label: 'Profile 不可用', tone: 'danger' },
-  missing_external: { label: '缺数据包', tone: 'warning' },
-  running: { label: '运行中', tone: 'running' },
-  ready: { label: '就绪', tone: 'ready' },
+  damaged: { label: 'library.status.damaged', tone: 'danger' },
+  profile_catalog_unavailable: { label: 'library.status.profileUnavailable', tone: 'danger' },
+  missing_external: { label: 'library.status.missingDataPack', tone: 'warning' },
+  running: { label: 'library.status.running', tone: 'running' },
+  ready: { label: 'library.status.ready', tone: 'ready' },
 };
 // Host status as shown: translated label and LED tone; an unknown status reads as a warning.
 export function statusOf(item: LibraryItem): { label: string; tone: string } {
-  const status = statuses[item.status] ?? { label: '状态未知', tone: 'warning' };
+  const status = statuses[item.status] ?? { label: 'library.status.unknown', tone: 'warning' };
   return { ...status, label: t(status.label) };
 }
 export interface Worded { value: string; detail: string }
 // The host sends codes, ids and paths; every sentence about them is written here, in the launcher language.
 export function externalText(item: LibraryItem): Worded {
   const { status, value: path, owned } = item.external;
-  if (status === 'ready') return { value: t('已就绪'), detail: owned ? t('已复制到游戏库：{path}', { path }) : t('引用原目录：{path}', { path }) };
-  if (status === 'missing') return { value: t('缺失'), detail: t('记录的数据包目录不可用：{path}', { path }) };
-  if (status === 'not_required') return { value: t('未指定'), detail: t('可按需选择外部数据目录。') };
-  return { value: t('无法判断'), detail: t('库条目元数据不可用。') };
+  if (status === 'ready') return { value: t('library.condition.ready'), detail: owned ? t('library.condition.copied', { path }) : t('library.condition.linked', { path }) };
+  if (status === 'missing') return { value: t('library.condition.missing'), detail: t('library.condition.externalUnavailable', { path }) };
+  if (status === 'not_required') return { value: t('library.condition.notSet'), detail: t('library.condition.chooseExternal') };
+  return { value: t('library.condition.unknown'), detail: t('library.condition.metadataUnavailable') };
 }
 /** Size text for one install-info storage cell: measuring, failed, nothing there yet (`absent`), or the byte count. */
 export function storageText(storage: LibraryStorage | 'failed' | undefined, bytes: number | null | undefined, absent: string): string {
-  if (storage === undefined) return t('计算中…');
-  if (storage === 'failed') return t('无法读取');
+  if (storage === undefined) return t('library.info.measuring');
+  if (storage === 'failed') return t('library.info.unreadable');
   return bytes == null ? t(absent) : formatBytes(bytes);
 }
 export function profileText(item: LibraryItem): Worded | null {
   if (!item.profile) return null;
   const { status, value } = item.profile;
-  if (status === 'ready') return { value, detail: t('精确 Profile 已匹配。') };
-  if (status === 'missing') return { value, detail: t('记录的 Profile 在所选目录中不存在。') };
-  return { value: t('无法判断'), detail: t('Profile 目录不可用：{error}', { error: value }) };
+  if (status === 'ready') return { value, detail: t('library.condition.profileMatched') };
+  if (status === 'missing') return { value, detail: t('library.condition.profileMissing') };
+  return { value: t('library.condition.unknown'), detail: t('library.condition.profilesUnavailable', { error: value }) };
 }
 /** Why the entry needs attention or cannot start now; empty when it is ready. */
 export function statusDetail(item: LibraryItem): string {
   switch (item.status) {
-  case 'damaged': return t('库条目损坏：{reason}。可在详情中移除后重新导入。', { reason: item.damage_reason ?? t('元数据不可用') });
+  case 'damaged': return t('library.condition.damaged', { reason: item.damage_reason ?? t('library.status.metadataUnavailable') });
   case 'profile_catalog_unavailable': return item.profile?.status === 'missing'
-    ? t('记录的 Profile {id} 在所选目录中不存在。请在设置中选择有效目录或恢复内置数据。', { id: item.profile.value })
-    : t('Profile 目录不可用：{error}。请在设置中选择有效目录或恢复内置数据。', { error: item.profile?.value ?? '' });
+    ? t('library.condition.profileMissingFix', { id: item.profile.value })
+    : t('library.condition.profilesUnavailableFix', { error: item.profile?.value ?? '' });
   case 'missing_external': return item.external.owned
-    ? t('游戏库中的数据包缺失：{path}。请重新选择目录。', { path: item.external.value })
-    : t('记录的数据包目录不可用：{path}。请重新选择目录。', { path: item.external.value });
-  case 'running': return t('游戏正在运行，退出后才能再次启动。');
+    ? t('library.condition.copiedMissingFix', { path: item.external.value })
+    : t('library.condition.externalUnavailableFix', { path: item.external.value });
+  case 'running': return t('library.condition.running');
   default: return '';
   }
 }
 const runOutcomes: Record<string, string> = {
-  startup_failed: '上次运行启动失败', fault: '上次运行出错', crashed: '上次运行异常退出',
-  no_frame: '上次运行没有画面', interrupted: '上次运行进程意外终止',
+  startup_failed: 'library.lastRun.failedToStart', fault: 'library.lastRun.error', crashed: 'library.lastRun.crashed',
+  no_frame: 'library.lastRun.noFrames', interrupted: 'library.lastRun.cutOff',
 };
 /** The failed last run in the launcher language: what happened and when; the host's error text is only the tooltip.
  *  Null when the last run went well. */
 export function lastRunText(item: LibraryItem): { label: string; error: string } | null {
   const run = item.last_run;
   if (!run?.failed) return null;
-  const outcome = t(runOutcomes[run.outcome] ?? '上次运行退出时出错');
+  const outcome = t(runOutcomes[run.outcome] ?? 'library.lastRun.exitError');
   const time = Date.parse(run.ended_at ?? run.started_at);
   const when = Number.isFinite(time)
     ? new Date(time).toLocaleString(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
@@ -95,14 +95,14 @@ export function visibleItems(items: LibraryItem[], query: string, filter: Filter
   });
 }
 export function versionLabel(item: LibraryItem): string {
-  return item.version_code === null ? t('元数据不可用') :
+  return item.version_code === null ? t('library.status.metadataUnavailable') :
     item.version_name ? `${item.version_name} (${item.version_code})` : `versionCode ${item.version_code}`;
 }
 export function validatePackageSelection(files: Pick<File, 'name' | 'size'>[]): string | null {
-  if (files.length !== 1) return t('请一次选择一个 APK、XAPK、APKM 或 APKS 文件。');
-  if (/\.(zip|rar|gpk)$/i.test(files[0].name)) return t('游戏压缩包请点“导入游戏”后选择文件导入。');
-  if (!/\.(apk|xapk|apkm|apks)$/i.test(files[0].name)) return t('文件格式不支持，请选择 APK、XAPK、APKM 或 APKS。');
-  if (files[0].size === 0) return t('文件为空，请选择完整的安装包。');
+  if (files.length !== 1) return t('library.pick.oneAtATime');
+  if (/\.(zip|rar|gpk)$/i.test(files[0].name)) return t('import.gameArchiveHint');
+  if (!/\.(apk|xapk|apkm|apks)$/i.test(files[0].name)) return t('library.pick.unsupportedType');
+  if (files[0].size === 0) return t('library.pick.empty');
   return null;
 }
 // Wraps around so L/R and arrow keys can cycle without dead ends.

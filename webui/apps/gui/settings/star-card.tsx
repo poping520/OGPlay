@@ -21,8 +21,8 @@ export function StarCard({ onError }: { onError: (message: string) => void }) {
       {[0, 1, 2].map(index => <svg key={index} class={`star-spark s${index}`} viewBox="0 0 10 10"><path d={SPARK} /></svg>)}
     </span>
     <span class="star-copy">
-      <b>{t('在 GitHub 上为 OGPlay 点个 Star')}</b>
-      <small>{t('OGPlay 是开源项目，你的 Star 是对它最好的支持。')}</small>
+      <b>{t('settings.star.title')}</b>
+      <small>{t('settings.star.body')}</small>
     </span>
     <span class="star-cta">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d={GITHUB} /></svg>

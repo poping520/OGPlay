@@ -4,10 +4,10 @@
 `app::ParseGameRunArgs` 接受以 APK 路径开头的 UTF-8 参数，不依赖入口名称或读取 payload。
 `app::FormatGameRunArgs` 与解析按选项值严格往返；公开选项不暴露 runtime 类型。
 `app::RunGame` 在 app 层完成 SDL bootstrap/运行租约/日志装配，内部 `RunGame` 消费选项，按宿主 EXE 定位 payload 并编排 session；兼容行为仍由下层实现。
-`--ui-language <zh-CN|en-US>` 只影响宿主界面；重复、非法或缺值明确失败，缺省使用系统语言。
+`--ui-language <标签>`（ui_text.h 的九种）只影响宿主界面；重复、非法或缺值明确失败，缺省使用系统语言。
 应用启动时固定解析结果供关闭确认框与 control.get 使用，不跟随启动器后续切换。
-`--app-language <ui|zh-CN|en-US>` 独立选择模拟 Android 的语言，缺省或 ui 跟随本次解析的界面语言；
-在 VM/资源创建前注入同源的 locale_language/locale_region，供 Java Locale、资源与 NDK 配置及只读语言属性使用。应用没有对应翻译时按 Android 资源回退规则处理。
+`--app-language <ui|标签>` 独立选择模拟 Android 的语言，缺省或 ui 跟随本次解析的界面语言；
+在 VM/资源创建前按标签的 语言-地区 注入同源的 locale_language/locale_region，供 Java Locale、资源与 NDK 配置及只读语言属性使用。应用没有对应翻译时按 Android 资源回退规则处理。
 用户关闭请求经 HAL 确认后才停止，确认框文案来自 app 文案表；取消恢复输入/音频推进。
 非故障停止在调用 guest 关闭回调前先隐藏窗口，避免回调期间停在冻结画面；隐藏失败只记 warn。
 

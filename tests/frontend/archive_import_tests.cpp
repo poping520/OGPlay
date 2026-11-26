@@ -333,6 +333,6 @@ TEST_CASE("archive 7z streams selected files from a solid LZMA2 and BCJ2 block")
 TEST_CASE("archive 7z refuses encrypted entries and encrypted headers") {
     const auto fixtures = std::filesystem::path(OGPLAY_SOURCE_DIR) / "tests/fixtures/archive_import";
     for (const auto name : {"encrypted.7z", "encrypted-header.7z"})
-        CHECK_THROWS_WITH_AS(static_cast<void>(OpenArchive(fixtures / name)), "暂不支持加密的压缩包，请先解压。",
+        CHECK_THROWS_WITH_AS(static_cast<void>(OpenArchive(fixtures / name)), "encrypted archives are not supported",
                              LibraryError);
 }

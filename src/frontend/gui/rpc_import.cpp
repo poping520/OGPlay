@@ -1,4 +1,5 @@
 #include "frontend/gui/rpc.h"
+#include "frontend/gui/rpc_error.h"
 #include "ogplay/app/data_hint.h"
 #include "ogplay/app/encoding.h"
 #include <algorithm>
@@ -46,8 +47,7 @@ std::uint64_t Number(app::JsonValue params, std::string_view key) {
 void ApkName(std::string name) {
     std::transform(name.begin(), name.end(), name.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    if (!name.ends_with(".apk"))
-        throw std::invalid_argument("当前仅支持单体 APK；请先提取完整 APK，分包安装尚未实现。");
+    if (!name.ends_with(".apk")) throw GuiArgumentError({"host.error.splitApk"});
 }
 
 // Summarizes a candidate data directory for the mount preview: a few top-level
@@ -55,11 +55,11 @@ void ApkName(std::string name) {
 void DescribeDataDirectory(app::JsonWriter& writer, app::JsonWriter::Value result, const std::filesystem::path& path) {
     constexpr std::size_t shown_entries = 8, scan_limit = 200000;
     std::error_code error;
-    if (!std::filesystem::is_directory(path, error) || error) throw std::invalid_argument("数据包目录不可用。");
+    if (!std::filesystem::is_directory(path, error) || error) throw GuiArgumentError({"host.error.dataUnavailable"});
     std::vector<std::pair<bool, std::string>> top;
     for (std::filesystem::directory_iterator it(path, error), end; !error && it != end; it.increment(error))
         top.emplace_back(!it->is_directory(error), Text(it->path().filename()));
-    if (error) throw std::runtime_error("无法读取数据包目录。");
+    if (error) throw GuiTextError({"host.error.dataUnreadable"});
     std::sort(top.begin(), top.end());
     std::uint64_t files{}, bytes{}, scanned{};
     bool truncated{};
@@ -73,7 +73,7 @@ void DescribeDataDirectory(app::JsonWriter& writer, app::JsonWriter::Value resul
             bytes += it->file_size(error);
         }
     }
-    if (error) throw std::runtime_error("无法统计数据包目录。");
+    if (error) throw GuiTextError({"host.error.dataUnmeasurable"});
     writer.AddString(result, "path", Text(std::filesystem::absolute(path).lexically_normal()));
     const auto entries = writer.Array();
     for (std::size_t index = 0; index < top.size() && index < shown_entries; ++index) {
@@ -244,6 +244,7 @@ struct GuiRpcService::ImportState {
     std::uint64_t serial{};
     std::string job, state = "idle", failure, installed;
     std::optional<LibraryErrorCode> failure_code;
+    std::optional<app::UiMessage> failure_ui;
     std::unique_ptr<ImportWorkDirectory> work;  // the job's snapshot and extracted data, swept if the process dies
     std::filesystem::path directory;
     std::uint64_t expected{}, received{};
@@ -315,6 +316,7 @@ struct GuiRpcService::ImportState {
             }
             failure_code = error.Code();
             failure = error.what();
+            if (const auto* ui = app::FindUiMessage(error)) failure_ui = *ui;
             state = "failed";
             Clean();
         } catch (const std::exception& error) {
@@ -324,6 +326,7 @@ struct GuiRpcService::ImportState {
                 return;
             }
             failure = error.what();
+            if (const auto* ui = app::FindUiMessage(error)) failure_ui = *ui;
             state = "failed";
             Clean();
         }
@@ -332,12 +335,13 @@ struct GuiRpcService::ImportState {
     void Reserve(const std::filesystem::path& root) {
         Update();
         if (analyzing.valid() || committing.valid() || state == "ready" || state == "uploading")
-            throw std::runtime_error("已有导入任务，请完成或取消后重试。");
+            throw GuiTextError({"host.error.importInProgress"});
         Clean();
         work = std::make_unique<ImportWorkDirectory>(root);
         directory = work->Path();
         job = std::to_string(++serial);
         failure_code.reset();
+        failure_ui.reset();
         failure.clear();
         installed.clear();
         cancelled = false;
@@ -382,8 +386,8 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
     if (method == "dialog.pick") {
         const auto kind = String(params, "kind");
         if (kind != "file" && kind != "directory") throw std::invalid_argument("kind must be file or directory");
-        if (!host_.pick) throw std::runtime_error("文件选择器不可用。");
-        if (job.dialog_pending) throw std::runtime_error("请先关闭当前文件选择器。");
+        if (!host_.pick) throw GuiTextError({"host.error.noPicker"});
+        if (job.dialog_pending) throw GuiTextError({"host.error.pickerOpen"});
         job.picking = host_.pick(kind == "directory");
         job.dialog = std::to_string(++job.serial);
         job.dialog_pending = true;
@@ -426,8 +430,7 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
         // A data pack picked apart from the APK, planned for the analyzed package; no path detaches it.
         if (String(params, "job") != job.job || job.job.empty()) throw std::invalid_argument("unknown or expired job");
         job.Update();
-        if (job.state != "ready" || !job.analysis || job.cancelled)
-            throw std::runtime_error("分析尚未完成或任务已提交。");
+        if (job.state != "ready" || !job.analysis || job.cancelled) throw GuiTextError({"host.error.notReady"});
         job.data_source.reset();
         job.data_plan = {};
         job.data_directory.reset();
@@ -449,17 +452,16 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                 if (!source) source = OpenDataDirectory(path, store_.Root());
                 auto planned = PlanDataDirectory(source->Files(), base, package);
                 if (planned.plan.data.empty() && planned.plan.extras.empty())
-                    throw std::invalid_argument("数据包目录里没有文件。");
+                    throw GuiArgumentError({"host.error.dataEmpty"});
                 plan = std::move(planned.plan);
                 if (!planned.package.empty()) owner = std::move(planned.package);
             } else {
                 const auto kind = DetectImportSource(path);
-                if (kind == ImportSourceKind::apk) throw std::invalid_argument("这是 APK，请选择数据包压缩包。");
-                if (kind == ImportSourceKind::unknown)
-                    throw std::invalid_argument("请选择 ZIP/RAR/7z 格式的数据包压缩包。");
+                if (kind == ImportSourceKind::apk) throw GuiArgumentError({"host.error.isApk"});
+                if (kind == ImportSourceKind::unknown) throw GuiArgumentError({"host.error.chooseDataArchive"});
                 source = OpenArchive(path);
                 plan = PlanArchive(source->Files(), package);
-                if (plan.data.empty() && plan.extras.empty()) throw std::invalid_argument("压缩包里没有可导入的数据。");
+                if (plan.data.empty() && plan.extras.empty()) throw GuiArgumentError({"host.error.archiveNothing"});
             }
             writer.AddString(result, "kind", directory ? "directory" : "archive");
             if (owner)
@@ -473,7 +475,7 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
             job.data_base = std::move(base);
         }
     } else {
-        if (!host_.analyze || !host_.timestamp) throw std::runtime_error("导入服务不可用。");
+        if (!host_.analyze || !host_.timestamp) throw GuiTextError({"host.error.noImportService"});
         if (method == "library.analyze") {
             // An APK, or a game archive (ZIP/RAR/7z) holding one: told apart by content, not by name.
             const auto source = Path(String(params, "path"));
@@ -484,12 +486,11 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
             job.analyzing = std::async(std::launch::async, [snapshot, source, inner, analyze = host_.analyze] {
                 Analyzed result;
                 const auto kind = DetectImportSource(source);
-                if (kind == ImportSourceKind::unknown)
-                    throw std::invalid_argument("请选择 APK，或内含 APK 的 ZIP/RAR/7z 压缩包。");
+                if (kind == ImportSourceKind::unknown) throw GuiArgumentError({"host.error.chooseApkOrArchive"});
                 if (kind == ImportSourceKind::apk) {
                     if (inner) throw std::invalid_argument("apk applies to an archive");
                     const auto size = ImportFileSize(source);
-                    if (size == 0 || size > maximum_bytes) throw std::invalid_argument("APK 必须非空且不超过 1 GB。");
+                    if (size == 0 || size > maximum_bytes) throw GuiArgumentError({"host.error.apkSize"});
                     CopyImportFile(source, snapshot);
                     result.analysis = analyze(snapshot);
                     return result;
@@ -497,12 +498,12 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                 std::shared_ptr<ImportSource> archive = OpenArchive(source);
                 const auto& files = archive->Files();
                 const auto first = PlanArchive(files, {});
-                if (first.apks.empty()) throw std::invalid_argument("压缩包里没有找到 APK。");
+                if (first.apks.empty()) throw GuiArgumentError({"host.error.archiveNoApk"});
                 result.apk = first.apks.front();
                 if (inner) {
                     const auto found = std::find_if(first.apks.begin(), first.apks.end(),
                                                     [&](std::size_t index) { return files[index].path == *inner; });
-                    if (found == first.apks.end()) throw std::invalid_argument("压缩包里没有所选的 APK。");
+                    if (found == first.apks.end()) throw GuiArgumentError({"host.error.archiveApkMissing"});
                     result.apk = *found;
                 }
                 const ImportExtraction extraction{result.apk, snapshot};
@@ -517,12 +518,12 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
             const auto source = String(params, "name");
             ApkName(source);
             const auto size = Number(params, "size");
-            if (size == 0 || size > maximum_bytes) throw std::invalid_argument("APK 必须非空且不超过 1 GB。");
+            if (size == 0 || size > maximum_bytes) throw GuiArgumentError({"host.error.apkSize"});
             job.Reserve(store_.Root());
             const auto snapshot = job.directory / "source.apk";
             {
                 std::ofstream stream(snapshot, std::ios::binary);
-                if (!stream) throw std::runtime_error("无法创建导入临时文件。");
+                if (!stream) throw GuiTextError({"host.error.tempFile"});
                 job.expected = size;
                 job.state = "uploading";
             }
@@ -531,13 +532,13 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                 throw std::invalid_argument("unknown or expired job");
             job.Update();
             if (method == "library.job.cancel") {
-                if (job.state == "imported") throw std::runtime_error("已加入游戏库，不能取消。");
+                if (job.state == "imported") throw GuiTextError({"host.error.alreadyAdded"});
                 // Copying data honors the request; a finished APK-only commit may still win.
                 if (job.committing.valid() && job.progress) job.progress->cancel_requested = true;
                 job.cancelled = true;
                 job.Update();
             } else if (method == "library.upload.chunk") {
-                if (job.state != "uploading") throw std::runtime_error("任务不接受文件分块。");
+                if (job.state != "uploading") throw GuiTextError({"host.error.noChunks"});
                 const auto offset = Number(params, "offset");
                 const auto data = String(params, "data");
                 if (data.size() > 262144 || offset != job.received)
@@ -551,7 +552,7 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                 if (!stream) {
                     job.state = "failed";
                     job.Clean();
-                    throw std::runtime_error("写入安装包失败，请重新选择。");
+                    throw GuiTextError({"host.error.writePackage"});
                 }
                 job.received += bytes->size();
             } else if (method == "library.upload.finish") {
@@ -565,10 +566,10 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                 });
                 job.state = "analyzing";
             } else if (method == "library.import") {
-                if (job.state != "ready" || !job.analysis) throw std::runtime_error("分析尚未完成或任务已提交。");
+                if (job.state != "ready" || !job.analysis) throw GuiTextError({"host.error.notReady"});
                 const auto confirmation = params.Member("new_instance");
                 if (!confirmation || confirmation->Bool() != true)
-                    throw std::invalid_argument("请确认另外添加一份，不覆盖现有游戏。");
+                    throw GuiArgumentError({"host.error.confirmDuplicate"});
                 std::vector<std::string> extras;
                 if (const auto list = params.Member("extras")) {
                     if (!list->IsArray()) throw std::invalid_argument("extras requires an array of names");
@@ -585,8 +586,8 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                 std::optional<std::filesystem::path> external;
                 if (params.Member("external_dir")) external = Path(String(params, "external_dir"));
                 bool archive_data = data_source && !ArchiveMount(data_plan, extras).empty();
-                if (job.data_source && !archive_data) throw std::invalid_argument("没有选中数据包里的任何内容。");
-                if (archive_data && external) throw std::invalid_argument("压缩包里已有数据包，不能另选数据包目录。");
+                if (job.data_source && !archive_data) throw GuiArgumentError({"host.error.nothingSelected"});
+                if (archive_data && external) throw GuiArgumentError({"host.error.archiveHasData"});
                 auto mode = ExternalDataMode::copy;
                 if (params.Member("external_mode")) {
                     const auto text = String(params, "external_mode");
@@ -602,7 +603,7 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                     // Linking a picked directory refers to the host directory at the planned mount, extras aside.
                     if (!job.data_directory)
                         throw std::invalid_argument("external_mode must be copy for this data pack");
-                    if (!extras.empty()) throw std::invalid_argument("引用原目录时不能另选其他内容。");
+                    if (!extras.empty()) throw GuiArgumentError({"host.error.linkNoExtras"});
                     const auto [linked, mount] = LinkedDataDirectory(*job.data_directory, job.data_base,
                                                                      job.data_source->Files(), job.data_plan);
                     external = linked;
@@ -658,11 +659,12 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
         }
         if (job.state == "failed" &&
             (job.failure_code == LibraryErrorCode::busy || job.failure_code == LibraryErrorCode::running))
-            throw LibraryError(*job.failure_code, job.failure);
+            throw LibraryError(*job.failure_code, job.failure, job.failure_ui.value_or(app::UiMessage{}));
         writer.AddString(result, "job", job.job);
         // A commit stays "importing" until the worker has actually stopped.
         writer.AddString(result, "state", job.cancelled && !job.committing.valid() ? "cancelled" : job.state);
-        if (job.state == "failed") writer.AddString(result, "message", job.failure);
+        if (job.state == "failed")
+            writer.Add(result, "failure", UiTextJson(writer, job.failure, job.failure_ui ? &*job.failure_ui : nullptr));
         if (job.state == "imported") writer.AddString(result, "installation_id", job.installed);
         if (job.state == "importing" && job.progress) {
             const auto progress = writer.Object();

@@ -222,7 +222,7 @@ private:
             app::JsonWriter writer;
             const auto result = writer.Object();
             writer.AddString(result, "message", error.what());
-            writer.AddString(result, "next_step", self.options_.rpc_failure_next_step);
+            writer.AddString(result, "next_step_id", self.options_.rpc_failure_next_step);
             static_cast<void>(webview_return(self.view_, id, 1, writer.Serialize(result).c_str()));
         }
     }

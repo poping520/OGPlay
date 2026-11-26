@@ -10,10 +10,10 @@ struct GuiDashboard final {
     std::uint64_t process_id{};
     std::optional<std::uint16_t> port;
     std::string status{"disabled"};
-    std::string detail{"启动前在游戏设置中启用 MCP。"};
+    std::string detail{"host.dashboard.needsMcp"};  // message IDs of the web UI catalogs
     // Key editor (ADR-0134): every launched game serves it; the token never leaves the host.
     std::string editor_status{"disabled"};
-    std::string editor_detail{"游戏运行后可打开按键设置。"};
+    std::string editor_detail{"host.keyEditor.afterStart"};
 };
 struct DashboardProbe final { bool ready{}; std::string detail; };
 struct KeyEditorProbe final {

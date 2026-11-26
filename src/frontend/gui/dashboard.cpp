@@ -50,9 +50,9 @@ Exchange LoopbackExchange(const std::uint16_t port, const std::string_view reque
 }  // namespace
 
 DashboardProbe DecodeDashboardProbe(std::string_view response, std::uint64_t pid) {
-    if (!pid || !response.starts_with("HTTP/1.1 200 ")) return {false, "Dashboard 服务尚未就绪。"};
+    if (!pid || !response.starts_with("HTTP/1.1 200 ")) return {false, "host.dashboard.notReady"};
     const auto body = response.find("\r\n\r\n");
-    if (body == std::string_view::npos || response.size() > 8192) return {false, "Dashboard 响应无效。"};
+    if (body == std::string_view::npos || response.size() > 8192) return {false, "host.dashboard.invalid"};
     app::JsonParseError error;
     auto doc = app::JsonDocument::ParseStrict(response.substr(body + 4), error, 8192);
     const auto root = doc ? doc->Root() : app::JsonValue{};
@@ -60,30 +60,33 @@ DashboardProbe DecodeDashboardProbe(std::string_view response, std::uint64_t pid
     const auto id = result ? result->Member("process_id") : std::nullopt;
     const auto schema = result ? result->Member("schema_version") : std::nullopt;
     if (!root.Member("jsonrpc") || root.Member("jsonrpc")->String() != "2.0" || root.Member("error") || !root.Member("id") || root.Member("id")->UnsignedInteger() != 1 || !schema || schema->UnsignedInteger() != 1)
-        return {false, "Dashboard 协议不匹配。"};
-    if (!id || id->UnsignedInteger() != pid) return {false, "端口属于其他进程，不能打开这个游戏的 Dashboard。"};
-    return {true, "Dashboard 已就绪。"};
+        return {false, "host.dashboard.protocol"};
+    if (!id || id->UnsignedInteger() != pid) return {false, "host.dashboard.otherProcess"};
+    return {true, "host.dashboard.ready"};
 }
 DashboardProbe ProbeDashboard(std::uint16_t port, std::uint64_t pid) {
-    if (!port || !pid) return {false, "运行中的游戏信息无效。"};
+    if (!port || !pid) return {false, "host.dashboard.badInstance"};
     try {
         std::string response;
         switch (LoopbackExchange(port, PostRequest(port, "/dash/rpc", R"({"jsonrpc":"2.0","id":1,"method":"dash.snapshot","params":{"sections":[]}})"), response)) {
         case Exchange::complete: return DecodeDashboardProbe(response, pid);
-        case Exchange::refused: case Exchange::send_failed: return {false, "等待 Dashboard 服务启动。"};
-        case Exchange::oversize: return {false, "Dashboard 响应超出上限。"};
-        case Exchange::disconnected: return {false, "Dashboard 连接已断开。"};
+        case Exchange::refused:
+        case Exchange::send_failed: return {false, "host.dashboard.waiting"};
+        case Exchange::oversize: return {false, "host.dashboard.oversize"};
+        case Exchange::disconnected: return {false, "host.dashboard.disconnected"};
         case Exchange::timeout: break;
         }
-        return {false, "Dashboard 服务未响应，稍后自动重试。"};
-    } catch (const std::exception&) { return {false, "Dashboard 服务不可用。"}; }
+        return {false, "host.dashboard.noResponse"};
+    } catch (const std::exception&) {
+        return {false, "host.dashboard.unavailable"};
+    }
 }
 
 KeyEditorProbe DecodeKeyEditorProbe(const std::string_view response) {
-    if (response.starts_with("HTTP/1.1 401 ")) return {false, 0, "按键设置令牌不匹配，端口可能属于其他进程。"};
-    if (!response.starts_with("HTTP/1.1 200 ")) return {false, 0, "按键设置服务尚未就绪。"};
+    if (response.starts_with("HTTP/1.1 401 ")) return {false, 0, "host.keyEditor.tokenMismatch"};
+    if (!response.starts_with("HTTP/1.1 200 ")) return {false, 0, "host.keyEditor.notReady"};
     const auto body = response.find("\r\n\r\n");
-    if (body == std::string_view::npos || response.size() > 8192) return {false, 0, "按键设置响应无效。"};
+    if (body == std::string_view::npos || response.size() > 8192) return {false, 0, "host.keyEditor.invalid"};
     app::JsonParseError error;
     auto doc = app::JsonDocument::ParseStrict(response.substr(body + 4), error, 8192);
     const auto root = doc ? doc->Root() : app::JsonValue{};
@@ -93,11 +96,11 @@ KeyEditorProbe DecodeKeyEditorProbe(const std::string_view response) {
     const auto closes = result ? result->Member("close_requests") : std::nullopt;
     const auto closed = closes ? closes->UnsignedInteger() : std::nullopt;
     if (!root.Member("id") || root.Member("id")->UnsignedInteger() != 1 || root.Member("error") || !count || !closed)
-        return {false, 0, "按键设置协议不匹配。"};
-    return {true, *count, "按键设置可用。", *closed};
+        return {false, 0, "host.keyEditor.protocol"};
+    return {true, *count, "host.keyEditor.ready", *closed};
 }
 KeyEditorProbe ProbeKeyEditor(const std::uint16_t port, const std::string_view token) {
-    if (!port || token.empty()) return {false, 0, "运行中的游戏信息无效。"};
+    if (!port || token.empty()) return {false, 0, "host.dashboard.badInstance"};
     try {
         std::string response;
         const auto request = PostRequest(port, "/controls/rpc",
@@ -105,12 +108,16 @@ KeyEditorProbe ProbeKeyEditor(const std::uint16_t port, const std::string_view t
             "Authorization: Bearer " + std::string(token) + "\r\n");
         switch (LoopbackExchange(port, request, response)) {
         case Exchange::complete: return DecodeKeyEditorProbe(response);
-        case Exchange::refused: case Exchange::send_failed: return {false, 0, "等待按键设置服务启动。"};
-        case Exchange::oversize: case Exchange::disconnected: return {false, 0, "按键设置连接异常。"};
+        case Exchange::refused:
+        case Exchange::send_failed: return {false, 0, "host.keyEditor.waiting"};
+        case Exchange::oversize:
+        case Exchange::disconnected: return {false, 0, "host.keyEditor.connection"};
         case Exchange::timeout: break;
         }
-        return {false, 0, "按键设置服务未响应，稍后自动重试。"};
-    } catch (const std::exception&) { return {false, 0, "按键设置服务不可用。"}; }
+        return {false, 0, "host.keyEditor.noResponse"};
+    } catch (const std::exception&) {
+        return {false, 0, "host.keyEditor.unavailable"};
+    }
 }
 
 std::uint16_t PickLoopbackPort() {

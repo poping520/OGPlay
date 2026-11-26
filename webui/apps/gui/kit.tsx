@@ -18,5 +18,5 @@ export const skinOf = (style: unknown): Skin => style === 'glass' ? 'glass' : 'c
 // Way back to the library, first after the brand on every full-screen view (settings pages, cartridge viewer).
 export function Back({ disabled, onClick }: { disabled?: boolean; onClick: () => void }) {
   return <button class="back" disabled={disabled} onClick={onClick}><Key>B</Key>
-    <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>{t('返回游戏库')}</button>;
+    <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>{t('common.backToLibrary')}</button>;
 }

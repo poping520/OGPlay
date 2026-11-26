@@ -16,7 +16,7 @@ export function Desk({ items, selected, select, launch, menu, importing, startIm
     {items.map(game => {
       const status = statusOf(game), tone = game.running ? 'running' : status.tone;
       return <button key={game.installation_id} class="app" data-instance={game.installation_id} aria-pressed={game.installation_id === selected}
-        aria-label={t('{name}，{status}', { name: game.display_name, status: game.running ? t('运行中') : status.label })}
+        aria-label={t('{name}，{status}', { name: game.display_name, status: game.running ? t('library.status.running') : status.label })}
         title={`${game.display_name} · ${versionLabel(game)}`}
         onClick={() => select(game.installation_id)} onDblClick={() => launch(game)}
         onContextMenu={event => { event.preventDefault(); select(game.installation_id); menu(game, event.clientX, event.clientY); }}>
@@ -26,8 +26,8 @@ export function Desk({ items, selected, select, launch, menu, importing, startIm
         <span class="name">{game.display_name}</span>
       </button>;
     })}
-    <button class="app add" title={t('导入游戏（⌘O / Ctrl+O）')} disabled={importing} onClick={startImport}>
-      <span class="app-icon" aria-hidden="true">＋</span><span class="name">{t('导入游戏')}</span></button>
+    <button class="app add" title={t('library.import.shortcut')} disabled={importing} onClick={startImport}>
+      <span class="app-icon" aria-hidden="true">＋</span><span class="name">{t('common.importGame')}</span></button>
   </div>;
 }
 

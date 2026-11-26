@@ -180,8 +180,8 @@ public:
                 if (!space_checked) {
                     const auto available = std::filesystem::space(item.destination.parent_path()).available;
                     if (available < remaining)
-                        throw LibraryError(LibraryErrorCode::io_error, "写入游戏库失败，请检查剩余空间。",
-                                           item.destination);
+                        throw LibraryError(LibraryErrorCode::io_error, "not enough free space in the library",
+                                           UiMessage{"host.error.writeLibrary"}, item.destination);
                     space_checked = true;
                 }
                 StreamCopy(source, item.destination, size, progress);
@@ -204,9 +204,11 @@ std::unique_ptr<ImportSource> OpenDataDirectory(const std::filesystem::path& dir
     const auto source = std::filesystem::weakly_canonical(directory, error);
     const auto root = error ? std::filesystem::path{} : std::filesystem::weakly_canonical(library_root, error);
     if (error || !std::filesystem::is_directory(source, error) || error)
-        throw LibraryError(LibraryErrorCode::not_found, "数据包目录不可用。", directory);
+        throw LibraryError(LibraryErrorCode::not_found, "data pack folder unavailable",
+                           UiMessage{"host.error.dataUnavailable"}, directory);
     if (source == root || Contains(source, root) || Contains(root, source))
-        throw LibraryError(LibraryErrorCode::invalid_argument, "数据包目录不能与游戏库互相包含。", directory);
+        throw LibraryError(LibraryErrorCode::invalid_argument, "data pack folder and library contain each other",
+                           UiMessage{"host.error.dataContainsLibrary"}, directory);
     return std::make_unique<DataDirectorySource>(source);
 }
 

@@ -12,10 +12,13 @@ JSON 值为所属文档的借用视图，回调结束/文档销毁后失效；�
 SDL 动态库与桌面共享；RunGame 的状态行默认 stdout，CLI library run 可选 stderr 以保持 JSON 输出。
 验证：ogplay_app_tests、frontend.app_entrypoints（含导出/导入审计）、frontend.run_apk_options 和真实 APK 有界复跑。
 
-`UiLanguage`/`UiText` 提供并排、编译期完整性校验的中英文宿主文案；只接受 zh-CN/en-US，
-`ResolveUiLanguage` 额外接受 system 并读取 HAL 首选 locale，zh 语系归中文，其余及不可用归英文。
+`UiMessage`（ui_message.h）是启动器界面消息：Web UI 目录的语义 ID 加 ICU 参数，宿主不措辞界面文字；
+`UiError<Base>` 与 LibraryError 经导出的 `UiMessageSource` 携带它，`FindUiMessage` 取出，what() 留作 CLI/日志诊断文本。
+`UiLanguage`/`UiText` 提供并排、编译期完整性校验的九语宿主文案（原生菜单、托盘、选择器、关闭确认，不经 Web UI）；只接受 zh-CN/zh-TW/en-US/ja-JP/ko-KR/ru-RU/es-ES/pt-BR/fr-FR，
+`ResolveUiLanguage` 额外接受 system 并读取 HAL 首选 locale：zh 的 Hant 或 TW/HK/MO 归繁体，其余 zh 归简体，
+ja/ko/ru/es/pt/fr 按语言归对应标签（pt 归 pt-BR），其余及不可用归英文。
 未知设置明确失败。GameRunOptions 的可选 ui_language 经 `--ui-language` 严格解析和往返，
-缺省由应用进程启动时解析系统语言；独立 app_language 经 `--app-language` 选择 zh-CN/en-US，
+缺省由应用进程启动时解析系统语言；独立 app_language 经 `--app-language` 选择同一组标签，
 缺省或 ui 跟随已解析的界面语言。语言选项在进程启动时固定，界面语言与应用语言可分别选择。
 
 GameRunOptions 显式携带 surface_width/surface_height（默认 1280×720，每边 1..4096；surface_adaptation 为 limit/follow 时

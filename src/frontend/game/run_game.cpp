@@ -479,8 +479,10 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             dex_context->ui_scaled_density = dex_context->ui_density;
             dex_context->host_display_sleep_inhibited = window->State().display_sleep_inhibited;
             dex_context->api_level = static_cast<std::int32_t>(api_level);
-            dex_context->locale_language = guest_language == app::UiLanguage::zh_CN ? "zh" : "en";
-            dex_context->locale_region = guest_language == app::UiLanguage::zh_CN ? "CN" : "US";
+            // Tags are language-REGION, the device's locale as Android reports it.
+            const auto guest_tag = app::UiLanguageTag(guest_language);
+            dex_context->locale_language = std::string(guest_tag.substr(0, 2));
+            dex_context->locale_region = std::string(guest_tag.substr(3));
             // Java File/streams resolve through the same guest VFS as
             // native fopen (external mounts, /apk assets).
             dex_context->vfs = &filesystem;
@@ -910,6 +912,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                     .cancel_label = app::Text(language, app::UiText::close_game_cancel),
                     .library_label = app::Text(language, app::UiText::close_game_library),
                     .library_message = app::Text(language, app::UiText::close_game_library_message),
+                    .language = app::UiLanguageTag(language),
                 });
             } catch (const std::exception& error) {
                 logger.Write(core::LogLevel::warn, "frontend.run_apk.close_confirmation",

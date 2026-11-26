@@ -7,6 +7,6 @@ export function Modal({ title, onDismiss, children }: { title: string; onDismiss
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { const element = dialog.current!; element.showModal(); return () => element.close(); }, []);
   return <dialog ref={dialog} aria-label={title} onCancel={event => { event.preventDefault(); onDismiss(); }}>
-    <h2>{title}</h2>{children}<div class="modal-actions"><button autoFocus onClick={onDismiss}>{t('关闭')}</button></div>
+    <h2>{title}</h2>{children}<div class="modal-actions"><button autoFocus onClick={onDismiss}>{t('common.close')}</button></div>
   </dialog>;
 }

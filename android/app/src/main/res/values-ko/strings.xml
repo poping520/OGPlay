@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="preparing_runtime">런타임 데이터를 준비하는 중…</string>
+    <string name="prepare_runtime_failed">런타임 데이터를 준비하지 못했습니다: %1$s</string>
+</resources>

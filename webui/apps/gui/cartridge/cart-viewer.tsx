@@ -11,11 +11,11 @@ import { t } from '../shared/i18n';
 // Cartridge viewer: the selected library entry's 3D cartridge full screen, to turn round, look at from the presets
 // and open up to see the board. Everything printed or lit on it is still a host fact; ←/→ walk the same list as
 // the rail and the library keeps that selection on return.
-const VIEW_LABELS: Record<View, string> = { three: '斜视', front: '正面', back: '背面', side: '侧面', top: '顶部', bottom: '底部' };
+const VIEW_LABELS: Record<View, string> = { three: 'cartridge.view.threeQuarter', front: 'cartridge.view.front', back: 'cartridge.view.back', side: 'cartridge.view.side', top: 'cartridge.view.top', bottom: 'cartridge.view.bottom' };
 // model part (material name) -> what the pointer readout calls it
 const PARTS: Record<string, string> = {
-  Shell: '外壳', Art: '正面贴纸', Title: '标题条', BackLabel: '背面贴纸', LED: '状态灯', PCB: '电路板', Chip: '芯片', Metal: '金属元件',
-  Passive: '贴片元件', Gold: '金手指', Screw: '三翼螺丝', Spine: '侧脊标签', Holo: '镭射防伪标', Trim: '金属饰件', Marking: '芯片丝印',
+  Shell: 'cartridge.part.shell', Art: 'cartridge.part.frontLabel', Title: 'cartridge.part.titleStrip', BackLabel: 'cartridge.part.backLabel', LED: 'cartridge.part.statusLight', PCB: 'cartridge.part.board', Chip: 'cartridge.part.chips', Metal: 'cartridge.part.metal',
+  Passive: 'cartridge.part.smd', Gold: 'cartridge.part.goldFingers', Screw: 'cartridge.part.triWing', Spine: 'cartridge.part.spineLabel', Holo: 'cartridge.part.holoSeal', Trim: 'cartridge.part.metalTrim', Marking: 'cartridge.part.chipMarkings',
 };
 
 export function CartViewer({ api, items, selected, skin, select, onBack }: {
@@ -61,27 +61,27 @@ export function CartViewer({ api, items, selected, skin, select, onBack }: {
     <header class="top">
       <Brand />
       <Back onClick={onBack} />
-      <span class="crumb">{t('卡带')} · <b>{item.display_name}</b></span>
-      <button class={`pill ${spin ? 'on' : ''}`} aria-pressed={spin} onClick={() => setSpin(value => !value)}><Key>Y</Key>{t('自动旋转')}</button>
-      <button class="pill" onClick={reset}><Key>X</Key>{t('复位')}</button>
-      <button class="pill main" aria-pressed={open} onClick={() => setOpen(value => !value)}><Key>A</Key>{open ? t('合上卡带') : t('拆开看看')}</button>
+      <span class="crumb">{t('cartridge.label')} · <b>{item.display_name}</b></span>
+      <button class={`pill ${spin ? 'on' : ''}`} aria-pressed={spin} onClick={() => setSpin(value => !value)}><Key>Y</Key>{t('cartridge.autoRotate')}</button>
+      <button class="pill" onClick={reset}><Key>X</Key>{t('cartridge.reset')}</button>
+      <button class="pill main" aria-pressed={open} onClick={() => setOpen(value => !value)}><Key>A</Key>{open ? t('cartridge.closeUp') : t('cartridge.openUp')}</button>
     </header>
-    <section class="viewer-stage" aria-label={t('卡带展示')}>
+    <section class="viewer-stage" aria-label={t('cartridge.viewer')}>
       <Inspect3D api={api} item={item} tone={tone} view={view} open={open} spin={spin} orbit={() => setView(null)} part={hover} />
       <div class="viewer-info" key={item.installation_id}>
         <div class="kicker"><i />{versionLabel(item)} · {status.label}</div>
         <h1 title={item.display_name}>{item.display_name}</h1>
         <div class="sub"><span class="mono">{item.package || item.installation_id}</span>{items.length > 1 && at >= 0 ? <span> · {at + 1} / {items.length}</span> : null}</div>
       </div>
-      <div class="seg viewer-views" role="radiogroup" aria-label={t('视角')}>{VIEWS.map((name, index) =>
+      <div class="seg viewer-views" role="radiogroup" aria-label={t('cartridge.view')}>{VIEWS.map((name, index) =>
         <button key={name} role="radio" aria-checked={view === name} class={view === name ? 'on' : ''} onClick={() => pick(name)}><b>{index + 1}</b>{t(VIEW_LABELS[name])}</button>)}</div>
       <div class="part-tip" ref={tip} hidden={!part} role="status">{part && <>{t(PARTS[part])}{part === 'LED' ? ` · ${status.label}` : ''}</>}</div>
     </section>
     <footer class="foot">
-      <span class="hint"><Key>← →</Key>{t('游戏')}</span><span class="hint"><Key>L R</Key>{t('视角')}<kbd>Q E</kbd></span>
-      <span class="hint"><Key>A</Key>{t('拆开')}</span><span class="hint"><Key>Y</Key>{t('自转')}</span><span class="hint"><Key>X</Key>{t('复位')}</span>
-      <span class="hint"><Key>B</Key>{t('返回')}<kbd>Esc</kbd></span>
-      <span class="foot-note">{__OGPLAY_PHONE__ ? t('拖动旋转 · 双指缩放') : t('拖动旋转 · 滚轮缩放 · 指向部件看名称')}</span>
+      <span class="hint"><Key>← →</Key>{t('cartridge.game')}</span><span class="hint"><Key>L R</Key>{t('cartridge.view')}<kbd>Q E</kbd></span>
+      <span class="hint"><Key>A</Key>{t('cartridge.open')}</span><span class="hint"><Key>Y</Key>{t('cartridge.spin')}</span><span class="hint"><Key>X</Key>{t('cartridge.reset')}</span>
+      <span class="hint"><Key>B</Key>{t('common.back')}<kbd>Esc</kbd></span>
+      <span class="foot-note">{__OGPLAY_PHONE__ ? t('cartridge.hintTouch') : t('cartridge.hintPointer')}</span>
     </footer>
   </div>;
 }

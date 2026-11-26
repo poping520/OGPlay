@@ -6,7 +6,7 @@ import { t } from '../shared/i18n';
 // <dialog>s, so the back key closes the top one like any other dialog (phone-app.tsx).
 
 export function BackButton({ disabled, onClick }: { disabled?: boolean; onClick: () => void }) {
-  return <button class="ph-icon" aria-label={t('返回')} disabled={disabled} onClick={onClick}>
+  return <button class="ph-icon" aria-label={t('common.back')} disabled={disabled} onClick={onClick}>
     <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg></button>;
 }
 export function MoreIcon() {

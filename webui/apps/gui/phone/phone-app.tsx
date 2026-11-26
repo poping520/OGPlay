@@ -30,7 +30,7 @@ type SheetState = { kind: 'actions'; id: string } | { kind: 'sort' } | { kind: '
   | { kind: 'switch'; from: string; to: string } | null;
 // Waiting for a game asked to quit before the next one starts (Android runs one game at a time).
 const SWITCH_TIMEOUT_MS = 15000;
-// "可启动" is left to the console: the phone keeps all games and the ones needing attention.
+// 'library.filter.launchable' is left to the console: the phone keeps all games and the ones needing attention.
 const filters = allFilters.filter(([value]) => value !== 'launchable');
 
 export function PhoneApp() {
@@ -89,7 +89,7 @@ export function PhoneApp() {
     const from = find(switching.from), to = find(switching.to);
     if (!from?.running) { setSwitching(null); if (to) void act('library.launch', to); return; }
     if (Date.now() > switching.until) {
-      setSwitching(null); launcher.report(t('「{name}」没有退出，请返回游戏后在游戏里退出。', { name: from.display_name })); return;
+      setSwitching(null); launcher.report(t('library.running.didNotQuit', { name: from.display_name })); return;
     }
     const timer = window.setTimeout(() => void refresh().catch(launcher.report), 700);
     return () => window.clearTimeout(timer);
@@ -137,22 +137,22 @@ export function PhoneApp() {
     {removing && <RemoveGameDialog item={removing} busy={busy} onConfirm={withSaves => void launcher.remove(removing, withSaves)}
       onClose={() => { if (!busy) launcher.cancelRemoval(); }} />}
     {info && find(info) && <InstallInfoDialog item={find(info)!} busy={busy} onClose={() => setInfo('')} />}
-    {sheet?.kind === 'sort' && <Sheet title={t('排序')} onClose={() => setSheet(null)}>{sorts.map(([key, label]) =>
+    {sheet?.kind === 'sort' && <Sheet title={t('library.sort.label')} onClose={() => setSheet(null)}>{sorts.map(([key, label]) =>
       <SheetItem key={key} label={t(label)} checked={key === sort} onClick={() => { setSort(key); setSheet(null); }} />)}</Sheet>}
     {sheet?.kind === 'actions' && find(sheet.id) && <GameSheet launcher={launcher} game={find(sheet.id)!} close={() => setSheet(null)}
       start={launch} settings={openGameSettings} view={viewer ? openViewer : undefined} info={game => setInfo(game.installation_id)}
       stop={game => setSheet({ kind: 'stop', id: game.installation_id })} />}
-    {sheet?.kind === 'stop' && find(sheet.id) && <Sheet title={t('关闭「{name}」？', { name: find(sheet.id)!.display_name })} onClose={() => setSheet(null)}>
-      <SheetItem label={t('关闭游戏')} note={t('未保存的进度可能会丢失')} danger disabled={busy}
+    {sheet?.kind === 'stop' && find(sheet.id) && <Sheet title={t('library.running.closeTitle', { name: find(sheet.id)!.display_name })} onClose={() => setSheet(null)}>
+      <SheetItem label={t('library.running.close')} note={t('library.running.unsavedLost')} danger disabled={busy}
         onClick={() => { const game = find(sheet.id)!; setSheet(null); void act('library.stop', game); }} />
-      <SheetItem label={t('取消')} onClick={() => setSheet(null)} /></Sheet>}
-    {sheet?.kind === 'switch' && find(sheet.from) && find(sheet.to) && <Sheet title={t('「{name}」正在运行', { name: find(sheet.from)!.display_name })} onClose={() => setSheet(null)}>
-      <SheetItem label={t('返回「{name}」', { name: find(sheet.from)!.display_name })} disabled={busy}
+      <SheetItem label={t('common.cancel')} onClick={() => setSheet(null)} /></Sheet>}
+    {sheet?.kind === 'switch' && find(sheet.from) && find(sheet.to) && <Sheet title={t('library.running.isRunning', { name: find(sheet.from)!.display_name })} onClose={() => setSheet(null)}>
+      <SheetItem label={t('library.running.backTo', { name: find(sheet.from)!.display_name })} disabled={busy}
         onClick={() => { const game = find(sheet.from)!; setSheet(null); resume(game); }} />
-      <SheetItem label={t('关闭它，启动「{name}」', { name: find(sheet.to)!.display_name })} note={t('一次只能运行一个游戏；未保存的进度可能会丢失')} danger disabled={busy}
+      <SheetItem label={t('library.running.closeAndStart', { name: find(sheet.to)!.display_name })} note={t('library.running.oneAtATime')} danger disabled={busy}
         onClick={() => { const from = find(sheet.from)!, to = find(sheet.to)!; setSheet(null); void stopThenStart(from, to); }} />
-      <SheetItem label={t('取消')} onClick={() => setSheet(null)} /></Sheet>}
-    {!importing && errors.length > 0 && <Modal title={errors[0].title ?? t('操作提示')} onDismiss={launcher.dismissError}><pre>{errors[0].text}</pre></Modal>}
+      <SheetItem label={t('common.cancel')} onClick={() => setSheet(null)} /></Sheet>}
+    {!importing && errors.length > 0 && <Modal title={errors[0].title ?? t('common.notice')} onDismiss={launcher.dismissError}><pre>{errors[0].text}</pre></Modal>}
   </>;
 
   // Full-screen views take the whole window, as on the console; the back key reaches them as Esc.
@@ -173,40 +173,40 @@ export function PhoneApp() {
       <header class="ph-bar">
         <Brand />
         <span class="ph-spacer" />
-        {library.items.length > 0 && <button class="ph-icon" aria-label={view === 'carts' ? t('改为图标展示') : t('改为卡带展示')}
+        {library.items.length > 0 && <button class="ph-icon" aria-label={view === 'carts' ? t('library.viewIcons') : t('library.viewCartridges')}
           onClick={() => setView(view === 'carts' ? 'icons' : 'carts')}><Glyph name={view === 'carts' ? 'icons' : 'cartridge'} /></button>}
-        <button class="ph-icon" aria-label={t('搜索游戏')} aria-pressed={searchOpen || !!query} onClick={() => searchOpen || query ? closeSearch() : openSearch()}><Glyph name="search" /></button>
-        <button class="ph-icon" aria-label={t('设置')} disabled={busy || importing} onClick={() => push({ kind: 'settings' })}><Glyph name="settings" /></button>
+        <button class="ph-icon" aria-label={t('library.search.label')} aria-pressed={searchOpen || !!query} onClick={() => searchOpen || query ? closeSearch() : openSearch()}><Glyph name="search" /></button>
+        <button class="ph-icon" aria-label={t('common.settings')} disabled={busy || importing} onClick={() => push({ kind: 'settings' })}><Glyph name="settings" /></button>
       </header>
       {(searchOpen || query) && <div class="ph-search">
         <Glyph name="search" />
-        <input ref={search} type="search" enterKeyHint="search" placeholder={t('名称、包名或版本')} aria-label={t('搜索游戏')} value={query}
+        <input ref={search} type="search" enterKeyHint="search" placeholder={t('library.search.placeholder')} aria-label={t('library.search.label')} value={query}
           onInput={event => setQuery(event.currentTarget.value)} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }} />
-        <button onClick={closeSearch}>{t('取消')}</button>
+        <button onClick={closeSearch}>{t('common.cancel')}</button>
       </div>}
       <main class="ph-scroll" aria-busy={loading} onScroll={scrolled}>
-        <nav class={`ph-chips ${chipsAway ? 'away' : ''} ${chipsOver ? 'over' : ''}`} aria-label={t('筛选游戏')}>
+        <nav class={`ph-chips ${chipsAway ? 'away' : ''} ${chipsOver ? 'over' : ''}`} aria-label={t('library.filter.label')}>
           {filters.map(([value, label]) => <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>
             {t(label)}<span class="count">{visibleItems(library.items, '', value, 'name').length}</span></button>)}
           <span class="ph-spacer" />
-          <button class="sort" aria-label={`${t('排序')} · ${t(sorts.find(([key]) => key === sort)![1])}`} onClick={() => setSheet({ kind: 'sort' })}>
+          <button class="sort" aria-label={`${t('library.sort.label')} · ${t(sorts.find(([key]) => key === sort)![1])}`} onClick={() => setSheet({ kind: 'sort' })}>
             {t(sorts.find(([key]) => key === sort)![1])}<Glyph name="down" /></button>
         </nav>
         {running && <button class="ph-running" disabled={busy} onClick={() => resume(running)}>
-          <i class="led running" /><span><b>{running.display_name}</b>{switching ? t('正在关闭…') : t('运行中')}</span>
-          {!switching && <em>{t('返回游戏')}<NextIcon /></em>}</button>}
-        {loading ? <p class="ph-empty">{t('正在读取游戏库…')}</p> :
+          <i class="led running" /><span><b>{running.display_name}</b>{switching ? t('library.running.closing') : t('library.status.running')}</span>
+          {!switching && <em>{t('library.running.back')}<NextIcon /></em>}</button>}
+        {loading ? <p class="ph-empty">{t('library.loading')}</p> :
           library.items.length === 0 ? <div class="ph-welcome">
-            <button class="ghost-cart" aria-label={t('选择 APK 文件')} disabled={importing} onClick={startImport}>＋</button>
+            <button class="ghost-cart" aria-label={t('library.empty.chooseFile')} disabled={importing} onClick={startImport}>＋</button>
             <div class="kicker"><i />Welcome to OGPlay</div>
-            <h1>{t('添加你的')}{t('第一款游戏')}</h1>
-            <p>{t('选择安卓游戏安装包（APK）。')}</p>
-            <button class="pill main" disabled={importing} onClick={startImport}>{t('选择 APK 文件')}</button>
-            <small>{t('支持单体 APK，分包格式暂不支持')}</small>
+            <h1>{t('library.empty.headline', { br: '' })}</h1>
+            <p>{t('library.empty.choose')}</p>
+            <button class="pill main" disabled={importing} onClick={startImport}>{t('library.empty.chooseFile')}</button>
+            <small>{t('library.empty.singleApkOnly')}</small>
           </div> :
           items.length === 0 ? <div class="ph-welcome">
-            <h1 class="small">{query ? t('没有符合条件的游戏') : t('这个分类里没有游戏')}</h1>
-            <button class="pill" onClick={() => { closeSearch(); launcher.resetFilters(); }}>{t('清除筛选')}</button>
+            <h1 class="small">{query ? t('library.filter.emptyMatches') : t('library.filter.emptyCategory')}</h1>
+            <button class="pill" onClick={() => { closeSearch(); launcher.resetFilters(); }}>{t('library.filter.clear')}</button>
           </div> :
           <div class={`ph-grid ${view}`}>{items.map(entry => {
             const status = statusOf(entry), tone = entry.running ? 'running' : status.tone;
@@ -216,11 +216,11 @@ export function PhoneApp() {
               {view === 'carts' ? <span class="ph-cart"><TileCart api={cart3d} item={entry} tone={tone} /></span> : <GameIcon game={entry} />}
               <b class="ph-name">{entry.display_name}</b>
               {/* Ready games say so with the cartridge's own LED; anything else is written out. */}
-              {tone !== 'ready' && <small class={`ph-status ${tone}`}><i class={`led ${tone}`} />{entry.running ? t('运行中') : status.label}</small>}
+              {tone !== 'ready' && <small class={`ph-status ${tone}`}><i class={`led ${tone}`} />{entry.running ? t('library.status.running') : status.label}</small>}
             </button>;
           })}</div>}
       </main>
-      {library.items.length > 0 && <button class="ph-fab pill main" disabled={importing} onClick={startImport}><b aria-hidden="true">＋</b>{t('导入游戏')}</button>}
+      {library.items.length > 0 && <button class="ph-fab pill main" disabled={importing} onClick={startImport}><b aria-hidden="true">＋</b>{t('common.importGame')}</button>}
     </div>}
     {overlays}
   </div>;
@@ -244,49 +244,49 @@ function GamePage({ launcher, game, icons, back, more, start, settings, view }: 
     <header class="ph-bar">
       <BackButton onClick={back} />
       <span class="ph-spacer" />
-      <button class="ph-icon" aria-label={t('更多')} onClick={more}><MoreIcon /></button>
+      <button class="ph-icon" aria-label={t('common.more')} onClick={more}><MoreIcon /></button>
     </header>
     <main class="ph-scroll">
       {icons ? <div class="ph-icon-hero">
         <GameIcon game={game} />
-        {(game.running || status.tone !== 'ready') && <span class={`flag ${tone}`}>{game.running ? t('● 运行中') : status.label}</span>}
+        {(game.running || status.tone !== 'ready') && <span class={`flag ${tone}`}>{game.running ? t('library.status.runningBadge') : status.label}</span>}
       </div> :
       <div class="ph-showcase">
-        {(game.running || status.tone !== 'ready') && <span class={`flag ${tone}`}>{game.running ? t('● 运行中') : status.label}</span>}
+        {(game.running || status.tone !== 'ready') && <span class={`flag ${tone}`}>{game.running ? t('library.status.runningBadge') : status.label}</span>}
         {cart3d ? <Hero3D api={cart3d} item={game} tone={tone} shown={() => { /* no splash waits on it here */ }} neighbours={[]} inspect={() => view?.(game)} /> :
           <><div class="float"><div class="tilt"><Cartridge item={game} tone={tone} hero /></div></div><div class="floor" /></>}
       </div>}
       <section class="ph-info">
         <div class="kicker"><i />{position > 0 ? `No.${String(position).padStart(2, '0')} / ${String(items.length).padStart(2, '0')}` : 'OGPlay'}</div>
         <h1>{game.display_name}</h1>
-        <p class="mono">{game.package || t('包名不可用')}</p>
+        <p class="mono">{game.package || t('library.packageUnavailable')}</p>
         <dl class="ph-stats">
-          <div><dt>{t('版本')}</dt><dd>{game.version_name || (game.version_code === null ? t('元数据不可用') : String(game.version_code))}</dd></div>
+          <div><dt>{t('common.version')}</dt><dd>{game.version_name || (game.version_code === null ? t('library.status.metadataUnavailable') : String(game.version_code))}</dd></div>
           {profile && <div><dt>Profile</dt><dd>{profile.value}</dd></div>}
-          <div><dt>{t('数据包')}</dt><dd>{external.value}</dd></div>
+          <div><dt>{t('common.dataPack')}</dt><dd>{external.value}</dd></div>
         </dl>
         <div class={`ph-state ${tone}`}><i class={`led ${tone}`} />
-          <div><b>{game.running ? t('运行中') : status.label}</b>{detail && <small>{detail}</small>}</div></div>
+          <div><b>{game.running ? t('library.status.running') : status.label}</b>{detail && <small>{detail}</small>}</div></div>
         {lastRun && <div class="ph-state danger"><i class="led danger" />
           <div><b>{lastRun.label}</b>{lastRun.error && <small>{lastRun.error}</small>}</div></div>}
-        {game.status === 'damaged' && !game.running && <button class="pill ph-fix" disabled={busy} onClick={() => launcher.requestRemoval(game)}>{t('删除后重新导入 →')}</button>}
+        {game.status === 'damaged' && !game.running && <button class="pill ph-fix" disabled={busy} onClick={() => launcher.requestRemoval(game)}>{t('library.deleteAndReimport')}</button>}
         <ul class="ph-facts">
-          {external.detail && game.external.status !== 'not_required' && <li><small>{t('数据包')}</small><span>{external.detail}</span></li>}
-          {game.imported_at && <li><span>{t('导入于 {date}', { date: game.imported_at.slice(0, 10) })}</span></li>}
-          <li><small>{t('版本')}</small><span class="mono">{versionLabel(game)}</span></li>
+          {external.detail && game.external.status !== 'not_required' && <li><small>{t('common.dataPack')}</small><span>{external.detail}</span></li>}
+          {game.imported_at && <li><span>{t('library.importedOn', { date: game.imported_at.slice(0, 10) })}</span></li>}
+          <li><small>{t('common.version')}</small><span class="mono">{versionLabel(game)}</span></li>
         </ul>
       </section>
     </main>
     <footer class="ph-actions">
-      <button class="pill ph-square" aria-label={t('游戏设置')} disabled={busy || importing} onClick={() => settings(game)}><Glyph name="settings" /></button>
+      <button class="pill ph-square" aria-label={t('common.gameSettings')} disabled={busy || importing} onClick={() => settings(game)}><Glyph name="settings" /></button>
       {game.running
-        ? <button class="pill main" disabled={busy} onClick={() => start(game)}><i class="led running" />{t('返回游戏')}</button>
-        : <button class="pill main" disabled={busy || !game.can_launch} onClick={() => start(game)}>{t('开始游戏')}</button>}
+        ? <button class="pill main" disabled={busy} onClick={() => start(game)}><i class="led running" />{t('library.running.back')}</button>
+        : <button class="pill main" disabled={busy || !game.can_launch} onClick={() => start(game)}>{t('library.play')}</button>}
     </footer>
   </div>;
 }
 
-// Long press on a card, or "更多" on a game page: everything one entry offers here.
+// Long press on a card, or 'common.more' on a game page: everything one entry offers here.
 function GameSheet({ launcher, game, close, start, settings, view, info, stop }: GameActions & {
   launcher: Launcher; game: LibraryItem; close: () => void; info: (game: LibraryItem) => void; stop: (game: LibraryItem) => void;
 }) {
@@ -294,14 +294,14 @@ function GameSheet({ launcher, game, close, start, settings, view, info, stop }:
   const then = (action: () => void) => () => { close(); action(); };
   return <Sheet title={game.display_name} onClose={close}>
     {game.running ? <>
-      <SheetItem label={t('返回游戏')} disabled={busy} onClick={then(() => start(game))} />
-      <SheetItem label={t('关闭游戏')} note={t('未保存的进度可能会丢失')} danger disabled={busy} onClick={then(() => stop(game))} />
-    </> : <SheetItem label={t('开始游戏')} disabled={busy || !game.can_launch} note={game.can_launch ? undefined : statusDetail(game)} onClick={then(() => start(game))} />}
-    <SheetItem label={t('游戏设置')} note={t('下次启动生效')} disabled={busy || importing} onClick={then(() => settings(game))} />
-    {view && <SheetItem label={t('查看卡带')} note={t('转一转、拆开看看里面')} onClick={then(() => view(game))} />}
-    <SheetItem label={t('安装信息')} onClick={then(() => info(game))} />
-    <SheetItem label={t('清空游戏数据')} note={t('删除存档与进度，保留游戏和数据包')} danger disabled={busy || importing || game.running}
+      <SheetItem label={t('library.running.back')} disabled={busy} onClick={then(() => start(game))} />
+      <SheetItem label={t('library.running.close')} note={t('library.running.unsavedLost')} danger disabled={busy} onClick={then(() => stop(game))} />
+    </> : <SheetItem label={t('library.play')} disabled={busy || !game.can_launch} note={game.can_launch ? undefined : statusDetail(game)} onClick={then(() => start(game))} />}
+    <SheetItem label={t('common.gameSettings')} note={t('common.appliesNextLaunch')} disabled={busy || importing} onClick={then(() => settings(game))} />
+    {view && <SheetItem label={t('library.viewCartridge')} note={t('library.viewCartridgeHint')} onClick={then(() => view(game))} />}
+    <SheetItem label={t('common.installInfo')} onClick={then(() => info(game))} />
+    <SheetItem label={t('common.clearGameData')} note={t('library.clearDataHint')} danger disabled={busy || importing || game.running}
       onClick={then(() => launcher.setClearing(game))} />
-    <SheetItem label={t('删除游戏')} note={t('默认保留存档，重新导入时恢复')} danger disabled={busy || importing || game.running} onClick={then(() => launcher.requestRemoval(game))} />
+    <SheetItem label={t('common.deleteGame')} note={t('library.savesKeptOnDelete')} danger disabled={busy || importing || game.running} onClick={then(() => launcher.requestRemoval(game))} />
   </Sheet>;
 }

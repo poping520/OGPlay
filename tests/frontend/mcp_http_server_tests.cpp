@@ -356,7 +356,7 @@ TEST_CASE("INP-7 launcher probe reads F2 requests with the launch token") {
     CHECK(ready.close_requests == 1);
     CHECK(seen_client == "launcher");
     CHECK_FALSE(wrong.ready);
-    CHECK(wrong.detail.find("令牌") != std::string::npos);
+    CHECK(wrong.detail == "host.keyEditor.tokenMismatch");
     CHECK_FALSE(ogplay::frontend::DecodeKeyEditorProbe("HTTP/1.1 200 OK\r\n\r\n{\"id\":1,\"result\":{}}").ready);
     CHECK_FALSE(
         ogplay::frontend::DecodeKeyEditorProbe("HTTP/1.1 200 OK\r\n\r\n{\"id\":1,\"result\":{\"edit_requests\":0}}")

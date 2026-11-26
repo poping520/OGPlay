@@ -39,38 +39,38 @@ export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved:
   // The version is shown on its own line; the other facts stay folded.
   const { ogplay_version: _version, ...facts } = saved?.facts ?? {};
   const top: Record<string, ComponentChildren> = saved ? {
-    general: <Note icon="info" title={t('关闭启动器后，游戏继续运行')}><p>{t('始终开启。启动器只负责导入与启动，游戏是独立进程。')}</p></Note>,
-    input: <Note icon="input" title={t('按键设置')}><p>{t('游戏运行中按 F1 查看键位，按 F2 打开按键设置。')}</p></Note>,
-    storage: <Note icon="storage" title={t('游戏库')}><Paths rows={[[t('库根'), saved.library_root], [t('配置'), saved.config_path], [t('沙盒占用'), t('尚未统计')], ['FFmpeg', t('尚未探测')]]} />
-      {actions(has('open_directory') && <button class="mini" disabled={busy} onClick={openLibrary}>{t('打开库目录')}</button>, <button class="mini" disabled>{t('清理沙盒')}<em>{t('暂未开放')}</em></button>)}</Note>,
-    network: <Note icon="network" title={t('仅保存意向')} warn><p>{t('不改变当前运行时策略。回环仅指本机地址；公网能力以运行时契约为准。')}</p></Note>,
-    about: <><StarCard onError={setError} /><Note icon="about" title="OGPlay"><p>{t('安卓老游戏兼容层。版本及制品哈希以随程序交付的清单为准；清单缺失时不推测。')}</p>
-      <Paths rows={[[t('版本'), saved.facts.ogplay_version ?? t('未知')]]} />
+    general: <Note icon="info" title={t('settings.global.keepRunning')}><p>{t('settings.global.keepRunningNote')}</p></Note>,
+    input: <Note icon="input" title={t('common.keySettings')}><p>{t('settings.keysHint')}</p></Note>,
+    storage: <Note icon="storage" title={t('common.library')}><Paths rows={[[t('settings.global.libraryRoot'), saved.library_root], [t('settings.global.config'), saved.config_path], [t('settings.global.sandboxUsage'), t('settings.global.notMeasured')], ['FFmpeg', t('settings.global.notProbed')]]} />
+      {actions(has('open_directory') && <button class="mini" disabled={busy} onClick={openLibrary}>{t('settings.global.openLibrary')}</button>, <button class="mini" disabled>{t('settings.global.cleanSandboxes')}<em>{t('settings.notAvailableYet')}</em></button>)}</Note>,
+    network: <Note icon="network" title={t('settings.intentOnly')} warn><p>{t('settings.global.networkNote')}</p></Note>,
+    about: <><StarCard onError={setError} /><Note icon="about" title="OGPlay"><p>{t('settings.global.about')}</p>
+      <Paths rows={[[t('common.version'), saved.facts.ogplay_version ?? t('common.unknown')]]} />
       {factRows(facts).map(([label, value]) => <details key={label} class="fact"><summary>{label}</summary><pre>{value}</pre></details>)}
-      {actions(<button class="mini" disabled>{t('导出诊断包')}<em>{t('暂未开放')}</em></button>)}</Note>
+      {actions(<button class="mini" disabled>{t('settings.global.exportDiagnostics')}<em>{t('settings.notAvailableYet')}</em></button>)}</Note>
       <Credits /></>,
   } : {};
   const end: Record<string, ComponentChildren> = {
-    audio: <Note icon="audio"><p>{t('采样率与块大小：启动器不创建音频设备；当前无运行时探测数据。')}</p></Note>,
-    diagnostics: <Note icon="diagnostics"><p>{t('每个游戏的日志写入其目录下的 last-run.log。')}</p>{has('open_directory') && actions(<button class="mini" disabled={busy} onClick={openLibrary}>{t('打开日志所在库目录')}</button>)}</Note>,
-    control: <Note icon="control"><p>{t('MCP 只监听本机。固定端口被其他游戏占用时启动失败；端口范围自动分配待后续接入。')}</p></Note>,
+    audio: <Note icon="audio"><p>{t('settings.global.audioNote')}</p></Note>,
+    diagnostics: <Note icon="diagnostics"><p>{t('settings.global.logsNote')}</p>{has('open_directory') && actions(<button class="mini" disabled={busy} onClick={openLibrary}>{t('settings.global.openLogsLibrary')}</button>)}</Note>,
+    control: <Note icon="control"><p>{t('settings.global.mcpNote')}</p></Note>,
   };
   // The style setting previews while it is still a draft.
   const skin = skinOf(draft.settings_style ?? saved?.values.settings_style);
   const display = deviceDisplay();
   const resetKeys = saved ? shownFields(saved.fields, saved.reserved_visible).filter(field => draft[field.key] !== field.initial).map(field => field.key) : [];
-  return <SettingsFrame skin={skin} crumb={<b>{t('全局设置')}</b>} idle={t('影响之后启动的游戏')} resetLabel={t('恢复默认')}
-    resetTitle={t('将 {n} 项恢复为默认值？', { n: resetKeys.length })} resetKeys={resetKeys} busy={busy} saving={store.saving} loaded={!!saved}
-    groupsTitle={t('全局设置')} groups={groups.filter(([key]) => groupAvailable(key))} group={group} setGroup={setGroup} fields={overlayFields(screenFields(saved?.fields ?? [], draft, display), draft)} reservedVisible={saved?.reserved_visible ?? true}
+  return <SettingsFrame skin={skin} crumb={<b>{t('settings.global.title')}</b>} idle={t('settings.global.subtitle')} resetLabel={t('settings.restoreDefaults')}
+    resetTitle={t('settings.confirmRestoreDefaults', { n: resetKeys.length })} resetKeys={resetKeys} busy={busy} saving={store.saving} loaded={!!saved}
+    groupsTitle={t('settings.global.title')} groups={groups.filter(([key]) => groupAvailable(key))} group={group} setGroup={setGroup} fields={overlayFields(screenFields(saved?.fields ?? [], draft, display), draft)} reservedVisible={saved?.reserved_visible ?? true}
     model={field => ({ value: draft[field.key] ?? field.initial, disabled: busy })}
     change={(field, value) => store.edit(current => ({ ...current, [field.key]: value }))}
     browse={field => void run(async () => { const path = await pickPath('directory'); if (path) store.edit(current => ({ ...current, [field.key]: path })); })}
-    fileLabel={t('配置文件')} filePath={saved?.config_path ?? ''} kicker={t('Settings · 全局')} note={saved?.reserved_visible === false ? '' : t('预留项只保存配置，不改变运行时')}
+    fileLabel={t('settings.global.configFile')} filePath={saved?.config_path ?? ''} kicker={t('settings.global.crumb')} note={saved?.reserved_visible === false ? '' : t('settings.global.reservedNote')}
     top={top[group]} end={end[group]} error={store.error} toast={toast}
     after={saved ? { running_icon: <IconPreview value={String(draft.running_icon ?? saved.values.running_icon)} disabled={busy}
       choose={value => store.edit(current => ({ ...current, running_icon: value }))} />,
       screen_resolution: <ScreenSizeNote values={draft} display={display} /> } : undefined}
     back={() => { if (!busy) store.afterSave(onBack); }}
-    reload={() => void run(async () => { await store.load(); say(t('已重新载入')); })}
+    reload={() => void run(async () => { await store.load(); say(t('settings.reloaded')); })}
     reset={() => { if (saved) store.edit(() => Object.fromEntries(saved.fields.map(field => [field.key, field.initial]))); }} />;
 }

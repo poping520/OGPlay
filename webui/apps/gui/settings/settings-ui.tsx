@@ -1,6 +1,6 @@
 import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { changedKeys, choiceLabel, fieldMeta, RESERVED_MARK, stepValue, shownFields, shownGroups, type SettingField, type SettingValue } from './settings';
+import { changedKeys, choiceLabel, fieldMeta, stepValue, shownFields, shownGroups, type SettingField, type SettingValue } from './settings';
 import { shellStyle } from '../cartridge/cartridge';
 import { t } from '../shared/i18n';
 import { Back, Brand, type Skin } from '../kit';
@@ -10,7 +10,7 @@ import { SETTING_ICONS } from './setting-icons';
 import { BackButton, NextIcon, Sheet, SheetItem } from '../phone/parts';
 import './settings.css';
 
-// Settings pages ("磨砂黑" layout): top bar with save state, group sidebar, field rows, gamepad legend. Edits are
+// Settings pages ('setting.choice.console' layout): top bar with save state, group sidebar, field rows, gamepad legend. Edits are
 // written as they are made. The skin (kit.tsx) only changes classes.
 const ICON: Record<string, string> = {
   general: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
@@ -83,9 +83,9 @@ function Control({ field, value, disabled, change, browse }: {
   if (field.choices.length) {
     const at = field.choices.indexOf(String(value));
     return <div class="cyc" role="group" aria-label={meta.label}>
-      <button aria-label={t('上一项')} disabled={disabled} onClick={() => change(stepValue(field, value, -1))}>‹</button>
+      <button aria-label={t('settings.previous')} disabled={disabled} onClick={() => change(stepValue(field, value, -1))}>‹</button>
       <div class="val"><span>{choiceLabel(field, String(value))}</span><div class="pips">{field.choices.map((choice, index) => <i key={choice} class={index === at ? 'on' : ''} />)}</div></div>
-      <button aria-label={t('下一项')} disabled={disabled} onClick={() => change(stepValue(field, value, 1))}>›</button>
+      <button aria-label={t('settings.next')} disabled={disabled} onClick={() => change(stepValue(field, value, 1))}>›</button>
     </div>;
   }
   if (typeof field.initial === 'number') {
@@ -96,16 +96,16 @@ function Control({ field, value, disabled, change, browse }: {
         aria-label={meta.label} style={{ '--p': `${percent}%` }} {...typed.events} /><b>{Number.isFinite(number) ? number : '—'}%</b></div>;
     }
     return <div class="step">
-      <button aria-label={t('减少')} disabled={disabled} onClick={() => change(stepValue(field, value, -1))}>−</button>
+      <button aria-label={t('settings.decrease')} disabled={disabled} onClick={() => change(stepValue(field, value, -1))}>−</button>
       <input type="number" min={field.min} max={field.max} step={1} value={Number.isNaN(number) ? '' : typed.shown} disabled={disabled} aria-label={meta.label}
         {...typed.events} />
       {meta.unit && <small>{meta.unit}</small>}
-      <button aria-label={t('增加')} disabled={disabled} onClick={() => change(stepValue(field, value, 1))}>+</button>
+      <button aria-label={t('settings.increase')} disabled={disabled} onClick={() => change(stepValue(field, value, 1))}>+</button>
     </div>;
   }
   return <div class="txt"><input type="text" value={typed.shown} disabled={disabled} aria-label={meta.label}
-    placeholder={field.directory ? t('留空使用默认行为') : field.pending.startsWith(RESERVED_MARK) ? t('跟随设备预设') : t('未设置')} {...typed.events} />
-    {browse && <button disabled={disabled} onClick={browse}>{t('浏览…')}</button>}</div>;
+    placeholder={field.directory ? t('settings.placeholder.default') : field.reserved ? t('settings.placeholder.devicePreset') : t('common.notSet')} {...typed.events} />
+    {browse && <button disabled={disabled} onClick={browse}>{t('settings.browse')}</button>}</div>;
 }
 
 // Phone: longer choice lists open a bottom sheet instead of stepping through them one at a time.
@@ -123,10 +123,10 @@ function ChoicePicker({ field, value, disabled, change }: { field: SettingField;
 // What a page tells the frame about one row.
 export interface RowModel {
   value: SettingValue; disabled: boolean;
-  inherit?: { overridden: boolean; source: string; shown: string };
+  inherit?: { overridden: boolean; shown: string };
   confirmed?: boolean;                           // a wrong value stops the game: edits wait for the row's save button
 }
-// Per-game rows never lock: editing one makes it this game's own value (outlined, "已单独设置"), and the restore
+// Per-game rows never lock: editing one makes it this game's own value (outlined, 'settings.customized'), and the restore
 // button beside the control drops it back to the inherited one.
 function FieldRow({ field, model, focused, focus, change, browse, restoreInherit }: {
   field: SettingField; model: RowModel; focused: boolean; focus: () => void;
@@ -137,17 +137,17 @@ function FieldRow({ field, model, focused, focus, change, browse, restoreInherit
     <GroupIcon name={field.group} glyph={SETTING_ICONS[field.key]} />
     <div class="lbl"><b>{meta.label}</b>
       {(inherit || meta.reserved || meta.hint) && <div class="meta">
-        {inherit && !overridden && <span class="inherit-val">{inherit.source} · {inherit.shown}</span>}
-        {inherit && overridden && <><span class="tag over">{t('已单独设置')}</span>
-          <span class="inherit-val">{t('{source}为 {value}', { source: inherit.source, value: inherit.shown })}</span></>}
-        {meta.reserved && <span class="tag pending" title={meta.reserved}>{t('预留 · 仅保存')}</span>}
+        {inherit && !overridden && <span class="inherit-val">{t('settings.inherit.source')} · {inherit.shown}</span>}
+        {inherit && overridden && <><span class="tag over">{t('settings.customized')}</span>
+          <span class="inherit-val">{t('settings.inherit.globalValue', { value: inherit.shown })}</span></>}
+        {meta.reserved && <span class="tag pending" title={meta.reserved}>{t('settings.reservedLegend')}</span>}
         {(meta.hint || meta.reserved) && <span>{meta.hint || meta.reserved}</span>}
       </div>}
     </div>
     <div class="ctl">
       {inherit && overridden &&
-        <button class="restore" disabled={model.disabled} title={t('恢复{source}', { source: inherit.source })} onClick={restoreInherit}>
-          <Glyph name="reload" />{t('恢复{source}', { source: inherit.source })}</button>}
+        <button class="restore" disabled={model.disabled} title={t('settings.inherit.restoreGlobal')} onClick={restoreInherit}>
+          <Glyph name="reload" />{t('settings.inherit.restoreGlobal')}</button>}
       <Control field={field} value={model.value} disabled={model.disabled} change={change} browse={field.directory ? browse : undefined} />
     </div>
   </div>;
@@ -171,19 +171,19 @@ function ConfirmedPathRow({ field, model, saving, focused, focus, change, browse
   const save = () => { if (dirty && !model.disabled) change(shown); };
   return <div class={`row path-row ${focused ? 'focus' : ''}`} data-row onPointerDown={focus}>
     <GroupIcon name={field.group} glyph={SETTING_ICONS[field.key]} />
-    <div class="lbl"><b>{meta.label}</b>{dirty && <span class="tag pending">{t('未保存')}</span>}
+    <div class="lbl"><b>{meta.label}</b>{dirty && <span class="tag pending">{t('import.unsaved')}</span>}
       {meta.hint && <div class="meta"><span>{meta.hint}</span></div>}
     </div>
     <div class="path-edit">
       <div class="path-field">
-        <textarea ref={area} rows={1} value={shown} disabled={model.disabled} aria-label={meta.label} placeholder={t('未设置')} spellcheck={false}
+        <textarea ref={area} rows={1} value={shown} disabled={model.disabled} aria-label={meta.label} placeholder={t('common.notSet')} spellcheck={false}
           onInput={event => setText(event.currentTarget.value.replace(/[\r\n]+/g, ''))}
           onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); save(); } else if (event.key === 'Escape') setText(null); }} />
-        {field.directory && <button disabled={model.disabled} onClick={() => browse(setText)}>{t('浏览…')}</button>}
+        {field.directory && <button disabled={model.disabled} onClick={() => browse(setText)}>{t('settings.browse')}</button>}
       </div>
       {dirty && <div class="path-acts">
-        <button disabled={model.disabled} onClick={() => setText(null)}>{t('取消')}</button>
-        <button class="save" disabled={model.disabled} onClick={save}>{t('保存')}</button>
+        <button disabled={model.disabled} onClick={() => setText(null)}>{t('common.cancel')}</button>
+        <button class="save" disabled={model.disabled} onClick={save}>{t('common.save')}</button>
       </div>}
     </div>
   </div>;
@@ -374,8 +374,8 @@ function ConsoleFrame(props: FrameProps) {
       <Back disabled={props.busy} onClick={props.back} />
       <span class="crumb">{props.crumb}</span>
       <span class="spacer" />
-      <span class={`save-state ${props.saving ? 'on' : ''}`} role="status"><i />{props.saving ? t('正在保存…') : props.idle}</span>
-      <button class="pill" disabled={props.busy || props.saving} onClick={props.reload}><Key><Glyph name="reload" /></Key>{t('重新载入')}</button>
+      <span class={`save-state ${props.saving ? 'on' : ''}`} role="status"><i />{props.saving ? t('settings.saving') : props.idle}</span>
+      <button class="pill" disabled={props.busy || props.saving} onClick={props.reload}><Key><Glyph name="reload" /></Key>{t('settings.reload')}</button>
       <button class="pill" disabled={props.busy || !props.loaded || !props.resetKeys.length} onClick={askReset}><Key>X</Key>{props.resetLabel}</button>
     </header>
     <aside class="cfg-side">
@@ -390,24 +390,24 @@ function ConsoleFrame(props: FrameProps) {
     </aside>
     <main class="cfg-main" ref={main}>
       <div class="head"><div><div class="kicker"><i />{props.kicker}</div><h1>{t(title)}</h1></div>
-        <div class="legend">{props.restoreInherit && <span><i class="l-inh" />{t('已单独设置')}</span>}{fields.some(field => fieldMeta(field).reserved) && <span><i class="l-pending" />{t('预留 · 仅保存')}</span>}</div></div>
+        <div class="legend">{props.restoreInherit && <span><i class="l-inh" />{t('settings.customized')}</span>}{fields.some(field => fieldMeta(field).reserved) && <span><i class="l-pending" />{t('settings.reservedLegend')}</span>}</div></div>
       <div class="rows" key={group} aria-busy={props.busy}>
-        {props.error && <Note icon="info" title={t('操作失败')} warn><pre role="alert">{props.error}</pre></Note>}
-        {props.loaded ? <>{props.top}{rows}{props.end}</> : !props.error && <Note icon="info" title={props.busy ? t('正在读取设置…') : t('设置不可用')} />}
+        {props.error && <Note icon="info" title={t('settings.actionFailed')} warn><pre role="alert">{props.error}</pre></Note>}
+        {props.loaded ? <>{props.top}{rows}{props.end}</> : !props.error && <Note icon="info" title={props.busy ? t('settings.loading') : t('settings.unavailable')} />}
       </div>
     </main>
     <footer class="cfg-foot">
-      <span class="hk"><Key>↑ ↓</Key>{t('选择')}</span><span class="hk"><Key>← →</Key>{t('调整')}</span><span class="hk"><Key>A</Key>{t('切换')}</span>
-      <span class="hk"><Key>B</Key>{t('返回')}</span><span class="hk"><Key>X</Key>{props.resetLabel}</span>
-      <span class="hk"><Key>L R</Key>{t('切换分组')}<kbd>Q E</kbd></span>
+      <span class="hk"><Key>↑ ↓</Key>{t('common.select')}</span><span class="hk"><Key>← →</Key>{t('settings.adjust')}</span><span class="hk"><Key>A</Key>{t('settings.toggle')}</span>
+      <span class="hk"><Key>B</Key>{t('common.back')}</span><span class="hk"><Key>X</Key>{props.resetLabel}</span>
+      <span class="hk"><Key>L R</Key>{t('settings.switchGroup')}<kbd>Q E</kbd></span>
       <span class="note-text">{props.note}</span>
     </footer>
     <dialog ref={dialog} aria-label={props.resetLabel} onCancel={event => { event.preventDefault(); setConfirm(false); }}>
       <div class="kicker"><i />{props.resetLabel}</div>
       <h2>{props.resetTitle}</h2>
-      <p>{t('确认后立即写入配置。')}</p>
+      <p>{t('settings.confirmWrites')}</p>
       <ul>{fields.filter(field => props.resetKeys.includes(field.key)).map(field => <li key={field.key}>{fieldMeta(field).label}</li>)}</ul>
-      <div class="acts"><button class="pill" autoFocus onClick={() => setConfirm(false)}><Key>B</Key>{t('取消')}</button>
+      <div class="acts"><button class="pill" autoFocus onClick={() => setConfirm(false)}><Key>B</Key>{t('common.cancel')}</button>
         <button class="pill danger" onClick={confirmReset}><Key>A</Key>{props.resetLabel}</button></div>
     </dialog>
     {props.toast && <div class="toast" role="status"><i />{props.toast}</div>}
@@ -464,11 +464,11 @@ function PhoneFrame(props: FrameProps) {
     <header class="ph-bar">
       <BackButton disabled={props.busy} onClick={back} />
       <h1>{open ? t(title) : props.groupsTitle}</h1>
-      <span class={`save-state ${props.saving ? 'on' : ''}`} role="status"><i />{props.saving ? t('正在保存…') : ''}</span>
+      <span class={`save-state ${props.saving ? 'on' : ''}`} role="status"><i />{props.saving ? t('settings.saving') : ''}</span>
     </header>
     <main class="cfg-main" ref={main}>
-      {props.error && <Note icon="info" title={t('操作失败')} warn><pre role="alert">{props.error}</pre></Note>}
-      {!props.loaded ? !props.error && <Note icon="info" title={props.busy ? t('正在读取设置…') : t('设置不可用')} /> :
+      {props.error && <Note icon="info" title={t('settings.actionFailed')} warn><pre role="alert">{props.error}</pre></Note>}
+      {!props.loaded ? !props.error && <Note icon="info" title={props.busy ? t('settings.loading') : t('settings.unavailable')} /> :
         open ? <div class="rows" key={group} aria-busy={props.busy}>{props.top}{rows}{props.end}</div> : <>
           {props.who}
           <p class="cfg-idle">{props.idle}</p>
@@ -477,7 +477,7 @@ function PhoneFrame(props: FrameProps) {
             return <button key={key} onClick={() => openGroup(key)}><GroupIcon name={key} />{t(label)}<span class="n">{count || ''}</span><NextIcon /></button>;
           })}</nav>
           <div class="cfg-acts">
-            <button disabled={props.busy || props.saving} onClick={props.reload}><Glyph name="reload" />{t('重新载入')}</button>
+            <button disabled={props.busy || props.saving} onClick={props.reload}><Glyph name="reload" />{t('settings.reload')}</button>
             <button class="danger" disabled={props.busy || !props.resetKeys.length} onClick={askReset}>{props.resetLabel}</button>
           </div>
           <div class="cfg-file">{props.fileLabel}<span dir="ltr">{props.filePath}</span></div>
@@ -486,9 +486,9 @@ function PhoneFrame(props: FrameProps) {
     <dialog ref={dialog} class="ph-sheet" aria-label={props.resetLabel} onCancel={event => { event.preventDefault(); setConfirm(false); }}>
       <i class="ph-grip" aria-hidden="true" />
       <h2>{props.resetTitle}</h2>
-      <p>{t('确认后立即写入配置。')}</p>
+      <p>{t('settings.confirmWrites')}</p>
       <ul>{fields.filter(field => props.resetKeys.includes(field.key)).map(field => <li key={field.key}>{fieldMeta(field).label}</li>)}</ul>
-      <div class="modal-actions"><button onClick={() => setConfirm(false)}>{t('取消')}</button>
+      <div class="modal-actions"><button onClick={() => setConfirm(false)}>{t('common.cancel')}</button>
         <button class="danger" onClick={confirmReset}>{props.resetLabel}</button></div>
     </dialog>
     {props.toast && <div class="toast" role="status"><i />{props.toast}</div>}

@@ -30,19 +30,20 @@ constexpr std::uint64_t kMaxCentralDirectory = 256ULL << 20U;
 }
 
 [[noreturn]] void Broken(std::string_view what) {
-    throw LibraryError(LibraryErrorCode::invalid_argument, "压缩包已损坏或不是 ZIP 格式：" + std::string(what));
+    throw LibraryError(LibraryErrorCode::invalid_argument, "archive is damaged or not a ZIP file: " + std::string(what),
+                       UiMessage{"host.error.archiveBroken", {{"detail", std::string(what)}}});
 }
 
 std::vector<std::byte> ReadExact(const hal::HostReadFile& file, std::uint64_t offset, std::size_t size) {
     std::vector<std::byte> bytes(size);
     if (offset > file.Info().size || size > file.Info().size - offset || file.ReadAt(offset, bytes) != size)
-        Broken("内容越界");
+        Broken("content out of bounds");
     return bytes;
 }
 
 bool HasRootManifest(const hal::HostReadFile& file) {
     const auto size = file.Info().size;
-    if (size < kEndSize) Broken("文件太短");
+    if (size < kEndSize) Broken("file too short");
     const auto tail_size = static_cast<std::size_t>(std::min<std::uint64_t>(size, kEndSize + kMaxComment));
     const auto tail = ReadExact(file, size - tail_size, tail_size);
     std::optional<std::size_t> end;
@@ -53,33 +54,35 @@ bool HasRootManifest(const hal::HostReadFile& file) {
         }
         if (at == 0) break;
     }
-    if (!end) Broken("找不到目录");
+    if (!end) Broken("no central directory");
     const auto end_offset = size - tail_size + *end;
     if (U16(tail, *end + 4) != 0 || U16(tail, *end + 6) != 0)
-        throw LibraryError(LibraryErrorCode::invalid_argument, "暂不支持分卷压缩包，请先合并或解压。");
+        throw LibraryError(LibraryErrorCode::invalid_argument, "multi-volume archives are not supported",
+                           UiMessage{"host.error.archiveMultiVolume"});
     std::uint64_t count = U16(tail, *end + 10), directory_size = U32(tail, *end + 12),
                   directory_offset = U32(tail, *end + 16);
     if (count == 0xFFFF || directory_size == 0xFFFFFFFF || directory_offset == 0xFFFFFFFF) {
-        if (end_offset < 20) Broken("ZIP64 定位记录缺失");
+        if (end_offset < 20) Broken("ZIP64 locator missing");
         const auto locator = ReadExact(file, end_offset - 20, 20);
-        if (U32(locator, 0) != kLocatorSignature) Broken("ZIP64 定位记录缺失");
+        if (U32(locator, 0) != kLocatorSignature) Broken("ZIP64 locator missing");
         const auto record = ReadExact(file, U64(locator, 8), 56);
-        if (U32(record, 0) != kEnd64Signature) Broken("ZIP64 目录记录无效");
+        if (U32(record, 0) != kEnd64Signature) Broken("invalid ZIP64 directory record");
         if (U32(locator, 4) != 0 || U32(locator, 16) > 1 || U32(record, 16) != 0 || U32(record, 20) != 0)
-            throw LibraryError(LibraryErrorCode::invalid_argument, "暂不支持分卷压缩包，请先合并或解压。");
+            throw LibraryError(LibraryErrorCode::invalid_argument, "multi-volume archives are not supported",
+                               UiMessage{"host.error.archiveMultiVolume"});
         count = U64(record, 32);
         directory_size = U64(record, 40);
         directory_offset = U64(record, 48);
     }
-    if (directory_size > kMaxCentralDirectory) Broken("目录过大");
+    if (directory_size > kMaxCentralDirectory) Broken("central directory too large");
     const auto directory = ReadExact(file, directory_offset, static_cast<std::size_t>(directory_size));
     bool found = false;
     std::size_t at = 0;
     for (std::uint64_t index = 0; index < count; ++index) {
-        if (at + 46 > directory.size() || U32(directory, at) != kCentralSignature) Broken("目录项无效");
+        if (at + 46 > directory.size() || U32(directory, at) != kCentralSignature) Broken("invalid directory entry");
         const std::size_t name_size = U16(directory, at + 28), extra_size = U16(directory, at + 30),
                           comment_size = U16(directory, at + 32);
-        if (at + 46 + name_size + extra_size + comment_size > directory.size()) Broken("目录项越界");
+        if (at + 46 + name_size + extra_size + comment_size > directory.size()) Broken("directory entry out of bounds");
         const std::string_view name(reinterpret_cast<const char*>(directory.data() + at + 46), name_size);
         found |= name == "AndroidManifest.xml";
         at += 46 + name_size + extra_size + comment_size;
@@ -93,7 +96,8 @@ bool HasRootManifest(const hal::HostReadFile& file) {
         const auto file = hal::OpenHostReadFile(path);
         static_cast<void>(file->ReadAt(0, head));
     } catch (const std::exception&) {
-        throw LibraryError(LibraryErrorCode::not_found, "无法打开所选文件。", path);
+        throw LibraryError(LibraryErrorCode::not_found, "cannot open the chosen file", UiMessage{"host.error.openFile"},
+                           path);
     }
     return head;
 }
@@ -121,7 +125,8 @@ std::uint64_t ImportFileSize(const std::filesystem::path& source) {
     try {
         return hal::OpenHostReadFile(source)->Info().size;
     } catch (const std::exception&) {
-        throw LibraryError(LibraryErrorCode::not_found, "无法打开所选文件。", source);
+        throw LibraryError(LibraryErrorCode::not_found, "cannot open the chosen file", UiMessage{"host.error.openFile"},
+                           source);
     }
 }
 
@@ -130,7 +135,8 @@ void CopyImportFile(const std::filesystem::path& source, const std::filesystem::
     try {
         file = hal::OpenHostReadFile(source);
     } catch (const std::exception&) {
-        throw LibraryError(LibraryErrorCode::not_found, "无法打开所选文件。", source);
+        throw LibraryError(LibraryErrorCode::not_found, "cannot open the chosen file", UiMessage{"host.error.openFile"},
+                           source);
     }
     std::uint64_t offset{};
     WriteImportFile(

@@ -35,9 +35,9 @@ export function aspectName(display: Size): string {
   const listed = Object.entries(aspects).find(([, [numerator, denominator]]) => Math.abs(ratio - numerator / denominator) < 0.01);
   return listed ? listed[0] : `${Math.round(ratio * 90) / 10}:9`;
 }
-// "跟随屏幕" with the ratio it stands for on this device.
+// 'settings.screen.fit' with the ratio it stands for on this device.
 export function followScreenLabel(display: Size | null = deviceDisplay()): string {
-  return display ? t('跟随屏幕（{ratio}）', { ratio: aspectName(display) }) : t('跟随屏幕');
+  return display ? t('settings.screen.fitRatio', { ratio: aspectName(display) }) : t('settings.screen.fit');
 }
 
 export const isCustomScreen = (values: Record<string, SettingValue>) => values.screen_resolution === 'custom';
@@ -75,7 +75,7 @@ export function ScreenSizeNote({ values, display }: { values: Record<string, Set
   const size = presetSize(values, display);
   if (!size) return null;
   return <div class="row-extra screen-size">
-    <p><b>{t('实际分辨率 {width} × {height}', { width: size.width, height: size.height })}</b></p>
-    {display && <p>{t('本机屏幕 {width} × {height}，窗口自动适配可用桌面', { width: display.width, height: display.height })}</p>}
+    <p><b>{t('settings.screen.actual', { width: size.width, height: size.height })}</b></p>
+    {display && <p>{t('settings.screen.display', { width: display.width, height: display.height })}</p>}
   </div>;
 }

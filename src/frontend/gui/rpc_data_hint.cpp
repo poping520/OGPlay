@@ -1,4 +1,5 @@
 #include "frontend/gui/rpc.h"
+#include "frontend/gui/rpc_error.h"
 #include "ogplay/app/data_hint.h"
 #include "ogplay/app/library.h"
 
@@ -41,7 +42,7 @@ app::ConsoleResponse GuiRpcService::DataHintRequest(std::string_view method, app
     // Applying a picked directory keeps it by reference; a platform without that only remounts.
     if (apply && picked && !platform_.path_settings)
         throw std::invalid_argument("external_dir cannot be linked on this platform");
-    if (ImportBusy()) throw std::runtime_error("正在入库，请稍后重试。");
+    if (ImportBusy()) throw GuiTextError({"host.error.importBusy"});
     app::JsonWriter writer;
     const auto root = writer.Object(), result = writer.Object();
     if (apply) {

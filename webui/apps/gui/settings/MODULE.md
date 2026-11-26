@@ -4,13 +4,14 @@
 Esc 放弃；写入串行，进行中的改动合并为下一次写入；本地校验失败不写入，宿主拒绝（含版本冲突）时重新载入宿主值并显示错误；
 返回等写入成功后离开。恢复默认/全部继承须确认后一次写入。预留项明确标注仅保存，不声称运行时生效。
 界面语言切换即时写入，写入未成功时离开恢复已保存语言。应用语言复用宿主 locale 字段与两页的共享选项控件，
-默认“跟随界面语言”，支持简体中文/English；实例沿用同一覆盖/恢复全局机制，下一次启动应用时生效，不预览切换启动器界面。
+默认“跟随界面语言”，可选界面支持的九种语言；语言选项以各语言自称显示，不随界面翻译；实例沿用同一覆盖/恢复全局机制，下一次启动应用时生效，不预览切换启动器界面。
 
 全局与每实例设置页共用 settings-ui.tsx/settings.css（“磨砂黑”布局：顶栏保存状态、分组侧栏、字段行、手柄键位脚注），
 `glass` 时同一布局换为“玻璃紫”皮肤；风格切换随写入即时生效。字段行图标按设置键取 setting-icons.ts 的线性字形（同一概念同一字形），
 磨砂黑为侧栏同款素色芯片（聚焦行亮黄），玻璃紫芯片沿用分组配色；新增宿主字段须补字形（settings.test.ts 校验覆盖与重复）。
-宿主 `pending` 以“预留”开头才标为预留，否则作为说明显示；宿主 `reserved_visible` 为 false（release 构建）时两页都不显示预留行、
-因此变空的分组、预留图例与预留说明（shownFields/shownGroups），重置与继承计数也只算可见项；标签末尾全角括号内为数值单位或说明。
+字段文案按 key 取 `setting.<key>.label`（全局页对 `global_default` 字段取 `.defaultLabel`）与 `.hint`，单位与预留原因取
+`setting.unit.<unit>`、`setting.reserved.<reserved>`，有 reserved 才标为预留；宿主 `reserved_visible` 为 false（release 构建）时两页都不显示预留行、
+因此变空的分组、预留图例与预留说明（shownFields/shownGroups），重置与继承计数也只算可见项。
 实例页侧栏卡带与主界面一致（3D 静帧，css/失败时 CSS 卡带）。
 紧跟 `running_icon` 字段行的运行中游戏图标预览（icon-preview.tsx，经 SettingsFrame `after` 插槽）只显示宿主 `settings.icon_preview` 的图，不在前端重画；
 点击卡片与 `running_icon` 字段行编辑同一草稿值，取图失败显示错误而不隐藏选择。

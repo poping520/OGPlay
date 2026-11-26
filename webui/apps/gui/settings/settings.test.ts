@@ -4,13 +4,15 @@ import { gameGroups } from './game-settings';
 import { SETTING_ICONS, SHARED_ICONS } from './setting-icons';
 import { creditSummary, creditTree, type CreditProject } from './credits';
 const field = (key: string, initial: string | number | boolean, choices: string[] = []): SettingField =>
-  ({ key, label: key, initial, choices, min: 1, max: 4, group: 'general', pending: '', directory: false, hidden: false });
+  ({ key, initial, choices, min: 1, max: 4, group: 'general', unit: '', reserved: '', global_default: false, directory: false, hidden: false });
 describe('settings drafts', () => {
   it('shows and validates the shared app-language choices', () => {
-    const locale = field('locale', 'ui', ['ui', 'zh-CN', 'en-US']);
+    const locale = field('locale', 'ui', ['ui', 'zh-CN', 'zh-TW', 'en-US', 'ja-JP']);
     expect(displayValue(locale, 'ui')).toBe('跟随界面语言');
     expect(displayValue(locale, 'zh-CN')).toBe('简体中文');
+    expect(displayValue(locale, 'zh-TW')).toBe('繁體中文');
     expect(displayValue(locale, 'en-US')).toBe('English');
+    expect(displayValue(locale, 'ja-JP')).toBe('日本語');
     expect(settingsError([locale], { locale: 'ui' })).toBeNull();
     expect(settingsError([locale], { locale: 'invalid' })).not.toBeNull();
   });
@@ -32,13 +34,13 @@ describe('settings drafts', () => {
     expect(changedKeys({ a: 1, b: true }, { a: 2, b: true, c: 'x' })).toEqual(['a', 'c']);
     expect(changedKeys({ a: 1 }, {})).toEqual(['a']);
   });
-  it('splits units, notes and reserved markers out of host labels', () => {
-    const jit = { ...field('jit_cache_mb', 64), label: 'JIT 缓存（MB）', pending: '预留 · 运行时配置入口尚未接入' };
+  it('words fields from their key with unit and reserved codes', () => {
+    const jit = { ...field('jit_cache_mb', 64), unit: 'mb', reserved: 'runtimeConfig' };
     expect(fieldMeta(jit)).toEqual({ label: 'JIT 缓存', unit: 'MB', hint: '', reserved: '运行时配置入口尚未接入' });
-    const cores = { ...field('cpu_cores', 1), label: '虚拟 CPU 核数', pending: '游戏查询到的核数；不限制宿主线程' };
-    expect(fieldMeta(cores)).toEqual({ label: '虚拟 CPU 核数', unit: '', hint: '游戏查询到的核数；不限制宿主线程', reserved: '' });
-    const sandbox = { ...field('ephemeral_sandbox', false), label: '临时沙盒（退出不保留本次存档）' };
-    expect(fieldMeta(sandbox)).toEqual({ label: '临时沙盒', unit: '', hint: '退出不保留本次存档', reserved: '' });
+    expect(fieldMeta(field('cpu_cores', 1))).toEqual({ label: '虚拟 CPU 核数', unit: '', hint: '游戏查询到的核数；不限制宿主线程', reserved: '' });
+    expect(fieldMeta(field('ephemeral_sandbox', false))).toEqual({ label: '临时沙盒', unit: '', hint: '退出不保留本次存档', reserved: '' });
+    expect(fieldMeta({ ...field('max_fps', 'unlimited'), global_default: true }).label).toBe('默认帧率上限');
+    expect(fieldMeta(field('max_fps', 'unlimited')).label).toBe('帧率上限');
     expect(displayValue({ ...jit }, 128)).toBe('128 MB');
     expect(displayValue({ ...field('dir', ''), directory: true }, '')).toBe('默认');
     const fps = { ...field('max_fps', 'unlimited'), choices: ['30', '60', 'unlimited'] };
@@ -51,7 +53,7 @@ describe('settings drafts', () => {
     expect(stepValue(fields[0], 'dark', -1)).toBe('light');
     expect(stepValue(fields[1], 4, 1)).toBe(4);
     expect(stepValue(fields[1], NaN, 1)).toBe(2);
-    expect(stepValue({ ...field('volume', 100), label: '主音量（%）', max: 100 }, 50, -1)).toBe(45);
+    expect(stepValue({ ...field('volume', 100), unit: 'percent', max: 100 }, 50, -1)).toBe(45);
   });
 });
 
@@ -61,8 +63,8 @@ const hostSettings = Object.values(import.meta.glob(['../../../../src/frontend/l
   { query: '?raw', import: 'default', eager: true })) as string[];
 describe('reserved settings in release builds', () => {
   it('drops reserved rows and the groups they leave empty, keeping groups that never had fields', () => {
-    const reserved = { ...field('volume', 100), group: 'audio', pending: '预留 · 运行时未实现' };
-    const live = { ...field('supersample', 1), group: 'graphics', pending: '说明文字' };
+    const reserved = { ...field('volume', 100), group: 'audio', reserved: 'runtime' };
+    const live = { ...field('supersample', 1), group: 'graphics' };
     const all = [reserved, live];
     expect(shownFields(all, true)).toEqual(all);
     const shown = shownFields(all, false);

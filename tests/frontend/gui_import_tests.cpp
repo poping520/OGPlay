@@ -166,7 +166,7 @@ TEST_CASE("GUI RPC imports a real minimal APK from the analyzed snapshot") {
     for (unsigned i = 0; i < 100000; ++i) {
         const auto status = call("library.job.poll", R"({"job":"2"})");
         if (status.Root().Member("result")->Member("state")->String() == "failed") {
-            CHECK(status.Root().Member("result")->Member("message"));
+            CHECK(status.Root().Member("result")->Member("failure")->Member("text"));
             failed = true;
             break;
         }

@@ -162,6 +162,7 @@ struct CloseConfirmation {
     // forward and leaves the game running; ConfirmClose then returns false. Other hosts leave it out.
     std::string_view library_label;
     std::string_view library_message;  // replaces message where library_label is offered, explaining both choices
+    std::string_view language;         // BCP 47 tag of the wording, for hosts that pick glyphs by locale
 };
 
 class WindowInput {

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="preparing_runtime">ランタイムデータを準備しています…</string>
+    <string name="prepare_runtime_failed">ランタイムデータを準備できませんでした：%1$s</string>
+</resources>

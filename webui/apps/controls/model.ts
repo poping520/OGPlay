@@ -1,4 +1,5 @@
 import { splitSources } from './keys';
+import type { Language } from '../../packages/ui-kit/i18n';
 
 // Wire shapes of control.get / control.apply (session::WriteControlLayerJson).
 export type Anchor = 'top_left' | 'top' | 'top_right' | 'left' | 'center' | 'right' | 'bottom_left' | 'bottom' | 'bottom_right';
@@ -14,7 +15,7 @@ export interface Binding {
 export interface Layer { zone: Zone[]; binding: Binding[] }
 export interface Surface { width: number; height: number }
 export interface Session {
-  language: 'zh-CN' | 'en-US';
+  language: Language;
   surface: Surface; frozen: boolean; mode: string; config_path: string | null; persistent: boolean;
   user: Layer; effective: Layer;
 }

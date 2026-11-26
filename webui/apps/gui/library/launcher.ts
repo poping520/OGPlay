@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { rpc, type Library, type LibraryItem } from '../shared/rpc';
-import { gameName, resolvedLanguage, setLanguage, t, useLanguage } from '../shared/i18n';
+import { gameName, resolvedLanguage, setLanguage, t, uiText, useLanguage, type UiText } from '../shared/i18n';
 import { recall, remember } from '../shared/prefs';
 import { has } from '../shared/features';
 import { validatePackageSelection, visibleItems, type Filter, type Sort } from './library';
@@ -19,7 +19,7 @@ export interface Notice { title?: string; text: string }
 export type LibraryView = 'carts' | 'icons';
 const VIEW_KEY = __OGPLAY_PHONE__ ? 'ogplay.phone.view' : 'ogplay.console.view';
 const DEFAULT_VIEW: LibraryView = 'icons';
-export interface DashboardInfo { installation_id: string; process_id: number; port: number | null; status: string; detail: string; key_editor_status: string; key_editor_detail: string }
+export interface DashboardInfo { installation_id: string; process_id: number; port: number | null; status: string; detail_id: string; key_editor_status: string; key_editor_detail_id: string }
 
 export function useLauncher() {
   const lang = useLanguage();
@@ -83,7 +83,7 @@ export function useLauncher() {
       setDashboards(current => current.filter(instance => instance.installation_id !== detail.installation_id));
       if (detail.exit_code !== 0 && settingsRef.current?.values.show_exit_log !== false) {
         const name = libraryRef.current.items.find(item => item.installation_id === detail.installation_id)?.display_name ?? detail.installation_id;
-        report(`${t('「{name}」异常退出，退出码 {code}。以下是运行日志的末尾：', { name, code: detail.exit_code })}\n\n${detail.log_tail}`, t('游戏异常退出'));
+        report(`${t('library.exit.logTail', { name, code: detail.exit_code })}\n\n${detail.log_tail}`, t('library.exit.title'));
       }
       void refresh().catch(report);
       // ADR-0146: what the run failed to find may point at a better data mount.
@@ -103,7 +103,7 @@ export function useLauncher() {
     const tracked = !__OGPLAY_PHONE__ && (has('dashboard') || has('key_editor'));
     if (tracked) void poll();
     const timer = tracked ? window.setInterval(() => void poll(), 1000) : 0;
-    const dashboardError = (event: Event) => report(t((event as CustomEvent<string>).detail));
+    const dashboardError = (event: Event) => report(uiText((event as CustomEvent<UiText>).detail));
     window.addEventListener('ogplay-dashboard-error', dashboardError);
     window.addEventListener('ogplay-exit', exited);
     return () => { disposed = true; window.clearInterval(timer); window.removeEventListener('ogplay-dashboard-error', dashboardError); ++generation.current; window.removeEventListener('ogplay-exit', exited); };
@@ -127,7 +127,7 @@ export function useLauncher() {
   // Always confirmed in its dialog: unlike removal, cleared saves cannot be restored by a re-import.
   const clearData = async (game: LibraryItem) => {
     if (await act('library.clear_data', game, undefined, { confirmed: true })) {
-      setClearing(null); report(t('已清空「{name}」的游戏数据。', { name: game.display_name }));
+      setClearing(null); report(t('library.clear.done', { name: game.display_name }));
     }
   };
   const requestRemoval = (game: LibraryItem) => { if (!game.running && !busy && !importing) setRemoving(game); };

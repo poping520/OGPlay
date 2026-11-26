@@ -193,10 +193,12 @@ private:
 
     [[nodiscard]] ComPtr<IDWriteTextFormat> CreateFormat(const DWRITE_FONT_WEIGHT weight, const float size) const {
         ComPtr<IDWriteTextFormat> format;
-        // Segoe UI has no Han glyphs; the zh-CN locale makes DirectWrite fall back to Microsoft YaHei UI for them,
-        // the launcher's Chinese face, and it does not affect Latin text.
+        // Segoe UI has no CJK glyphs; the wording's locale makes DirectWrite fall back to that language's face
+        // (Microsoft YaHei UI for zh-CN, JhengHei for zh-TW, Yu Gothic for ja, Malgun Gothic for ko) and it does
+        // not affect Latin or Cyrillic text.
+        const auto locale = Wide(text_.language.empty() ? std::string_view("zh-CN") : text_.language);
         Check(write_factory_->CreateTextFormat(L"Segoe UI", nullptr, weight, DWRITE_FONT_STYLE_NORMAL,
-                                               DWRITE_FONT_STRETCH_NORMAL, size, L"zh-CN", format.GetAddressOf()),
+                                               DWRITE_FONT_STRETCH_NORMAL, size, locale.c_str(), format.GetAddressOf()),
               "IDWriteFactory::CreateTextFormat");
         return format;
     }

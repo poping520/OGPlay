@@ -26,6 +26,7 @@
 
 #include "frontend/gui/launcher_services.h"
 #include "frontend/gui/rpc.h"
+#include "frontend/gui/rpc_error.h"
 #include "ogplay/app/archive_import.h"
 #include "ogplay/app/host.h"
 #include "ogplay/app/json.h"
@@ -78,7 +79,7 @@ std::string FailureResponse(std::string_view message) {
     writer.AddNull(root, "id");
     writer.AddInteger(error, "code", -32000);
     writer.AddString(error, "message", message);
-    writer.AddString(error, "next_step", "检查 GUI 日志和前端制品后重试。");
+    writer.AddString(error, "next_step_id", "host.next.checkFrontend");
     writer.Add(root, "error", error);
     return writer.Serialize(root);
 }
@@ -140,9 +141,9 @@ public:
         });
         host.launch = [this](const LaunchPlan& plan) { Launch(plan); };
         // The game runs in its own task: back to its screen, or asked to quit as its close confirmation would.
-        host.resume = [this](std::string_view) { CallGame(resume_method_, "无法返回游戏界面。"); };
+        host.resume = [this](std::string_view) { CallGame(resume_method_, "host.error.resumeGame"); };
         host.stop = [this](std::string_view package) {
-            CallGame(stop_method_, "无法关闭游戏。");
+            CallGame(stop_method_, "host.error.stopGame");
             logger_.Write(app::LogLevel::info, "frontend.android.launcher", "game asked to quit", {},
                           {{"installation_id", std::string(package)}});
         };
@@ -154,12 +155,12 @@ public:
             if (env->ExceptionCheck()) {
                 env->ExceptionDescribe();
                 env->ExceptionClear();
-                throw std::runtime_error("无法打开网页。");
+                throw frontend::GuiTextError({"host.error.openWebPage"});
             }
         };
         // Never offered here: open_directory (no file manager), minimize, Dashboard and key editor windows.
         host.open_directory = [](const std::filesystem::path&) {
-            throw std::runtime_error("Android 启动器不打开宿主目录。");
+            throw frontend::GuiTextError({"host.error.noHostFolders"});
         };
         host.pick = [this](bool directory) { return Pick(directory); };
         host.label = [this](const std::filesystem::path& path) {
@@ -276,9 +277,9 @@ private:
         env->DeleteLocalRef(handle_bytes);
         if (env->ExceptionCheck()) {
             env->ExceptionClear();
-            throw std::runtime_error("无法读取所选目录。");
+            throw frontend::GuiTextError({"host.error.readPickedFolder"});
         }
-        if (!listing) throw std::runtime_error("无法读取所选目录。");
+        if (!listing) throw frontend::GuiTextError({"host.error.readPickedFolder"});
         const auto text = FromJava(env, listing);
         env->DeleteLocalRef(listing);
         std::vector<app::ImportFile> files;
@@ -316,7 +317,7 @@ private:
         if (env->ExceptionCheck()) {
             env->ExceptionDescribe();
             env->ExceptionClear();
-            throw std::runtime_error(failure);
+            throw frontend::GuiTextError({failure});
         }
     }
 
@@ -324,9 +325,9 @@ private:
         // One :game process: starting its activity again would only bring the running game back, whichever was asked
         // for. The store's running lease also covers a game this launcher process did not start.
         for (const auto& game : tracked_)
-            if (game.package == plan.package) throw std::runtime_error("游戏正在运行，退出后再启动。");
+            if (game.package == plan.package) throw frontend::GuiTextError({"host.error.gameAlreadyRunning"});
         for (const auto& entry : store_->LoadEntries())
-            if (store_->IsRunning(entry.key)) throw std::runtime_error("已有游戏在运行，返回该游戏或先关闭它。");
+            if (store_->IsRunning(entry.key)) throw frontend::GuiTextError({"host.error.otherGameRunning"});
         JNIEnv* env = Env();
         const auto string_class = env->FindClass("java/lang/String");
         const auto argv = env->NewObjectArray(static_cast<jsize>(plan.argv.size()), string_class, nullptr);
@@ -344,7 +345,7 @@ private:
         if (env->ExceptionCheck()) {
             env->ExceptionDescribe();
             env->ExceptionClear();
-            throw std::runtime_error("无法启动游戏界面。");
+            throw frontend::GuiTextError({"host.error.startGameScreen"});
         }
         tracked_.push_back(std::move(game));
         logger_.Write(app::LogLevel::info, "frontend.android.launcher", "game launched", {},
@@ -394,7 +395,9 @@ void SafTreeSource::Extract(std::span<const app::ImportExtraction> files, app::I
         const auto& file = files_.at(item.index);
         const int descriptor = launcher_.OpenTreeFile(handle_, file.path);
         if (descriptor < 0)
-            throw app::LibraryError(app::LibraryErrorCode::io_error, "无法读取所选目录中的文件：" + file.path);
+            throw app::LibraryError(app::LibraryErrorCode::io_error,
+                                    "cannot read a file of the chosen folder: " + file.path,
+                                    {"host.error.readPickedFile", {{"path", file.path}}});
         struct Closer final {
             int fd;
             ~Closer() { ::close(fd); }
@@ -404,7 +407,9 @@ void SafTreeSource::Extract(std::span<const app::ImportExtraction> files, app::I
                 const auto count = ::read(descriptor, buffer.data(), buffer.size());
                 if (count >= 0) return static_cast<std::size_t>(count);
                 if (errno != EINTR)
-                    throw app::LibraryError(app::LibraryErrorCode::io_error, "无法读取所选目录中的文件：" + file.path);
+                    throw app::LibraryError(app::LibraryErrorCode::io_error,
+                                            "cannot read a file of the chosen folder: " + file.path,
+                                            {"host.error.readPickedFile", {{"path", file.path}}});
             }
         }, progress);
     }

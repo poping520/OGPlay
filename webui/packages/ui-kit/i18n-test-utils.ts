@@ -78,3 +78,33 @@ export function cppStrings(source: string): string[] {
   }
   return strings;
 }
+
+import { messageArguments, parseMessage } from './icu';
+import { LANGUAGES, type Catalogs } from './i18n';
+
+const han = /[一-鿿]/;
+/** Semantic message IDs: dotted lowerCamel segments (setting keys keep their snake_case). */
+export const MESSAGE_ID = /^[a-z][a-zA-Z0-9]*(\.[a-zA-Z0-9_]+)+$/;
+
+/** Every catalog has the zh-CN IDs, parses as ICU, reads the same arguments and writes its own script. */
+export function catalogProblems(catalogs: Catalogs): string[] {
+  const problems: string[] = [];
+  const source = catalogs['zh-CN'];
+  const args = (text: string) => [...messageArguments(parseMessage(text))].sort().join(',');
+  for (const tag of LANGUAGES) {
+    const table = catalogs[tag];
+    if (!table) { problems.push(`${tag}: no catalog`); continue; }
+    for (const id of Object.keys(source)) if (!(id in table)) problems.push(`${tag}: missing ${id}`);
+    for (const [id, text] of Object.entries(table)) {
+      if (!(id in source)) { problems.push(`${tag}: extra ${id}`); continue; }
+      if (!MESSAGE_ID.test(id)) problems.push(`${tag}: bad id ${id}`);
+      if (!text.trim()) problems.push(`${tag}: empty ${id}`);
+      try {
+        if (args(text) !== args(source[id])) problems.push(`${tag}: ${id} reads {${args(text)}}, zh-CN {${args(source[id])}}`);
+      } catch (error) { problems.push(`${tag}: ${id}: ${(error as Error).message}`); }
+      // Japanese and both Chinese catalogs write Han; no other one should.
+      if (!['zh-CN', 'zh-TW', 'ja-JP'].includes(tag) && han.test(text)) problems.push(`${tag}: Han in ${id}`);
+    }
+  }
+  return problems;
+}

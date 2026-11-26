@@ -348,6 +348,13 @@ void RemoveTree(const std::filesystem::path& path) {
 LibraryError::LibraryError(const LibraryErrorCode code, std::string message, std::filesystem::path path)
     : std::runtime_error(std::move(message)), code_(code), path_(std::move(path)) {}
 
+LibraryError::LibraryError(const LibraryErrorCode code, std::string message, UiMessage ui, std::filesystem::path path)
+    : std::runtime_error(std::move(message)), code_(code), path_(std::move(path)), ui_(std::move(ui)) {}
+
+const UiMessage& LibraryError::Message() const noexcept {
+    return ui_;
+}
+
 LibraryErrorCode LibraryError::Code() const noexcept {
     return code_;
 }

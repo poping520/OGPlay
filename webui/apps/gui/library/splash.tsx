@@ -20,7 +20,7 @@ export function Splash({ ready, onDone }: { ready: boolean; onDone: () => void }
     const timer = window.setTimeout(onDone, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 450);
     return () => window.clearTimeout(timer);
   }, [leaving]);
-  return <div class={`splash glass-sky ${leaving ? 'leaving' : ''}`} role="status" aria-label={t('OGPlay 正在启动')}>
-    <img src={logo} alt="" /><b><span>OG</span>Play</b><small>{t('Android 老游戏兼容层')}</small><i class="splash-bar" />
+  return <div class={`splash glass-sky ${leaving ? 'leaving' : ''}`} role="status" aria-label={t('common.starting')}>
+    <img src={logo} alt="" /><b><span>OG</span>Play</b><small>{t('common.taglineLong')}</small><i class="splash-bar" />
   </div>;
 }

@@ -1,11 +1,17 @@
 #pragma once
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string_view>
 #include "ogplay/app/export.h"
 
 namespace ogplay::app {
-enum class UiLanguage : std::uint8_t { zh_CN, en_US };
+// Launcher and guest languages; the tags (zh-CN, en-US, zh-TW, ja-JP, ko-KR, ru-RU, es-ES, pt-BR, fr-FR) are what
+// settings and command lines carry.
+enum class UiLanguage : std::uint8_t { zh_CN, en_US, zh_TW, ja_JP, ko_KR, ru_RU, es_ES, pt_BR, fr_FR };
+inline constexpr std::array kUiLanguages{UiLanguage::zh_CN, UiLanguage::en_US, UiLanguage::zh_TW,
+                                         UiLanguage::ja_JP, UiLanguage::ko_KR, UiLanguage::ru_RU,
+                                         UiLanguage::es_ES, UiLanguage::pt_BR, UiLanguage::fr_FR};
 enum class UiText : std::uint16_t {
     close_game_title,
     close_game_message,

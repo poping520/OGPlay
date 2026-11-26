@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="preparing_runtime">Preparando los datos de ejecución…</string>
+    <string name="prepare_runtime_failed">No se pudieron preparar los datos de ejecución: %1$s</string>
+</resources>

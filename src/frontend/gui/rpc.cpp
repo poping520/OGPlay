@@ -35,22 +35,35 @@ std::string RequiredString(app::JsonValue params, std::string_view key) {
     return std::string(*value);
 }
 
-app::ConsoleResponse Error(int code, std::string_view message, std::string_view next,
-                           const std::map<std::string, std::string>& params = {}) {
+// message stays diagnostic text; message_id/params name the catalog message the page shows instead, and
+// next_step_id what to try next (host.next.*).
+app::ConsoleResponse Error(int code, std::string_view text, std::string_view next_id,
+                           const app::UiMessage* ui = nullptr) {
     app::JsonWriter writer;
     const auto root = writer.Object();
     const auto error = writer.Object();
     writer.AddInteger(error, "code", code);
-    writer.AddString(error, "message", message);
-    writer.AddString(error, "next_step", next);
-    if (!params.empty()) {
-        const auto values = writer.Object();
-        for (const auto& [key, value] : params)
-            writer.AddString(values, key, value);
-        writer.Add(error, "params", values);
+    writer.AddString(error, "message", text);
+    if (ui) {
+        writer.AddString(error, "message_id", ui->id);
+        if (!ui->params.empty()) {
+            const auto values = writer.Object();
+            for (const auto& [key, value] : ui->params)
+                writer.AddString(values, key, value);
+            writer.Add(error, "params", values);
+        }
     }
+    writer.AddString(error, "next_step_id", next_id);
     writer.Add(root, "error", error);
     return {false, writer.Serialize(root)};
+}
+
+app::ConsoleResponse Error(int code, const app::UiMessage& ui, std::string_view next_id) {
+    return Error(code, ui.id, next_id, &ui);
+}
+
+app::ConsoleResponse Error(int code, const std::exception& error, std::string_view next_id) {
+    return Error(code, error.what(), next_id, app::FindUiMessage(error));
 }
 
 std::string_view Status(LibraryTileStatus status) {
@@ -106,7 +119,7 @@ std::string GuiRpcService::Handle(std::string_view request) {
         app::JsonDocument::ParseStrict(response, parse_error, app::JsonRpcDispatcher::kMaximumResponseBytes);
     if (!document) throw std::runtime_error("GUI RPC produced invalid JSON");
     const auto error = document->Root().Member("error");
-    if (!error || error->Member("next_step")) return response;
+    if (!error || error->Member("next_step_id")) return response;
     app::JsonWriter writer;
     const auto root = writer.Object();
     writer.AddString(root, "jsonrpc", "2.0");
@@ -114,8 +127,9 @@ std::string GuiRpcService::Handle(std::string_view request) {
     const auto failure = writer.Object();
     writer.Add(failure, "code", writer.Copy(*error->Member("code")));
     writer.Add(failure, "message", writer.Copy(*error->Member("message")));
+    if (const auto id = error->Member("message_id")) writer.Add(failure, "message_id", writer.Copy(*id));
     if (const auto params = error->Member("params")) writer.Add(failure, "params", writer.Copy(*params));
-    writer.AddString(failure, "next_step", "检查 GUI 请求格式和前端版本后重试。");
+    writer.AddString(failure, "next_step_id", "host.next.checkRequest");
     writer.Add(root, "error", failure);
     return writer.Serialize(root);
 }
@@ -123,8 +137,7 @@ std::string GuiRpcService::Handle(std::string_view request) {
 app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonValue params) {
     try {
         // A capability this platform leaves out has no methods at all, not a refusing one.
-        if (!MethodAvailable(platform_, method))
-            return Error(-32601, "unknown method", "使用当前版本支持的 GUI 方法。");
+        if (!MethodAvailable(platform_, method)) return Error(-32601, "unknown method", "host.next.useSupportedMethod");
         if (method == "host.features") {
             CheckFields(params, {});
             app::JsonWriter writer;
@@ -148,7 +161,7 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
         if (method == "about.credits" || method == "about.notices") {
             CheckFields(params, method == "about.notices" ? std::initializer_list<std::string_view>{"id"}
                                                           : std::initializer_list<std::string_view>{});
-            if (!host_.credits || !host_.credit_notices) throw std::runtime_error("宿主未接入开源致谢。");
+            if (!host_.credits || !host_.credit_notices) throw GuiTextError({"host.error.noCredits"});
             app::JsonWriter writer;
             const auto root = writer.Object(), result = writer.Object();
             if (method == "about.credits") {
@@ -185,7 +198,7 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
         }
         if (method == "about.open_repository") {
             CheckFields(params, {});
-            if (!host_.open_url) throw std::runtime_error("宿主不能打开网页。");
+            if (!host_.open_url) throw GuiTextError({"host.error.noOpenUrl"});
             host_.open_url(kOgplayRepositoryUrl);
             app::JsonWriter writer;
             const auto root = writer.Object(), result = writer.Object();
@@ -196,13 +209,15 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
         if (method == "controls.open") {
             CheckFields(params, {"installation_id"});
             const auto id = RequiredString(params, "installation_id");
-            if (!host_.dashboards) throw std::runtime_error("宿主未接入运行中游戏的查询。");
+            if (!host_.dashboards) throw GuiTextError({"host.error.noRunningQuery"});
             const auto running = host_.dashboards();
             const auto found = std::find_if(running.begin(), running.end(),
                                             [&](const auto& value) { return value.installation_id == id; });
-            if (found == running.end()) return Error(-32004, "游戏未运行", "先启动游戏，再打开按键设置。");
-            if (found->editor_status != "ready") return Error(-32002, found->editor_detail, "等待游戏启动完成后重试。");
-            if (!host_.open_key_editor) throw std::runtime_error("宿主不支持按键设置窗口。");
+            if (found == running.end())
+                return Error(-32004, app::UiMessage{"host.error.gameNotRunning"}, "host.next.startGameFirst");
+            if (found->editor_status != "ready")
+                return Error(-32002, app::UiMessage{found->editor_detail}, "host.next.waitForStart");
+            if (!host_.open_key_editor) throw GuiTextError({"host.error.noKeyEditor"});
             host_.open_key_editor(id);
             app::JsonWriter writer;
             const auto root = writer.Object(), result = writer.Object();
@@ -216,17 +231,18 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             else
                 CheckFields(params, {"installation_id"});
             const auto id = method == "dashboard.open" ? RequiredString(params, "installation_id") : std::string{};
-            if (!host_.dashboards) throw std::runtime_error("宿主未接入运行中游戏的查询。");
+            if (!host_.dashboards) throw GuiTextError({"host.error.noRunningQuery"});
             const auto dashboards = host_.dashboards();
             app::JsonWriter writer;
             const auto root = writer.Object(), result = writer.Object();
             if (method == "dashboard.open") {
                 const auto found = std::find_if(dashboards.begin(), dashboards.end(),
                                                 [&](const auto& value) { return value.installation_id == id; });
-                if (found == dashboards.end()) return Error(-32004, "游戏未运行", "启动游戏后重试。");
+                if (found == dashboards.end())
+                    return Error(-32004, app::UiMessage{"host.error.gameNotRunning"}, "host.next.startGame");
                 if (found->status != "ready" || !found->port)
-                    return Error(-32002, found->detail, "检查 MCP 设置或等待服务启动。");
-                if (!host_.open_dashboard) throw std::runtime_error("宿主不支持 Dashboard 窗口。");
+                    return Error(-32002, app::UiMessage{found->detail}, "host.next.checkMcp");
+                if (!host_.open_dashboard) throw GuiTextError({"host.error.noDashboard"});
                 host_.open_dashboard(id);
                 writer.AddBool(result, "opened", true);
             } else {
@@ -240,9 +256,9 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                     else
                         writer.AddNull(item, "port");
                     writer.AddString(item, "status", value.status);
-                    writer.AddString(item, "detail", value.detail);
+                    writer.AddString(item, "detail_id", value.detail);
                     writer.AddString(item, "key_editor_status", value.editor_status);
-                    writer.AddString(item, "key_editor_detail", value.editor_detail);
+                    writer.AddString(item, "key_editor_detail_id", value.editor_detail);
                     writer.Append(items, item);
                 }
                 writer.Add(result, "items", items);
@@ -263,7 +279,7 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
         if (method != "library.list" && method != "library.launch" && method != "library.open_dir" &&
             method != "library.remove" && method != "library.clear_data" && method != "library.storage" &&
             method != "library.resume" && method != "library.stop")
-            return Error(-32601, "unknown method", "使用当前版本支持的 GUI 方法。");
+            return Error(-32601, "unknown method", "host.next.useSupportedMethod");
         if (method == "library.list")
             CheckFields(params, {});
         else if (method == "library.launch")
@@ -305,7 +321,7 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                 delete_saves = *value->Bool();
             }
         }
-        if (ImportBusy()) return Error(-32002, "正在入库", "入库完成后重试。");
+        if (ImportBusy()) return Error(-32002, app::UiMessage{"host.error.importing"}, "host.next.afterImport");
         auto entries = store_.LoadEntries();
         for (auto& entry : entries) {
             try {
@@ -386,11 +402,12 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
         } else {
             const auto entry =
                 std::find_if(entries.begin(), entries.end(), [&](const auto& item) { return item.key == key; });
-            if (entry == entries.end()) return Error(-32004, "installation not found", "刷新游戏库后重试。");
+            if (entry == entries.end()) return Error(-32004, "installation not found", "host.next.refreshLibrary");
             if (method == "library.remove") {
                 const auto tile =
                     std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
-                if (tile->running) return Error(-32002, "游戏正在运行", "退出游戏后再删除。");
+                if (tile->running)
+                    return Error(-32002, app::UiMessage{"host.error.gameRunning"}, "host.next.quitBeforeDelete");
                 store_.Remove(key, delete_saves);
                 // Removing a demo means "no demos": the setting goes off so the next start does not seed it back.
                 const bool demo = is_demo(*entry);
@@ -405,7 +422,8 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             } else if (method == "library.clear_data") {
                 const auto tile =
                     std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
-                if (tile->running) return Error(-32002, "游戏正在运行", "退出游戏后再清空数据。");
+                if (tile->running)
+                    return Error(-32002, app::UiMessage{"host.error.gameRunning"}, "host.next.quitBeforeClear");
                 store_.ClearSaves(key);
                 writer.AddString(result, "installation_id", key);
                 writer.AddBool(result, "cleared", true);
@@ -424,9 +442,10 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             } else if (method == "library.resume" || method == "library.stop") {
                 const auto tile =
                     std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
-                if (!tile->running) return Error(-32001, "游戏没有在运行", "刷新游戏库后重试。");
+                if (!tile->running)
+                    return Error(-32001, app::UiMessage{"host.error.gameNotRunningNow"}, "host.next.refreshLibrary");
                 if (!(method == "library.resume" ? host_.resume : host_.stop))
-                    throw std::runtime_error("宿主不支持切换运行中的游戏。");
+                    throw GuiTextError({"host.error.noSwitch"});
                 (method == "library.resume" ? host_.resume : host_.stop)(key);
                 writer.AddString(result, "installation_id", key);
             } else if (method == "library.launch") {
@@ -438,14 +457,17 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                             std::find_if(tiles.begin(), tiles.end(),
                                          [&](const auto& item) { return item.running && item.key != key; });
                         other != tiles.end())
-                        return Error(-32003, "已有游戏在运行（{name}）", "返回该游戏，或先关闭它再启动。",
-                                     {{"name", other->display_name}});
+                        return Error(-32003,
+                                     app::UiMessage{"host.error.anotherRunning", {{"name", other->display_name}}},
+                                     "host.next.backOrClose");
                 if (!tile->can_launch)
-                    return Error(-32001, "游戏当前不可启动（{status}）", "检查运行状态、Profile 和数据包目录。",
-                                 {{"status", std::string(Status(tile->status))}});
+                    return Error(
+                        -32001,
+                        app::UiMessage{"host.error.notLaunchable", {{"status", std::string(Status(tile->status))}}},
+                        "host.next.checkLaunchState");
                 const auto config = LoadLibraryConfig(store_.Root());
                 const auto minimize = platform_.desktop_window && std::get<bool>(Setting(config, "minimize_on_launch"));
-                if (minimize && !host_.minimize) throw std::runtime_error("宿主不支持最小化窗口。");
+                if (minimize && !host_.minimize) throw GuiTextError({"host.error.noMinimize"});
                 host_.launch(BuildLaunchPlan(game_executable_, store_.Root(), *entry, config, mode, platform_));
                 if (minimize) host_.minimize();
                 writer.AddString(result, "installation_id", key);
@@ -454,27 +476,25 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                 auto path = kind == "sandbox" ? LauncherSandboxRoot(store_.Root()) / entry->key : entry->directory;
                 if (kind == "external") {
                     if (!entry->external_dir)
-                        return Error(-32004, "external directory is not configured", "先为这个游戏配置数据包目录。");
+                        return Error(-32004, "external directory is not configured", "host.next.configureData");
                     path = *entry->external_dir;
                 }
                 if (!std::filesystem::is_directory(path))
-                    return Error(-32004, "directory does not exist", "首次启动后再打开沙盒，或检查目录配置。");
+                    return Error(-32004, "directory does not exist", "host.next.openSandboxLater");
                 host_.open_directory(path);
                 writer.AddString(result, "path", PathUtf8(path));
             }
         }
         writer.Add(root, "result", result);
         return {true, writer.Serialize(root)};
-    } catch (const GuiTextError& error) {
-        return Error(-32000, error.what(), "检查库目录、配置和日志后重试。", error.Params());
     } catch (const LibraryError& error) {
         return Error(error.Code() == LibraryErrorCode::busy || error.Code() == LibraryErrorCode::running ? -32002
                                                                                                          : -32000,
-                     error.what(), "关闭运行中的游戏或等待其他库操作完成后重试。");
+                     error, "host.next.waitLibrary");
     } catch (const std::invalid_argument& error) {
-        return Error(-32602, error.what(), "检查请求参数后重试。");
+        return Error(-32602, error, "host.next.checkParams");
     } catch (const std::exception& error) {
-        return Error(-32000, error.what(), "检查库目录、配置和日志后重试。");
+        return Error(-32000, error, "host.next.checkLibrary");
     }
 }
 }  // namespace ogplay::frontend

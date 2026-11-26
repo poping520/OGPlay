@@ -3,8 +3,8 @@ import { Glyph } from '../../../packages/ui-kit/glyph';
 import { t } from '../shared/i18n';
 import type { Sort } from './library';
 
-// Sort picker in the "更多" menu style: a native <select> opens the system menu, which no skin can restyle.
-export const sorts: readonly (readonly [Sort, string])[] = [['name', '名称'], ['newest', '最近导入'], ['oldest', '最早导入']];
+// Sort picker in the 'common.more' menu style: a native <select> opens the system menu, which no skin can restyle.
+export const sorts: readonly (readonly [Sort, string])[] = [['name', 'library.sort.name'], ['newest', 'library.sort.newest'], ['oldest', 'library.sort.oldest']];
 export function SortMenu({ value, change }: { value: Sort; change: (value: Sort) => void }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -27,10 +27,10 @@ export function SortMenu({ value, change }: { value: Sort; change: (value: Sort)
     entries[(index + (event.key === 'ArrowDown' ? 1 : entries.length - 1)) % entries.length].focus();
   };
   const label = t(sorts.find(([key]) => key === value)![1]);
-  return <div class="sort" ref={root} onKeyDown={keydown}><span aria-hidden="true">{t('排序')}</span>
-    <button aria-haspopup="menu" aria-expanded={open} aria-label={`${t('排序')} · ${label}`} onClick={() => setOpen(current => !current)}>
+  return <div class="sort" ref={root} onKeyDown={keydown}><span aria-hidden="true">{t('library.sort.label')}</span>
+    <button aria-haspopup="menu" aria-expanded={open} aria-label={`${t('library.sort.label')} · ${label}`} onClick={() => setOpen(current => !current)}>
       {label}<Glyph name="down" /></button>
-    {open && <div class="menu" role="menu" aria-label={t('排序')}>{sorts.map(([key, label]) =>
+    {open && <div class="menu" role="menu" aria-label={t('library.sort.label')}>{sorts.map(([key, label]) =>
       <button key={key} role="menuitemradio" aria-checked={key === value} onClick={() => { change(key); dismiss(); }}>
         {key === value && <Glyph name="check" />}{t(label)}</button>)}</div>}
   </div>;

@@ -1,4 +1,4 @@
-import { t } from './i18n';
+import { t, uiText, type UiText } from './i18n';
 // Host facts only: the Profile value is the id or the catalog error, the data pack value the
 // host path; the launcher writes the words.
 export interface Condition { status: string; value: string; owned: boolean }
@@ -27,25 +27,27 @@ declare global {
 }
 let sequence = 0;
 export function decodeResponse<T>(response: unknown, id: number): T {
-  if (!response || typeof response !== 'object') throw new Error(t('宿主返回了无效响应。'));
+  if (!response || typeof response !== 'object') throw new Error(t('rpc.invalidResponse'));
   const value = response as Record<string, unknown>;
-  if (value.jsonrpc !== '2.0' || value.id !== id) throw new Error(t('宿主响应标识不匹配。'));
+  if (value.jsonrpc !== '2.0' || value.id !== id) throw new Error(t('rpc.idMismatch'));
   if (value.error) {
-    const error = value.error as { message?: string; next_step?: string; params?: Record<string, string> };
-    throw new Error(`${t(error.message ?? '请求失败', error.params)}\n${t(error.next_step ?? '检查 GUI 日志后重试。')}`);
+    // The host names the message (message_id, params) and the next step; message alone is diagnostic text.
+    const error = value.error as { message?: string; message_id?: string; next_step_id?: string; params?: Record<string, string> };
+    const text: UiText = { text: error.message ?? t('rpc.requestFailed'), id: error.message_id, params: error.params };
+    throw new Error(`${uiText(text)}\n${t(error.next_step_id ?? 'rpc.checkGuiLog')}`);
   }
-  if (!('result' in value)) throw new Error(t('宿主响应缺少结果。'));
+  if (!('result' in value)) throw new Error(t('rpc.missingResult'));
   return value.result as T;
 }
 export async function rpc<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
-  if (!window.rpc) throw new Error(t('请通过 OGPlay 启动器打开此页面。'));
+  if (!window.rpc) throw new Error(t('rpc.openFromLauncher'));
   const id = ++sequence;
   let response: unknown;
   try { response = await window.rpc(JSON.stringify({ jsonrpc: '2.0', id, method, params })); }
   catch (reason) {
     if (reason && typeof reason === 'object' && 'message' in reason) {
-      const error = reason as { message: string; next_step?: string };
-      throw new Error(`${t(error.message)}\n${t(error.next_step ?? '检查 GUI 日志后重试。')}`);
+      const error = reason as { message: string; message_id?: string; next_step_id?: string };
+      throw new Error(`${uiText({ text: error.message, id: error.message_id })}\n${t(error.next_step_id ?? 'rpc.checkGuiLog')}`);
     }
     throw reason;
   }

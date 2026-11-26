@@ -6,7 +6,10 @@
   --bg: #090c16; --ink: #f2f4fa; --soft: #c4cadb; --muted: #8f97ad; --dim: #5d6680; --glass: rgba(255,255,255,.06); --glass2: rgba(255,255,255,.1);
   --yellow: #ffc21a; --yellow-hi: #ffd04d; --cream: #f6e9d2; --cream-ink: #3a2f22; --accent: var(--yellow); --field: rgba(0,0,0,.28);
   --ready: #3ddc84; --warning: #ffb020; --danger: #ff5a52; --running: #4aa3ff; --panel: #141a2a; --line: #262f45;
-  --font: ui-rounded, 'SF Pro Rounded', -apple-system, 'PingFang SC', 'Segoe UI Variable Display', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
+  /* The CJK face for the UI language (:root[lang] below), so Japanese kanji and Traditional Chinese are not drawn
+     with Simplified Chinese glyph forms. Every host's names are listed; missing ones are skipped. */
+  --cjk: 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Noto Sans SC';
+  --font: ui-rounded, 'SF Pro Rounded', -apple-system, 'Segoe UI Variable Display', var(--cjk), sans-serif;
   --title-weight: 900;
   --code: ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
   --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence baseFrequency='.9' numOctaves='2'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");
@@ -14,15 +17,18 @@
 
 /* The launcher marks Windows and Android before rendering. Put the bundled face before generic families so
    Chromium cannot resolve ui-rounded to a system fallback and skip it. Other hosts keep their native typography.
-   SN Pro has Latin only: Chinese falls through to the system's CJK face. */
+   SN Pro has Latin only: CJK falls through to the language's face in --cjk. */
 :root[data-platform="windows"] {
-  --font: 'SN Pro', 'Segoe UI Variable Display', 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
+  --font: 'SN Pro', 'Segoe UI Variable Display', 'Segoe UI', var(--cjk), sans-serif;
   --title-weight: 800;
 }
 :root[data-platform="android"] {
-  --font: 'SN Pro', 'Noto Sans CJK SC', 'Noto Sans SC', sans-serif;
+  --font: 'SN Pro', var(--cjk), sans-serif;
   --title-weight: 800;
 }
+:root[lang="zh-TW"] { --cjk: 'PingFang TC', 'Microsoft JhengHei UI', 'Microsoft JhengHei', 'Noto Sans CJK TC', 'Noto Sans TC'; }
+:root[lang="ja-JP"] { --cjk: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Meiryo UI', 'Noto Sans CJK JP', 'Noto Sans JP'; }
+:root[lang="ko-KR"] { --cjk: 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans CJK KR', 'Noto Sans KR'; }
 
 /* element baseline: buttons start bare, each control styles itself */
 * { box-sizing: border-box; }

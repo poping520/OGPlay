@@ -25,14 +25,14 @@ export function MountPreview({ caption, guest, invalid, data, error }: {
 }) {
   const shown = data?.entries ?? [];
   const hidden = data ? data.entry_count - shown.length : 0;
-  return <figure class="iw-mount" aria-label={t('挂载预览')}>
+  return <figure class="iw-mount" aria-label={t('import.mountPreviewShort')}>
     <figcaption><span>{caption}</span>{data && <small>{describeData(data)}</small>}</figcaption>
-    <code class={invalid ? 'iw-root bad' : 'iw-root'}>{invalid ? t('挂载位置无效，修正后显示') : `${guest}/`}</code>
-    {error ? <p class="iw-note bad">{error}</p> : !data ? <p class="iw-note">{t('正在读取目录…')}</p> :
+    <code class={invalid ? 'iw-root bad' : 'iw-root'}>{invalid ? t('import.invalidMount') : `${guest}/`}</code>
+    {error ? <p class="iw-note bad">{error}</p> : !data ? <p class="iw-note">{t('import.readingFolder')}</p> :
       <ul class="iw-tree">
         {shown.map((entry, index) => <li><i>{index === shown.length - 1 && hidden <= 0 ? '└─' : '├─'}</i><code>{entry.name}{entry.directory ? '/' : ''}</code></li>)}
-        {hidden > 0 && <li class="more"><i>└─</i>{t('另 {n} 项', { n: hidden })}</li>}
-        {!data.entry_count && <li class="more"><i>└─</i>{t('空目录')}</li>}
+        {hidden > 0 && <li class="more"><i>└─</i>{t('import.moreItems', { n: hidden })}</li>}
+        {!data.entry_count && <li class="more"><i>└─</i>{t('import.emptyFolder')}</li>}
       </ul>}
   </figure>;
 }

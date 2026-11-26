@@ -1,4 +1,5 @@
 #include "frontend/gui/shell.h"
+#include "frontend/gui/rpc_error.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <array>
@@ -176,7 +177,7 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
 
         view = hal::CreateWebViewHost(
             {app::BundledDataPaths().root / "webui/gui/index.html", options.smoke_frames,
-             location.root / "gui-smoke.png", ShellText(language), "检查 GUI 日志和前端制品后重试。", location.root},
+             location.root / "gui-smoke.png", ShellText(language), "host.next.checkFrontend", location.root},
             {[&](std::string_view request) {
                  if (closing) {
                      app::JsonWriter writer;
@@ -185,7 +186,7 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
                      writer.AddNull(root, "id");
                      writer.AddInteger(error, "code", -32002);
                      writer.AddString(error, "message", "launcher is closing");
-                     writer.AddString(error, "next_step", "重新打开 OGPlay。");
+                     writer.AddString(error, "next_step_id", "host.next.reopen");
                      writer.Add(root, "error", error);
                      return writer.Serialize(root);
                  }
@@ -237,7 +238,7 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
                          logger.Write(app::LogLevel::error, "frontend.gui.dashboard", "automatic Dashboard open failed",
                                       {}, {{"reason", std::string(error.what())}});
                          app::JsonWriter writer;
-                         const auto text = writer.String(error.what());
+                         const auto text = UiTextJson(writer, error);
                          view->Evaluate("window.dispatchEvent(new CustomEvent('ogplay-dashboard-error',{detail:" +
                                         writer.Serialize(text) + "}));");
                      }

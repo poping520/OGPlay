@@ -1,4 +1,5 @@
 #include "process_manager.h"
+#include "frontend/gui/rpc_error.h"
 
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_iostream.h>
@@ -89,7 +90,7 @@ GuiProcessManager::~GuiProcessManager() {
 void GuiProcessManager::Launch(const LaunchPlan& plan) {
     if (plan.mcp_port && std::any_of(active_.begin(), active_.end(),
                                      [&](const auto& active) { return active.dashboard.port == plan.mcp_port; }))
-        throw std::runtime_error("MCP 端口已被其他运行中的游戏使用，请在游戏设置中选择其他端口。");
+        throw GuiTextError({"host.error.mcpPortTaken"});
     tracker_.Begin(plan.package, plan.log_path);
     SDL_IOStream* error_stream{};
     try {
@@ -123,14 +124,14 @@ void GuiProcessManager::Launch(const LaunchPlan& plan) {
         active.auto_open = plan.dashboard_auto_open;
         if (plan.mcp_port) {
             active.dashboard.status = "starting";
-            active.dashboard.detail = "等待 Dashboard 服务启动。";
+            active.dashboard.detail = "host.dashboard.waiting";
         }
         active.editor_port = plan.key_editor_port;
         active.control_token = plan.control_token;
         active.ui_language = plan.ui_language;
         if (plan.key_editor_port && !plan.control_token.empty()) {
             active.dashboard.editor_status = "starting";
-            active.dashboard.editor_detail = "等待按键设置服务启动。";
+            active.dashboard.editor_detail = "host.keyEditor.waiting";
         }
         active_.push_back(std::move(active));
         logger_.Write(app::LogLevel::info, "frontend.gui.launch", "game process started", {},
@@ -221,8 +222,8 @@ std::vector<GuiDashboard> GuiProcessManager::Dashboards() const {
 std::uint16_t GuiProcessManager::DashboardPort(std::string_view instance) const {
     const auto found =
         std::find_if(active_.begin(), active_.end(), [&](const auto& active) { return active.package == instance; });
-    if (found == active_.end()) throw std::runtime_error("游戏已退出，请重新启动。");
-    if (found->dashboard.status != "ready" || !found->dashboard.port) throw std::runtime_error(found->dashboard.detail);
+    if (found == active_.end()) throw GuiTextError({"host.error.gameExited"});
+    if (found->dashboard.status != "ready" || !found->dashboard.port) throw GuiTextError({found->dashboard.detail});
     return *found->dashboard.port;
 }
 
@@ -239,9 +240,9 @@ std::vector<std::string> GuiProcessManager::TakeAutoOpen() {
 GuiProcessManager::KeyEditorAddress GuiProcessManager::KeyEditor(const std::string_view instance) const {
     const auto found =
         std::find_if(active_.begin(), active_.end(), [&](const auto& active) { return active.package == instance; });
-    if (found == active_.end()) throw std::runtime_error("游戏已退出，请重新启动。");
+    if (found == active_.end()) throw GuiTextError({"host.error.gameExited"});
     if (found->dashboard.editor_status != "ready" || !found->editor_port)
-        throw std::runtime_error(found->dashboard.editor_detail);
+        throw GuiTextError({found->dashboard.editor_detail});
     return {*found->editor_port, found->control_token, found->ui_language};
 }
 

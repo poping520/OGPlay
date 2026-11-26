@@ -2,6 +2,7 @@
 #include "ogplay/app/export.h"
 #include "ogplay/app/game_run.h"
 #include "ogplay/app/host.h"
+#include "ogplay/app/ui_message.h"
 
 #include <atomic>
 #include <cstddef>
@@ -29,16 +30,20 @@ enum class LibraryErrorCode : std::uint8_t {
     running,
 };
 
-class OGPLAYCORE_API LibraryError final : public std::runtime_error {
+// what() is English diagnostic text (CLI, logs); errors the launcher shows also carry a UiMessage.
+class OGPLAYCORE_API LibraryError final : public std::runtime_error, public UiMessageSource {
 public:
     LibraryError(LibraryErrorCode code, std::string message, std::filesystem::path path = {});
+    LibraryError(LibraryErrorCode code, std::string message, UiMessage ui, std::filesystem::path path = {});
 
     [[nodiscard]] LibraryErrorCode Code() const noexcept;
     [[nodiscard]] const std::filesystem::path& Path() const noexcept;
+    [[nodiscard]] const UiMessage& Message() const noexcept override;
 
 private:
     LibraryErrorCode code_;
     std::filesystem::path path_;
+    UiMessage ui_;
 };
 
 using SettingValue = std::variant<bool, std::uint32_t, std::string>;
@@ -143,6 +148,9 @@ private:
 }  // namespace ogplay::app
 
 namespace ogplay::app {
+// label/pending are English for CLI and logs; the launcher words every field from its key in the web UI catalogs
+// (setting.<key>.label, .defaultLabel, .hint), with unit (setting.unit.<unit>) and reserved, the reason a saved-only
+// field is not wired yet (setting.reserved.<reserved>), as codes.
 struct SettingDefinition {
     std::string key, group, label;
     SettingValue initial;
@@ -150,6 +158,9 @@ struct SettingDefinition {
     std::uint32_t minimum{}, maximum{};
     std::string pending{};
     bool directory{};
+    std::string unit{};
+    std::string reserved{};
+    bool global_default{};  // the global page reads it as the default of a per-game value ("Default interpreter")
 };
 
 [[nodiscard]] OGPLAYCORE_API const std::vector<SettingDefinition>& SettingDefinitions();

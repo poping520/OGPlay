@@ -203,13 +203,13 @@ TEST_CASE("game_run_args ui-language round trips and rejects invalid or repeated
     using namespace ogplay::app;
     const std::vector<std::string_view> plain{"game.apk"};
     CHECK_FALSE(ParseGameRunArgs(plain).ui_language);
-    for (const auto tag : {"zh-CN", "en-US"}) {
+    for (const auto tag : {"zh-CN", "en-US", "zh-TW", "ja-JP", "pt-BR"}) {
         const std::vector<std::string_view> args{"game.apk", "--ui-language", tag};
         const auto options = ParseGameRunArgs(args);
         CHECK(options.ui_language == ParseUiLanguage(tag));
         CHECK(RoundTrip(options) == options);
     }
-    for (const auto tag : {"system", "zh", "fr-FR", "", "en-us"}) {
+    for (const auto tag : {"system", "zh", "de-DE", "", "en-us"}) {
         const std::vector<std::string_view> args{"game.apk", "--ui-language", tag};
         CHECK_THROWS_AS(static_cast<void>(ParseGameRunArgs(args)), std::invalid_argument);
     }
@@ -225,7 +225,7 @@ TEST_CASE("game_run_args ui-language round trips and rejects invalid or repeated
 TEST_CASE("game_run_args app-language defaults to UI and round trips independently") {
     const std::vector<std::string_view> defaults{"game.apk", "--ui-language", "zh-CN"};
     CHECK_FALSE(ParseGameRunArgs(defaults).app_language);
-    for (const auto tag : {"ui", "zh-CN", "en-US"}) {
+    for (const auto tag : {"ui", "zh-CN", "en-US", "ko-KR", "fr-FR"}) {
         const std::vector<std::string_view> args{"game.apk", "--ui-language", "zh-CN", "--app-language", tag};
         const auto options = ParseGameRunArgs(args);
         CHECK(options.app_language == ParseUiLanguage(tag));
@@ -235,7 +235,7 @@ TEST_CASE("game_run_args app-language defaults to UI and round trips independent
     for (const auto& args :
          {std::vector<std::string_view>{"game.apk", "--app-language"},
           std::vector<std::string_view>{"game.apk", "--app-language", "system"},
-          std::vector<std::string_view>{"game.apk", "--app-language", "fr-FR"},
+          std::vector<std::string_view>{"game.apk", "--app-language", "de-DE"},
           std::vector<std::string_view>{"game.apk", "--app-language", "ui", "--app-language", "en-US"}})
         CHECK_THROWS_AS(static_cast<void>(ParseGameRunArgs(args)), std::invalid_argument);
     auto options = ParseGameRunArgs(defaults);

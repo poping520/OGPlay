@@ -250,19 +250,24 @@ ImportFileWriter::ImportFileWriter(const std::filesystem::path& destination) : d
     if (error)
         throw LibraryError(LibraryErrorCode::io_error, "cannot create import directory", destination.parent_path());
     if (std::filesystem::exists(destination, error))
-        throw LibraryError(LibraryErrorCode::io_error, "压缩包里有重复的文件。", destination);
+        throw LibraryError(LibraryErrorCode::io_error, "duplicate file in the archive",
+                           UiMessage{"host.error.archiveDuplicate"}, destination);
     output_.open(destination, std::ios::binary | std::ios::trunc);
     if (!output_) throw LibraryError(LibraryErrorCode::io_error, "cannot create imported file", destination);
 }
 
 void ImportFileWriter::Write(std::span<const std::byte> bytes) {
     output_.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-    if (!output_) throw LibraryError(LibraryErrorCode::io_error, "写入游戏库失败，请检查剩余空间。", destination_);
+    if (!output_)
+        throw LibraryError(LibraryErrorCode::io_error, "cannot write to the library",
+                           UiMessage{"host.error.writeLibrary"}, destination_);
 }
 
 void ImportFileWriter::Finish() {
     output_.close();
-    if (!output_) throw LibraryError(LibraryErrorCode::io_error, "写入游戏库失败，请检查剩余空间。", destination_);
+    if (!output_)
+        throw LibraryError(LibraryErrorCode::io_error, "cannot write to the library",
+                           UiMessage{"host.error.writeLibrary"}, destination_);
 }
 
 void WriteImportFile(const std::filesystem::path& destination, std::uint64_t size,
@@ -274,7 +279,8 @@ void WriteImportFile(const std::filesystem::path& destination, std::uint64_t siz
         const auto want = static_cast<std::size_t>(std::min<std::uint64_t>(buffer.size(), size - written));
         const auto count = read(std::span(buffer).first(want));
         if (count == 0 || count > want)
-            throw LibraryError(LibraryErrorCode::io_error, "压缩包内容不完整。", destination);
+            throw LibraryError(LibraryErrorCode::io_error, "the archive is incomplete",
+                               UiMessage{"host.error.archiveIncomplete"}, destination);
         output.Write(std::span(buffer).first(count));
         written += count;
         if (progress) progress->copied_bytes.fetch_add(count, std::memory_order_relaxed);
@@ -494,7 +500,8 @@ std::string ArchiveMount(const ArchivePlan& plan, std::span<const std::string> e
         const auto found = std::find_if(plan.extras.begin(), plan.extras.end(),
                                         [&](const ArchiveExtra& extra) { return extra.name == name; });
         if (found == plan.extras.end())
-            throw LibraryError(LibraryErrorCode::invalid_argument, "压缩包里没有所选的内容：" + name);
+            throw LibraryError(LibraryErrorCode::invalid_argument, "the chosen item is not in the archive: " + name,
+                               UiMessage{"host.error.archiveEntryMissing", {{"name", name}}});
         any_extra = true;
         for (const auto& member : found->members)
             chosen.push_back(&member);

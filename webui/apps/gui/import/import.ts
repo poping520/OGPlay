@@ -1,4 +1,4 @@
-import { t } from '../shared/i18n';
+import { t, type UiText } from '../shared/i18n';
 import { rpc } from '../shared/rpc';
 export interface ImportSummary {
   display_name: string; localized_names: Record<string, string>; package: string; version_name: string; version_code: number;
@@ -22,7 +22,7 @@ export interface ArchiveData {
 export interface DataPack extends ArchiveData { kind: 'directory' | 'archive'; package?: string | null }
 export interface ImportJob {
   job: string; state: 'uploading' | 'analyzing' | 'ready' | 'importing' | 'imported' | 'cancelled' | 'failed';
-  summary?: ImportSummary; installation_id?: string; message?: string;
+  summary?: ImportSummary; installation_id?: string; failure?: UiText;
   progress?: { copied_bytes: number; total_bytes: number };
 }
 export type ExternalMode = 'copy' | 'link';
@@ -34,12 +34,12 @@ export function formatBytes(value: number): string {
 }
 /** Stage text while a commit runs; byte counts appear once data copying (or unpacking an archive) reports a total. */
 export function importingStage(job: ImportJob, unpacking = false): string {
-  if (job.state === 'failed') return t('导入失败');
+  if (job.state === 'failed') return t('import.failed');
   const progress = job.progress;
-  if (!progress || !progress.total_bytes) return t('正在加入游戏库，请勿关闭…');
+  if (!progress || !progress.total_bytes) return t('import.adding');
   const percent = Math.min(100, Math.floor(progress.copied_bytes / progress.total_bytes * 100));
   const params = { percent, copied: formatBytes(progress.copied_bytes), total: formatBytes(progress.total_bytes) };
-  return unpacking ? t('正在解压数据包… {percent}%（{copied} / {total}）', params) : t('正在复制数据包… {percent}%（{copied} / {total}）', params);
+  return unpacking ? t('import.unpackingData', params) : t('import.copyingData', params);
 }
 /** With extras chosen, an archive's data mounts at /sdcard: the preview then lists that level plus the extras. */
 export function archivePreview(archive: ArchiveData, extras: string[]): DataDirectory | null {
@@ -69,8 +69,8 @@ export async function pickPath(kind: 'file' | 'directory', call: Call = rpc): Pr
   return (await pickSource(kind, call))?.path ?? null;
 }
 export async function upload(file: File, onJob: (job: string) => void, progress: (value: number) => void, call: Call = rpc): Promise<ImportJob> {
-  if (!/\.apk$/i.test(file.name)) throw new Error(t('当前仅支持单体 APK；XAPK、APKM、APKS 分包安装尚未实现。'));
-  if (!file.size || file.size > 1024 ** 3) throw new Error(t('APK 必须非空且不超过 1 GB。'));
+  if (!/\.apk$/i.test(file.name)) throw new Error(t('import.splitNotImplemented'));
+  if (!file.size || file.size > 1024 ** 3) throw new Error(t('host.error.apkSize'));
   const result = await call<ImportJob>('library.upload.begin', { name: file.name, size: file.size });
   onJob(result.job);
   for (let offset = 0; offset < file.size; offset += 192 * 1024) {
@@ -90,17 +90,17 @@ export interface DataDirectory {
 }
 /** Mirrors the host rule: /sdcard or a directory below it, no empty/dot segments or control characters. */
 export function guestPathError(value: string): string | null {
-  if (value !== '/sdcard' && !value.startsWith('/sdcard/')) return t('挂载位置必须是 /sdcard 或其下的目录。');
+  if (value !== '/sdcard' && !value.startsWith('/sdcard/')) return t('import.mountMustBeSdcard');
   const parts = value.slice(1).split('/');
   if (parts.some(part => !part || part === '.' || part === '..' || part.includes('\\') || /[\u0000-\u001f]/.test(part)))
-    return t('路径含空段、. / .. 、反斜杠或控制字符。');
+    return t('import.badPath');
   return null;
 }
 /** Trailing slashes are a typing habit, not a different directory. */
 export const normalizeGuestPath = (value: string) => value.trim().replace(/(?<=.)\/+$/, '');
 export function describeData(data: DataDirectory): string {
   const params = { files: data.files, size: formatBytes(data.bytes) };
-  return data.truncated ? t('超过 {files} 个文件 · {size}（统计已截断）', params) : t('{files} 个文件 · {size}', params);
+  return data.truncated ? t('import.filesTruncated', params) : t('import.fileCount', params);
 }
 export interface DataMountCandidate { guest_dir: string; explained: number; examples: string[] }
 /** ADR-0146: host suggestion computed from what the last run failed to find. */

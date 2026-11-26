@@ -26,11 +26,11 @@ export function keyName(code: string): string | undefined {
 }
 
 export function captureKey(event: { code: string; ctrlKey: boolean; metaKey: boolean }): Captured {
-  if (event.metaKey || event.code.startsWith('Meta')) return { error: t('Cmd/Win 组合键保留给宿主') };
-  if (event.ctrlKey && !event.code.startsWith('Control')) return { error: t('Ctrl 组合键保留给宿主') };
+  if (event.metaKey || event.code.startsWith('Meta')) return { error: t('controls.key.reservedMeta') };
+  if (event.ctrlKey && !event.code.startsWith('Control')) return { error: t('controls.key.reservedCtrl') };
   const name = keyName(event.code);
-  if (!name) return { error: t("不支持的按键 {key}", { key: event.code || t('（未知）') }) };
-  if (reserved.has(name)) return { error: t("{key} 保留给宿主", { key: name.toUpperCase() }) };
+  if (!name) return { error: t('controls.key.unsupported', { key: event.code || t('controls.key.unknown') }) };
+  if (reserved.has(name)) return { error: t('controls.key.reserved', { key: name.toUpperCase() }) };
   return { source: `key:${name}` };
 }
 
@@ -38,14 +38,14 @@ const mouseNames = ['left', 'middle', 'right', 'x1', 'x2'];
 // MouseEvent.button: 0 primary, 1 middle, 2 secondary, 3/4 back/forward.
 export function captureMouse(button: number): Captured {
   const name = mouseNames[button];
-  return name ? { source: `mouse:${name}` } : { error: t("不支持的鼠标键 {button}", { button }) };
+  return name ? { source: `mouse:${name}` } : { error: t('controls.mouse.unsupported', { button }) };
 }
 
 // WheelEvent.deltaY < 0 scrolls up, matching the host's +delta_y.
 export function captureWheel(deltaY: number): Captured {
   if (deltaY < 0) return { source: 'wheel:up' };
   if (deltaY > 0) return { source: 'wheel:down' };
-  return { error: t('请上下滚动滚轮') };
+  return { error: t('controls.mouse.scrollPrompt') };
 }
 
 const labels: Record<string, string> = {
@@ -56,12 +56,12 @@ const labels: Record<string, string> = {
   equals: '=', left_bracket: '[', right_bracket: ']', backslash: '\\', semicolon: ';',
   apostrophe: "'", grave: '~', comma: ',', period: '.', slash: '/',
 };
-const mouseLabels = (): Record<string, string> => ({ left: t('鼠标左键'), middle: t('鼠标中键'), right: t('鼠标右键'), x1: t('鼠标侧键 1'), x2: t('鼠标侧键 2') });
+const mouseLabels = (): Record<string, string> => ({ left: t('controls.mouse.left'), middle: t('controls.mouse.middle'), right: t('controls.mouse.right'), x1: t('controls.mouse.side1'), x2: t('controls.mouse.side2') });
 
 export function sourceLabel(source: string): string {
-  if (source === 'mouse:motion') return t('鼠标移动');
-  if (source === 'wheel:up') return t('滚轮上');
-  if (source === 'wheel:down') return t('滚轮下');
+  if (source === 'mouse:motion') return t('controls.mouse.motion');
+  if (source === 'wheel:up') return t('controls.mouse.wheelUp');
+  if (source === 'wheel:down') return t('controls.mouse.wheelDown');
   if (source.startsWith('mouse:')) return mouseLabels()[source.slice(6)] ?? source;
   const name = source.startsWith('key:') ? source.slice(4) : source;
   return labels[name] ?? name.toUpperCase();
@@ -69,8 +69,8 @@ export function sourceLabel(source: string): string {
 
 // A spoken name for keys whose cap is only a symbol, so "~" reads as the tilde key.
 const captions = (): Record<string, string> => ({
-  grave: t('波浪键'), minus: t('减号键'), equals: t('等号键'), left_bracket: t('左方括号'), right_bracket: t('右方括号'),
-  backslash: t('反斜杠'), semicolon: t('分号键'), apostrophe: t('引号键'), comma: t('逗号键'), period: t('句号键'), slash: t('斜杠键'),
+  grave: t('controls.keyName.grave'), minus: t('controls.keyName.minus'), equals: t('controls.keyName.equal'), left_bracket: t('controls.keyName.bracketLeft'), right_bracket: t('controls.keyName.bracketRight'),
+  backslash: t('controls.keyName.backslash'), semicolon: t('controls.keyName.semicolon'), apostrophe: t('controls.keyName.quote'), comma: t('controls.keyName.comma'), period: t('controls.keyName.period'), slash: t('controls.keyName.slash'),
 });
 export function keyCaption(source: string): string | undefined {
   return source.startsWith('key:') ? captions()[source.slice(4)] : undefined;

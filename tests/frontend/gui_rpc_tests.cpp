@@ -699,7 +699,9 @@ TEST_CASE("GUI import snapshot creates a distinct instance and rejects repeated 
     const auto ready = Decode(PollImport(fixture));
     const auto summary = ready.Root().Member("result")->Member("summary");
     REQUIRE(summary);
-    CHECK(summary->Member("existing_instances")->UnsignedInteger() == 1);
+    REQUIRE(summary->Member("existing")->Size() == 1);
+    CHECK(summary->Member("existing")->Element(0)->Member("installation_id")->String() == "org.example.game");
+    CHECK(summary->Member("existing")->Element(0)->Member("version_name")->String() == "1.0");
     CHECK(summary->Member("version_code")->UnsignedInteger() == 0);
     CHECK_FALSE(summary->Member("requires_external").has_value());
     CHECK_FALSE(
@@ -713,6 +715,100 @@ TEST_CASE("GUI import snapshot creates a distinct instance and rejects repeated 
     CHECK(fixture.store.LoadEntries().size() == 2);
     CHECK_FALSE(std::filesystem::exists(fixture.root / ".gui-import-1"));
     CHECK(std::filesystem::file_size(fixture.root / "library/org.example.game-2/base.apk") == 7);
+}
+
+TEST_CASE("GUI import overwrites an instance in place, keeping saves and settings") {
+    Fixture fixture;
+    const auto entry = fixture.root / "library/org.example.game";
+    std::filesystem::create_directories(entry / "data");
+    std::ofstream(entry / "data/old.obb") << "old";
+    ogplay::app::SaveGameSettings(entry, {{{"external_guest_dir", std::string("/sdcard/Old")}}});
+    const auto saves = fixture.root / "sandbox/org.example.game/internal";
+    std::filesystem::create_directories(saves);
+    std::ofstream(saves / "save.dat") << "save";
+    const auto upload = [&](std::string_view job) {
+        REQUIRE(Decode(ImportCall(fixture, "library.upload.begin", R"({"name":"new.apk","size":7})"))
+                    .Root()
+                    .Member("result"));
+        REQUIRE(Decode(ImportCall(fixture, "library.upload.chunk",
+                                  "{\"job\":\"" + std::string(job) + "\",\"offset\":0,\"data\":\"dXBkYXRlZA==\"}"))
+                    .Root()
+                    .Member("result"));
+        REQUIRE(Decode(ImportCall(fixture, "library.upload.finish", "{\"job\":\"" + std::string(job) + "\"}"))
+                    .Root()
+                    .Member("result"));
+    };
+    const auto settle = [&](std::string_view job) {
+        for (unsigned attempt = 0; attempt < 100000; ++attempt) {
+            auto document = Decode(ImportCall(fixture, "library.job.poll", "{\"job\":\"" + std::string(job) + "\"}"));
+            REQUIRE_FALSE(document.Root().Member("error"));
+            const auto state = document.Root().Member("result")->Member("state")->String();
+            if (state != "analyzing" && state != "importing") return document;
+            std::this_thread::yield();
+        }
+        FAIL("import job did not settle");
+        return Decode("{}");
+    };
+    const auto read = [](const std::filesystem::path& path) {
+        std::ifstream stream(path, std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(stream), {});
+    };
+    upload("1");
+    CHECK(settle("1").Root().Member("result")->Member("state")->String() == "ready");
+    // Wrong targets and mixed requests are refused while the analysis stays ready to retry.
+    for (const auto params : {R"({"job":"1","replace":"org.example.other"})",
+                              R"({"job":"1","replace":"org.example.game","new_instance":true})",
+                              R"({"job":"1","replace":"org.example.game","external_guest_dir":"/sdcard"})"})
+        CHECK(Decode(ImportCall(fixture, "library.import", params)).Root().Member("error"));
+    {
+        const ogplay::app::RunningLease running(fixture.root, "org.example.game");
+        CHECK(Decode(ImportCall(fixture, "library.import", R"({"job":"1","replace":"org.example.game"})"))
+                  .Root()
+                  .Member("error"));
+    }
+    REQUIRE(Decode(ImportCall(fixture, "library.import", R"({"job":"1","replace":"org.example.game"})"))
+                .Root()
+                .Member("result"));
+    const auto replaced = settle("1");
+    CHECK(replaced.Root().Member("result")->Member("state")->String() == "imported");
+    CHECK(replaced.Root().Member("result")->Member("installation_id")->String() == "org.example.game");
+    auto entries = fixture.store.LoadEntries();
+    REQUIRE(entries.size() == 1);
+    CHECK(entries[0].metadata->display_name == "导入游戏");
+    CHECK(entries[0].metadata->version_code == 0);
+    CHECK(read(entry / "base.apk") == "updated");
+    CHECK(read(entry / "data/old.obb") == "old");
+    CHECK(read(saves / "save.dat") == "save");
+    CHECK(std::get<std::string>(ogplay::app::LoadGameSettings(entry).values.at("external_guest_dir")) == "/sdcard/Old");
+    // A data pack chosen with the overwrite replaces the old one and its mount.
+    const auto pack = fixture.root.parent_path() / (fixture.root.filename().string() + "-pack");
+
+    struct PackCleanup {
+        std::filesystem::path path;
+
+        ~PackCleanup() {
+            std::error_code error;
+            std::filesystem::remove_all(path, error);
+        }
+    } cleanup{pack};
+
+    std::filesystem::create_directories(pack);
+    std::ofstream(pack / "new.obb") << "new";
+    upload("2");
+    CHECK(settle("2").Root().Member("result")->Member("state")->String() == "ready");
+    REQUIRE(Decode(ImportCall(fixture, "library.import",
+                              R"({"job":"2","replace":"org.example.game","external_dir":")" + pack.generic_string() +
+                                  R"(","external_guest_dir":"/sdcard/New"})"))
+                .Root()
+                .Member("result"));
+    CHECK(settle("2").Root().Member("result")->Member("state")->String() == "imported");
+    CHECK(read(entry / "data/new.obb") == "new");
+    CHECK_FALSE(std::filesystem::exists(entry / "data/old.obb"));
+    CHECK(read(pack / "new.obb") == "new");
+    CHECK(read(saves / "save.dat") == "save");
+    CHECK(std::get<std::string>(ogplay::app::LoadGameSettings(entry).values.at("external_guest_dir")) == "/sdcard/New");
+    for (const auto& item : std::filesystem::directory_iterator(fixture.root / "library"))
+        CHECK_FALSE(item.path().filename().string().ends_with(".importing"));
 }
 
 TEST_CASE("GUI import rejects malformed upload and cancelled jobs without publishing") {
@@ -738,6 +834,15 @@ TEST_CASE("GUI import rejects malformed upload and cancelled jobs without publis
 
 TEST_CASE("GUI import takes the APK and data pack out of a game archive") {
     Fixture fixture;
+    bool replacing = false;
+    SUBCASE("another copy") {}
+    SUBCASE("replace the existing copy") {
+        replacing = true;
+    }
+    const std::string target = replacing ? R"("replace":"org.example.game")" : R"("new_instance":true)";
+    const auto original = fixture.root / "library/org.example.game";
+    std::filesystem::create_directories(original / "data");
+    std::ofstream(original / "data/old.obb") << "old";
     const auto pack = fixture.root / "pack.zip";
     std::filesystem::create_directories(fixture.root);
     ogplay::test::WriteZip(pack, {{"game.apk", "apk-a"},
@@ -781,16 +886,18 @@ TEST_CASE("GUI import takes the APK and data pack out of a game archive") {
     CHECK(Decode(ImportCall(fixture, "library.import", R"({"job":"2","new_instance":true,"external_dir":"/tmp"})"))
               .Root()
               .Member("error"));
-    REQUIRE(Decode(ImportCall(fixture, "library.import", R"({"job":"2","new_instance":true,"extras":["picture"]})"))
+    REQUIRE(Decode(ImportCall(fixture, "library.import", R"({"job":"2",)" + target + R"(,"extras":["picture"]})"))
                 .Root()
                 .Member("result"));
     const auto done = poll("2");
     REQUIRE(done.Root().Member("result")->Member("state")->String() == "imported");
     const std::string id(*done.Root().Member("result")->Member("installation_id")->String());
+    CHECK(id == (replacing ? "org.example.game" : "org.example.game-2"));
     const auto entry = fixture.root / "library" / id;
     CHECK(std::filesystem::file_size(entry / "base.apk") == 5);
     CHECK(std::filesystem::exists(entry / "data/Android/obb/org.example.game/main.3.org.example.game.obb"));
     CHECK(std::filesystem::exists(entry / "data/picture/cover.png"));
+    CHECK(std::filesystem::exists(original / "data/old.obb") == !replacing);
     std::ifstream settings(entry / "settings.toml");
     const std::string text{std::istreambuf_iterator<char>(settings), {}};
     CHECK(text.find("external_guest_dir") == std::string::npos);  // /sdcard is the default
@@ -798,8 +905,7 @@ TEST_CASE("GUI import takes the APK and data pack out of a game archive") {
     const auto imported_count = fixture.store.LoadEntries().size();
     const auto bad_ready = analyze("{\"path\":\"" + bad.generic_string() + "\"}");
     REQUIRE(bad_ready.Root().Member("result")->Member("state")->String() == "ready");
-    REQUIRE(
-        Decode(ImportCall(fixture, "library.import", R"({"job":"3","new_instance":true})")).Root().Member("result"));
+    REQUIRE(Decode(ImportCall(fixture, "library.import", R"({"job":"3",)" + target + "}")).Root().Member("result"));
     const auto failure = poll("3");
     const auto failed = failure.Root().Member("result");
     REQUIRE(failed->Member("state")->String() == "failed");
@@ -807,6 +913,8 @@ TEST_CASE("GUI import takes the APK and data pack out of a game archive") {
     CHECK(failed->Member("failure")->Member("params")->Member("detail")->String() == "Reduce1");
     CHECK_FALSE(failed->Member("progress"));
     CHECK(fixture.store.LoadEntries().size() == imported_count);
+    CHECK(std::filesystem::file_size(entry / "base.apk") == 5);
+    CHECK(std::filesystem::exists(entry / "data/picture/cover.png"));
 }
 
 TEST_CASE("GUI import takes the data pack out of a separately picked archive") {

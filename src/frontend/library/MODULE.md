@@ -6,6 +6,11 @@
 库根 library/.lock：导入、移除、配置写入及运行租约获取持排他锁；读全局/实例设置与运行探测持共享锁。两者有界等待约 2 秒，超时报 busy 并提示重试；List 只非阻塞尝试清理锁，冲突时跳过残留，busy 不得记为条目损坏。配置读取不改写文件，主文件缺失时只读 `.bak`，下次保存重新发布。运行租约在排他库锁内获取实例 .running.lock，保持至 RunGame 返回/异常；移除与单实例检查用同一 OS 锁。锁文件不得主动 unlink。
 条目目录内的 APK 副本名为 base.apk（`LibraryApkPath`）；旧条目的 game.apk 由 LoadEntries 持清理锁时改名，改名前 `LibraryApkPath` 回退到旧文件。
 删除条目保留引用的外部目录，库内 `data/` 随条目删除；sandbox 默认保留，`delete_saves` 时先删除。
+`Replace` 按 installation id 覆盖同包名实例，不校验版本或签名；持排他库锁与实例运行锁，运行中拒绝。
+替换 APK、meta 与图标（新 APK 无图标则清除旧图标），保留沙盒身份、存档和其他实例；不带数据包时原样保留设置及数据包，
+带数据包时按 copy/link/move 替换数据包及挂载设置，其他游戏设置保留，引用的旧宿主目录不删除。
+文件和设置先暂存，发布出错则回滚；回滚失败时旧文件保留于条目 `.replace-backup/` 并明确报错，后续覆盖拒绝，需人工恢复。
+进程在发布中异常退出的自动恢复尚未实现。
 `ClearSaves` 在排他库锁内持实例运行锁清空 sandbox 覆盖层（SandboxStore::Clear），保留 meta 身份（id、ANDROID_ID）、库内 APK/数据包、设置与日志；运行中或损坏条目拒绝。
 导入优先沿用无库条目且 meta package 一致的残留 sandbox 的最小编号 id（ReusableInstallationId，ADR-0145）。settings 校验、未知键和预留字段规则为两个 EXE 的唯一来源：读取 config/settings/meta 文件时跳过未知键，写入与修改请求仍拒绝未知键；ResolveLaunch 产出值，参数格式仅由 FormatGameRunArgs 维护。
 SettingDefinition 的 label/pending 为英文（CLI、日志），界面文案只在 Web UI 目录：字段另带 `unit`、`reserved`（预留原因代码）与

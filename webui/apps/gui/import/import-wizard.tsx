@@ -5,6 +5,9 @@ import { MountPreview } from './mount-preview';
 import { gameName, t, uiText } from '../shared/i18n';
 import { has } from '../shared/features';
 
+// The target choice for another copy; installation ids never start with a space.
+const NEW_INSTANCE = ' new';
+
 const MODES: { value: ExternalMode; label: string }[] = [
   { value: 'copy', label: 'import.mode.copy' },
   { value: 'link', label: 'import.mode.link' },
@@ -27,7 +30,8 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
   const [externalMode, setExternalMode] = useState<ExternalMode>('copy');
   const [committing, setCommitting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [confirmed, setConfirmed] = useState(false);
+  // Null uses the first matching instance by default; the user may choose another target or a new copy.
+  const [targetOverride, setTarget] = useState<string | null>(null);
   const [source, setSource] = useState(file?.name ?? '');
   const [label, setLabel] = useState(file?.name ?? '');
   // Archive parts of no known use the user chose to bring along (mounted under /sdcard).
@@ -75,7 +79,7 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
       }
       if (!dialog.current?.open) dialog.current?.showModal();
       if (activeJob.current) await rpc('library.job.cancel', { job: activeJob.current });
-      activeJob.current = ''; setJob(null); setConfirmed(false); setExternalGuest('/sdcard'); setGuestEdited(false); setExternalMode('copy');
+      activeJob.current = ''; setJob(null); setTarget(null); setExternalGuest('/sdcard'); setGuestEdited(false); setExternalMode('copy');
       setExtras([]); setDataPack(null);
       let initial: ImportJob;
       if (dropped) {
@@ -100,7 +104,7 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
   async function chooseApk(apk: string) {
     await run(async () => {
       if (activeJob.current) await rpc('library.job.cancel', { job: activeJob.current });
-      activeJob.current = ''; setJob(null); setConfirmed(false); setExtras([]); setDataPack(null); setGuestEdited(false);
+      activeJob.current = ''; setJob(null); setTarget(null); setExtras([]); setDataPack(null); setGuestEdited(false);
       setStage(t('import.analyzingPackage'));
       const initial = await rpc<ImportJob>('library.analyze', { path: source, apk });
       activeJob.current = initial.job;
@@ -152,7 +156,11 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
       setDataPack(null); setExtras([]); setGuestEdited(false); setExternalMode('copy');
     });
   }
-  const canImport = summary && job?.state === 'ready' && !guestError && (!summary.existing_instances || confirmed) &&
+  const existing = summary?.existing ?? [];
+  const target = targetOverride ?? existing[0]?.installation_id ?? NEW_INSTANCE;
+  const replacing = existing.length > 0 && target !== NEW_INSTANCE;
+  const replacementNote = t(withData ? 'import.replaceWithData' : 'import.replaceKeepsData');
+  const canImport = summary && job?.state === 'ready' && !guestError &&
     (!dataPack || !!dataPack.data || extras.length > 0);
   // What the host made of the picked data pack, shown above its mount.
   const packNote = (pack: DataPack): [string, string] => {
@@ -243,7 +251,23 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
           {!linking && extrasList(dataPack, dataPack.data ? 'import.extrasDefault' : 'import.extrasTicked')}
         </>}
       </section>}
-      {summary.existing_instances > 0 && <label class="iw-check"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.currentTarget.checked)} />{t('import.duplicateCopies', { n: summary.existing_instances })}</label>}
+      {existing.length > 0 && <section class="iw-data iw-target">
+        <div class="iw-title"><b>{t('import.target')}</b><small>{t('import.targetHint', { n: existing.length })}</small></div>
+        <div class="iw-installed"><small>{t('import.installedVersion')}</small>
+          {existing.map(item => <span key={item.installation_id} class="pill iw-installed-version">
+            {existing.length > 1 && `${gameName(item)} · `}{item.version_name || t('common.version')} ({item.version_code})
+          </span>)}
+        </div>
+        <div class="iw-choices" role="radiogroup" aria-label={t('import.target')}>
+          {existing.map(item => <button key={item.installation_id} role="radio" aria-checked={target === item.installation_id}
+            class={target === item.installation_id ? 'on' : ''} disabled={busy} onClick={() => setTarget(item.installation_id)}>
+            <span><b class="iw-target-name" title={t('import.replaceInstance', { name: gameName(item) })}>{t('import.replaceInstance', { name: gameName(item) })}</b>
+              <small class="iw-target-note" title={replacementNote}>{replacementNote}</small>
+            </span></button>)}
+          <button role="radio" aria-checked={target === NEW_INSTANCE} class={target === NEW_INSTANCE ? 'on' : ''} disabled={busy}
+            onClick={() => setTarget(NEW_INSTANCE)}><span><b>{t('import.addAnother')}</b><small class="iw-target-note" title={t('import.addAnotherHint')}>{t('import.addAnotherHint')}</small></span></button>
+        </div>
+      </section>}
     </>}
     {error && <pre role="alert">{error}</pre>}
     <div class="modal-actions">
@@ -254,20 +278,21 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
         setStage(importingStage({ job: activeJob.current, state: 'importing' })); setCommitting(true); setCancelling(false);
         try {
           // Planned data: the host's mount unless the user typed one; a linked directory takes no extras.
+          // Overwriting without a data pack keeps the instance's own pack and mount.
           const params = withData ? { extras: linking ? [] : extras, ...(guestEdited ? { external_guest_dir: guest } : {}), ...(linking ? { external_mode: 'link' } : {}) }
-            : { external_guest_dir: '/sdcard' };
+            : replacing ? {} : { external_guest_dir: '/sdcard' };
           const unpacking = archiveData || dataPack?.kind === 'archive';
-          const initial = await rpc<ImportJob>('library.import', { job: activeJob.current, new_instance: true, ...params });
+          const initial = await rpc<ImportJob>('library.import', { job: activeJob.current, ...(replacing ? { replace: target } : { new_instance: true }), ...params });
           const result = await poll(initial, value => setStage(importingStage(value, unpacking))); setJob(result);
           if (result.state === 'cancelled') { activeJob.current = ''; setStage(t('import.cancelled')); return; }
           if (result.state !== 'imported' || !result.installation_id) throw new Error(t('import.noResult'));
-          setStage(t('import.added')); activeJob.current = '';
+          setStage(t(replacing ? 'import.replaced' : 'import.added')); activeJob.current = '';
           await onImported(result.installation_id);
         } catch (reason) {
           if (!disposed.current) setStage(t('import.failed'));
           throw reason;
         } finally { if (!disposed.current) { setCommitting(false); setCancelling(false); } }
-      })}>{t('import.addToLibrary')}</button>
+      })}>{t(replacing ? 'import.replace' : 'import.addToLibrary')}</button>
     </div>
   </dialog>;
 }

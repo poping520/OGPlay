@@ -227,6 +227,15 @@
 .console .import-wizard .iw-choices button.on { border-color: var(--accent); }
 .iw-choices code { flex: 1; min-width: 0; overflow-wrap: anywhere; font: 12.5px var(--code); }
 .iw-choices small { flex: none; color: var(--soft); font-size: 12px; }
+.import-wizard .iw-target .iw-choices > button > span { display: grid; gap: 4px; flex: 1; min-width: 0; }
+.import-wizard .iw-target-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.import-wizard .iw-installed { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin-top: 8px; color: var(--soft); }
+.import-wizard .iw-installed > small { font-size: 12px; font-weight: 500; }
+.import-wizard .iw-target .iw-installed-version { display: block; height: auto; min-height: 0; max-width: 100%; padding: 2px 8px; overflow-wrap: anywhere;
+  font-size: 12px; font-weight: 600; line-height: 1.4; font-variant-numeric: tabular-nums; }
+.import-wizard .iw-target .iw-choices small { overflow-wrap: anywhere; }
+.import-wizard .iw-target .iw-choices b { color: var(--ink); font-size: 13.5px; overflow-wrap: anywhere; }
+.import-wizard .iw-target-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; line-height: 1.55; }
 .import-wizard .iw-extras { margin-top: 16px; }
 .import-wizard .iw-extras .iw-check { margin-top: 8px; padding: 10px 14px; background: var(--glass); font-weight: 600; }
 .import-wizard .iw-extras code { font: 700 13px var(--code); color: var(--ink); }

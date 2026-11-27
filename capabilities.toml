@@ -221,7 +221,7 @@ note = "完成纯数据 schema 1、通用虚拟预设与严格有界校验；不
 [frontend.gui_library]
 status = "complete"
 test = "tests/frontend/data_directory_tests.cpp; tests/frontend/library_store_tests.cpp; tests/frontend/gui_rpc_tests.cpp; tests/frontend/library_lock_tests.cpp; tests/frontend/library_lock_contention_tests.cpp; tests/hal/file_lock_tests.cpp; tests/frontend/cli_library_tests.cpp; tests/frontend/game_run_args_tests.cpp; tests/frontend/gui_view_model_tests.cpp; tests/frontend/gui_import_tests.cpp; tests/session/profile_apk_tests.cpp; frontend.app_entrypoints"
-note = "ADR-0138：LibraryStore/LibraryConfig、检视/图标/设置继承与 ResolveLaunch 下沉 core C++ 外观，GUI/CLI 同根共用。导入/移除/清理用 OS 库锁，List 冲突跳过清理；运行锁保护单实例/移除/清空；存档默认保留，重导沿用原 id，可选删除或保留身份清空。数据包默认锁外暂存复制（macOS/Linux 优先克隆）后发布到 data/，可取消，随移除删除；引用原目录为显式选项（ADR-0144）。CLI library 已验；macOS 定向及真实 APK 通过，Windows GUI 待复验。"
+note = "ADR-0138：GUI/CLI 共用 LibraryStore、检视、设置继承与 ResolveLaunch。库锁有界等待，运行锁保护单实例/移除/清空/覆盖。GUI 同包名可选覆盖实例或新增副本，不校验版本签名；覆盖保留身份、存档、设置与未替换的数据包。移除默认保留存档，重导沿用原 id。数据包可复制入库（可取消，优先克隆）、显式引用或内部移动。macOS 定向及原有 CLI 真实 APK 已验；覆盖向导点击、Windows 待复验。"
 
 [frontend.windows_portable_mode]
 status = "partial"
@@ -230,7 +230,6 @@ note = "Windows EXE 同目录的 portable.txt 启用 userdata 数据根，GUI/CL
 
 [frontend.archive_import]
 status = "partial"
-test = "tests/frontend/archive_import_tests.cpp; tests/frontend/gui_rpc_tests.cpp#game archive; webui/apps/gui/import/import.test.ts"
 note = "CLI 与 GUI 按内容识别 ZIP（含 ZIP64）、RAR4/RAR5 与 7z，由 7-Zip 动态库流式解码，使用归档 Unicode 名或 GBK 码表，接受 GPK 反斜杠目录。识别 APK 候选与数据包挂载位置（GUI 另选的数据包目录同样只取包名目录，Gameloft 早期游戏放 gameloft/games），可选杂项，支持进度和取消。APK 仍由 Loader 读取。加密、分卷、越界路径和不支持的方法明确失败。Windows 构建、桌面向导与新解码库 Android 真机待验。"
 test = "tests/frontend/archive_import_tests.cpp; tests/frontend/gui_rpc_tests.cpp#GUI import takes the APK and data pack out of a game archive; tests/frontend/gui_rpc_tests.cpp#GUI import takes the data pack out of a separately picked archive; tests/frontend/gui_rpc_tests.cpp#GUI import takes only the package's own directories out of a picked data directory; webui/apps/gui/import/import.test.ts"
 

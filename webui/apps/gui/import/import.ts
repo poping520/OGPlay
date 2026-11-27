@@ -3,9 +3,14 @@ import { rpc } from '../shared/rpc';
 export interface ImportSummary {
   display_name: string; localized_names: Record<string, string>; package: string; version_name: string; version_code: number;
   min_sdk: number | null; target_sdk: number | null; abis: string[]; icon: string;
-  profile: string | null; existing_instances: number;
+  profile: string | null;
+  /** Instances of the same package already in the library: the targets an overwrite can take. */
+  existing: ExistingInstance[];
   /** A game archive's contents; null for a plain APK. */
   archive?: ArchiveSummary | null;
+}
+export interface ExistingInstance {
+  installation_id: string; display_name: string; localized_names: Record<string, string>; version_name: string; version_code: number;
 }
 /** What the host found in a game archive: its APKs (the analyzed one is `apk`), the data pack it recognized with
  *  the mount it planned (and the /sdcard top level, used once extras are chosen), and the parts of no known use. */

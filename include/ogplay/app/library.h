@@ -130,6 +130,10 @@ public:
     [[nodiscard]] std::optional<std::string> ReusableInstallationId(std::string_view package) const;
     [[nodiscard]] std::vector<LibraryEntry> LoadEntries() const;
     std::string Import(const LibraryImport& request, bool new_instance = false, ImportProgress* progress = nullptr);
+    // Overwrites an instance of the same package in place, like an app update without version or signature
+    // checks: the APK, metadata and icon are replaced; saves and per-game settings stay. Without external_dir the
+    // data pack and its mount stay too; with one it replaces the entry's data pack and mount. Refused while running.
+    void Replace(std::string_view key, const LibraryImport& request, ImportProgress* progress = nullptr);
     [[nodiscard]] bool IsRunning(std::string_view key) const;
     // Saves stay by default and are adopted by the next import of the package.
     void Remove(std::string_view key, bool delete_saves = false);

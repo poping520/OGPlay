@@ -376,7 +376,8 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
     else if (method == "library.upload.chunk")
         Fields(params, {"job", "offset", "data"});
     else if (method == "library.import")
-        Fields(params, {"job", "external_dir", "external_guest_dir", "external_mode", "new_instance", "extras"});
+        Fields(params,
+               {"job", "external_dir", "external_guest_dir", "external_mode", "new_instance", "replace", "extras"});
     else if (method == "library.job.poll" || method == "library.job.cancel" || method == "library.upload.finish")
         Fields(params, {"job"});
     else
@@ -567,9 +568,24 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                 job.state = "analyzing";
             } else if (method == "library.import") {
                 if (job.state != "ready" || !job.analysis) throw GuiTextError({"host.error.notReady"});
+                // Either another instance (confirmed) or an overwrite of a named instance of the same package.
+                std::optional<std::string> replace;
+                if (params.Member("replace")) replace = String(params, "replace");
                 const auto confirmation = params.Member("new_instance");
-                if (!confirmation || confirmation->Bool() != true)
+                if (replace && confirmation) throw std::invalid_argument("replace and new_instance are exclusive");
+                if (!replace && (!confirmation || confirmation->Bool() != true))
                     throw GuiArgumentError({"host.error.confirmDuplicate"});
+                if (replace) {
+                    const auto entries = store_.LoadEntries();
+                    const auto found = std::find_if(entries.begin(), entries.end(), [&](const auto& entry) {
+                        return entry.key == *replace && entry.metadata &&
+                               entry.metadata->package == job.analysis->manifest.package;
+                    });
+                    if (found == entries.end()) throw GuiArgumentError({"host.error.replaceTarget"});
+                    if (store_.IsRunning(*replace))
+                        throw LibraryError(LibraryErrorCode::running, "instance_running: game is running",
+                                           app::UiMessage{"host.error.gameRunning"});
+                }
                 std::vector<std::string> extras;
                 if (const auto list = params.Member("extras")) {
                     if (!list->IsArray()) throw std::invalid_argument("extras requires an array of names");
@@ -599,6 +615,9 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                 }
                 std::optional<std::string> guest;
                 if (params.Member("external_guest_dir")) guest = String(params, "external_guest_dir");
+                // An overwrite without a data pack keeps the instance's own pack and mount.
+                if (replace && guest && !external && !archive_data)
+                    throw std::invalid_argument("external_guest_dir needs a data pack when replacing");
                 if (mode == ExternalDataMode::link && job.data_source) {
                     // Linking a picked directory refers to the host directory at the planned mount, extras aside.
                     if (!job.data_directory)
@@ -627,9 +646,14 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                 job.committing =
                     std::async(std::launch::async, [store, ready, analysis = *job.analysis, external, mode, guest,
                                                     archive = archive_data ? data_source : nullptr, plan = data_plan,
-                                                    extras, tree, data = job.directory / "data",
+                                                    extras, tree, replace, data = job.directory / "data",
                                                     timestamp = host_.timestamp(), progress = job.progress]() mutable {
-                        if (ready) return store.Import(*ready, true, progress.get());
+                        const auto commit = [&](const LibraryImport& request) {
+                            if (!replace) return store.Import(request, true, progress.get());
+                            store.Replace(*replace, request, progress.get());
+                            return *replace;
+                        };
+                        if (ready) return commit(*ready);
                         auto source = external;
                         auto chosen_mode = mode;
                         auto mount = guest.value_or("/sdcard");
@@ -651,8 +675,7 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                             source = data;
                             chosen_mode = ExternalDataMode::move;
                         }
-                        const auto request = BuildLibraryImport(analysis, source, timestamp, mount, chosen_mode);
-                        return store.Import(request, true, progress.get());
+                        return commit(BuildLibraryImport(analysis, source, timestamp, mount, chosen_mode));
                     });
                 job.state = "importing";
             }
@@ -704,12 +727,22 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                 writer.AddString(summary, "profile", analysis.profile->profile_id);
             else
                 writer.AddNull(summary, "profile");
-            const auto entries = store_.LoadEntries();
-            writer.AddUnsignedInteger(
-                summary, "existing_instances",
-                static_cast<std::uint64_t>(std::count_if(entries.begin(), entries.end(), [&](const auto& entry) {
-                    return entry.metadata && entry.metadata->package == analysis.manifest.package;
-                })));
+            // Instances of the same package: what an overwrite can target.
+            const auto existing = writer.Array();
+            for (const auto& entry : store_.LoadEntries()) {
+                if (!entry.metadata || entry.metadata->package != analysis.manifest.package) continue;
+                const auto item = writer.Object();
+                writer.AddString(item, "installation_id", entry.key);
+                writer.AddString(item, "display_name", entry.metadata->display_name);
+                const auto localized = writer.Object();
+                for (const auto& [locale, name] : entry.metadata->localized_names)
+                    writer.AddString(localized, locale, name);
+                writer.Add(item, "localized_names", localized);
+                writer.AddString(item, "version_name", entry.metadata->version_name);
+                writer.AddUnsignedInteger(item, "version_code", entry.metadata->version_code);
+                writer.Append(existing, item);
+            }
+            writer.Add(summary, "existing", existing);
             if (job.archive) {
                 const auto& files = job.archive->Files();
                 const auto archive = writer.Object();

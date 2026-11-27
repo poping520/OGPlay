@@ -31,6 +31,7 @@ ogplay_desktop_app，Android 外壳见 `frontend/android`。
   单体 APK 上限 1 GiB；分块 base64 最大 256 KiB，严格顺序/总长度检查（拖放只收 APK）。`analyze` 按文件头区分 APK 与
   游戏压缩包（ZIP/RAR/7z，`ogplay/app/archive_import.h`）：压缩包取首选或 `apk` 指定的 APK 解出分析，摘要多一个
   `archive {apks, apk, data{guest_dir, path, entries…, sdcard{…}} | null, extras[{name, files, bytes}]}`，APK 为 `archive: null`。
+  摘要 `existing` 列出同包名实例的 installation_id、名称（含 localized_names）与版本，供明确选择覆盖目标。
   任务快照与解出的数据放在库根 `import-staging/work-N`（持锁，下次导入清理无持有者的残留及旧版 `.gui-import-*`）。
 - `library.data_pack {job, path?}`：为 ready 任务另选数据包，按分析出的包名规划，返回 `{kind: directory|archive,
   package, data, extras}`（data/extras 与 `archive` 同形）；不带 path 解除，重新分析即丢弃。目录（宿主目录或 `open_tree`
@@ -40,8 +41,10 @@ ogplay_desktop_app，Android 外壳见 `frontend/android`。
   `external_mode: link` 只对宿主目录有效且不接受 extras：引用规划挂载点对应的宿主目录（挂载点在所选目录之上时取其祖先），
   未给 external_guest_dir 时挂到规划位置。摘要的挂载预览条目在挂载点高于 Android/<类>/<包> 时展开到该包名目录。
 - `library.job.poll/cancel {job}`：每服务仅一个活动导入任务；后台只读分析，失败可查询。
-  `library.import {job, new_instance:true, external_dir?, external_guest_dir?, external_mode?:copy|link, extras?}`
-  只消费 ready 快照，异步原子发布，默认复制数据包入库；重复提交拒绝，结果返回真实 installation id。压缩包带数据时
+  `library.import {job, new_instance?:true, replace?:installation_id, external_dir?, external_guest_dir?, external_mode?:copy|link, extras?}`
+  只消费 ready 快照，异步发布，默认复制数据包入库；new_instance:true 与 replace 二选一，重复提交拒绝，结果返回真实 installation id。
+  replace 必须指向同包名实例，宿主在请求及提交时检查，运行中拒绝；不校验版本和签名。无新数据包时保留原数据包与挂载，
+  此时不接受单独的 external_guest_dir；有新数据包时替换数据包和挂载，存档及其他游戏设置保留。压缩包带数据时
   不能另给 external_dir：识别的数据与勾选的 extras 解到任务目录后整体移入条目（`ExternalDataMode::move`），未给
   external_guest_dir 时用规划的挂载位置；宿主 `open_tree` 认得的目录句柄（Android SAF）同样逐文件写入后移入，只能复制。
   普通请求在请求时校验，目录或挂载位置无效时分析结果保留可重试。
@@ -150,13 +153,13 @@ ogplay_desktop_app，Android 外壳见 `frontend/android`。
 - APK/manifest 损坏失败；资源图标/名称失败记录 fallback，空 PNG 为明确占位；versionCode
   接受完整 uint32。禁止把含控制字符的 label 直接持久化。
 - 导入未知 Profile 或未选外部目录 可以入库；无效目录、损坏 APK 和未解决的实例
-  占位冲突必须阻止发布。重复 package 要求明确新实例确认，不覆盖旧条目。
+  占位冲突必须阻止发布。重复 package 要求明确选择新增副本或覆盖某个同包名实例。
 - 删除只移除 `library/<installation-id>`；external 与持久存档不删除，运行中不删除。
 
 - 本启动器入库期间枚举/启动/目录 RPC 返回忙；跨进程库锁有界等待超时映射 -32002，库列表整体返回忙而不把条目标为损坏，List 不删除活动 `.importing`；
   作业轮询始终可用。分析与入库线程在服务销毁时 join，再移除本服务持有的快照。
 - 导入摘要的版本/API/ABI/Profile 来自解析；外部数据目录为可选用户输入。
-  前端同包重复导入须确认新实例，需要数据时允许明确跳过；从不覆盖已有游戏。
+  前端同包重复导入默认选中首个现有实例进行覆盖，可切换其他实例或新增副本，需要数据时允许明确跳过。
 - 原生选择器与后台操作期间向导保留并禁用重复操作；选择器取消不丢弃当前摘要。
   当前仅支持单体 APK，不实现 XAPK/APKM/APKS 拆包，也不从目录猜选 APK。
 

@@ -284,6 +284,174 @@ TEST_CASE("library assigns a distinct installation id to duplicate packages") {
     CHECK(std::filesystem::file_size(store.EntriesRoot() / "org.example.game-3" / "base.apk") == 5);
 }
 
+TEST_CASE("library replacement updates only the selected copy and preserves its identity") {
+    using namespace ogplay::app;
+    TemporaryDirectory tree;
+    LibraryStore store(tree.path / "root");
+    const auto source = tree.path / "source.apk";
+    Write(source, "old apk");
+    const std::vector<std::byte> icon{std::byte{1}, std::byte{2}};
+    const LibraryImport initial{.source_apk = source, .metadata = Metadata(), .icon_png = icon};
+    const auto first = store.Import(initial, true);
+    const auto second = store.Import(initial, true);
+    const auto entry = store.EntriesRoot() / second;
+    const auto sandbox = store.Root() / "sandbox" / second;
+    const auto identity = Read(sandbox / "meta.toml");
+    Write(sandbox / "internal/save.dat", "saved progress");
+    Write(entry / "settings.toml", "schema = 1\nexternal_guest_dir = \"/sdcard/Old\"\nfuture_option = true\n");
+    Write(entry / "data/old.obb", "old pack");
+    Write(entry / "last-run.log", "old log");
+    const auto settings = Read(entry / "settings.toml");
+    auto updated = Metadata();
+    updated.version_code = 0;  // A downgrade is allowed, just like an upgrade.
+    updated.version_name = "older";
+    updated.display_name = "Updated";
+    Write(source, "replacement apk");
+    store.Replace(second, {.source_apk = source, .metadata = updated});
+    CHECK(Read(entry / "base.apk") == "replacement apk");
+    CHECK(Read(store.EntriesRoot() / first / "base.apk") == "old apk");
+    CHECK(Read(entry / "settings.toml") == settings);
+    CHECK(Read(entry / "data/old.obb") == "old pack");
+    CHECK(Read(entry / "last-run.log") == "old log");
+    CHECK(Read(sandbox / "meta.toml") == identity);
+    CHECK(Read(sandbox / "internal/save.dat") == "saved progress");
+    CHECK_FALSE(std::filesystem::exists(entry / "icon.png"));
+    const auto entries = store.LoadEntries();
+    REQUIRE(entries.size() == 2);
+    const auto selected =
+        std::find_if(entries.begin(), entries.end(), [&](const auto& item) { return item.key == second; });
+    REQUIRE(selected != entries.end());
+    CHECK(selected->metadata == updated);
+    // An icon from the next APK replaces the placeholder as well.
+    store.Replace(second, initial);
+    CHECK(Read(entry / "icon.png") == std::string("\1\2", 2));
+    CHECK(store.Import(initial, true) == "org.example.game-3");
+}
+
+TEST_CASE("library replacement replaces a chosen data pack in copy link and move modes") {
+    using namespace ogplay::app;
+    TemporaryDirectory tree;
+    LibraryStore store(tree.path / "root");
+    const auto source = tree.path / "source.apk";
+    const auto pack = tree.path / "pack";
+    Write(source, "old apk");
+    Write(pack / "new.obb", "new pack");
+    auto mode = ExternalDataMode::copy;
+    SUBCASE("copy") {
+        mode = ExternalDataMode::copy;
+    }
+    SUBCASE("link") {
+        mode = ExternalDataMode::link;
+    }
+    SUBCASE("move") {
+        mode = ExternalDataMode::move;
+    }
+    const auto id = store.Import({.source_apk = source, .metadata = Metadata()}, true);
+    const auto entry = store.EntriesRoot() / id;
+    Write(entry / "data/old.obb", "old pack");
+    SaveGameSettings(entry, {{{"external_guest_dir", std::string("/sdcard/Old")}, {"max_fps", std::string("60")}}});
+    const auto identity = Read(store.Root() / "sandbox" / id / "meta.toml");
+    store.Replace(id, {.source_apk = source, .metadata = Metadata(), .external_dir = pack, .external_mode = mode});
+    const auto settings = LoadGameSettings(entry);
+    CHECK(settings.values.at("max_fps") == SettingValue(std::string("60")));
+    CHECK_FALSE(settings.values.contains("external_guest_dir"));
+    CHECK_FALSE(std::filesystem::exists(entry / "data/old.obb"));
+    const auto entries = store.LoadEntries();
+    REQUIRE(entries.size() == 1);
+    const auto effective = EffectiveGameEntry(entries[0], settings);
+    REQUIRE(effective.external_dir);
+    CHECK(Read(*effective.external_dir / "new.obb") == "new pack");
+    CHECK(effective.external_owned == (mode != ExternalDataMode::link));
+    CHECK(effective.external_guest_dir == "/sdcard");
+    CHECK(std::filesystem::exists(pack / "new.obb") == (mode != ExternalDataMode::move));
+    CHECK(Read(store.Root() / "sandbox" / id / "meta.toml") == identity);
+    // An APK-only update also preserves a linked pack and its settings.
+    const auto saved_settings = Read(entry / "settings.toml");
+    store.Replace(id, {.source_apk = source, .metadata = Metadata()});
+    CHECK(Read(entry / "settings.toml") == saved_settings);
+    CHECK(Read(*effective.external_dir / "new.obb") == "new pack");
+    CHECK_FALSE(std::filesystem::exists(entry / ".replace-backup"));
+}
+
+TEST_CASE("library replacement rejects invalid running and cancelled requests without changing the entry") {
+    using namespace ogplay::app;
+    TemporaryDirectory tree;
+    LibraryStore store(tree.path / "root");
+    const auto source = tree.path / "source.apk";
+    Write(source, "old apk");
+    const auto id = store.Import({.source_apk = source, .metadata = Metadata()}, true);
+    const auto entry = store.EntriesRoot() / id;
+    const auto metadata = Read(entry / "meta.toml");
+    Write(entry / "data/keep.dat", "keep");
+    Write(source, "new apk");
+    const LibraryImport request{.source_apk = source, .metadata = Metadata()};
+    SUBCASE("running") {
+        const RunningLease lease(store.Root(), id);
+        CHECK_THROWS_AS(store.Replace(id, request), LibraryError);
+    }
+    SUBCASE("another package") {
+        auto other = request;
+        other.metadata.package = "org.example.other";
+        CHECK_THROWS_AS(store.Replace(id, other), LibraryError);
+    }
+    SUBCASE("missing APK") {
+        std::filesystem::remove(source);
+        CHECK_THROWS_AS(store.Replace(id, request), LibraryError);
+    }
+    SUBCASE("cancel before publication") {
+        ImportProgress progress;
+        progress.cancel_requested.store(true);
+        CHECK_THROWS_AS(store.Replace(id, request, &progress), LibraryError);
+    }
+    SUBCASE("link into the data being replaced") {
+        auto other = request;
+        other.external_dir = entry / "data";
+        other.external_mode = ExternalDataMode::link;
+        CHECK_THROWS_AS(store.Replace(id, other), LibraryError);
+    }
+    CHECK(Read(entry / "base.apk") == "old apk");
+    CHECK(Read(entry / "meta.toml") == metadata);
+    CHECK(Read(entry / "data/keep.dat") == "keep");
+    CHECK(store.LoadEntries().size() == 1);
+    CHECK_FALSE(std::filesystem::exists(entry / ".replace-backup"));
+    for (const auto& item : std::filesystem::directory_iterator(store.EntriesRoot()))
+        CHECK_FALSE(item.path().filename().string().ends_with(".importing"));
+}
+
+#ifndef _WIN32
+TEST_CASE("library replacement rolls back files settings and data if publication fails") {
+    using namespace ogplay::app;
+    TemporaryDirectory tree;
+    LibraryStore store(tree.path / "root");
+    const auto source = tree.path / "source.apk";
+    const auto pack = tree.path / "pack";
+    Write(source, "old apk");
+    Write(pack / "new.obb", "new pack");
+    const auto id = store.Import({.source_apk = source, .metadata = Metadata()}, true);
+    const auto entry = store.EntriesRoot() / id;
+    Write(entry / "data/old.obb", "old pack");
+    SaveGameSettings(entry, {{{"external_guest_dir", std::string("/sdcard/Old")}}});
+    const auto metadata = Read(entry / "meta.toml");
+    const auto settings = Read(entry / "settings.toml");
+    // The icon is processed last. ELOOP forces a filesystem error after the
+    // APK, metadata, settings and data pack have already been swapped.
+    std::filesystem::create_symlink("icon.png", entry / "icon.png");
+    Write(source, "new apk");
+    CHECK_THROWS_AS(store.Replace(id, {.source_apk = source, .metadata = Metadata(), .external_dir = pack}),
+                    LibraryError);
+    CHECK(Read(entry / "base.apk") == "old apk");
+    CHECK(Read(entry / "meta.toml") == metadata);
+    CHECK(Read(entry / "settings.toml") == settings);
+    CHECK(Read(entry / "data/old.obb") == "old pack");
+    CHECK_FALSE(std::filesystem::exists(entry / "data/new.obb"));
+    CHECK(Read(pack / "new.obb") == "new pack");
+    CHECK(std::filesystem::is_symlink(entry / "icon.png"));
+    CHECK_FALSE(std::filesystem::exists(entry / ".replace-backup"));
+    for (const auto& item : std::filesystem::directory_iterator(store.EntriesRoot()))
+        CHECK_FALSE(item.path().filename().string().ends_with(".importing"));
+}
+#endif
+
 TEST_CASE("concurrent library imports reject busy operations and can be retried") {
     TemporaryDirectory tree;
     const auto first = tree.path / "first.apk";

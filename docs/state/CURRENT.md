@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-11-25。
+更新：2026-11-26。
 
 本文件是项目当前状态的快照：只写“现在怎样”，不写过程。修改时覆盖对应行，不追加流水；
 跨会话在办事项写入任务单，完成后的过程、验证明细及证据留在提交说明中。能力见 [capabilities.toml](../../capabilities.toml)，
@@ -79,6 +79,7 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
   各自拥有交互；库锁/运行锁、CLI library、参数往返及两条真实 APK 有界路径已在 macOS 验证。
   Windows Release/原生 GUI 链路待复验（GUI-9 证据属旧架构）。macOS 交付 ad-hoc 签名 OGPlay.app
   （[GUI-11](KNOWN-ISSUES.md)），冒烟/包/游戏模式与真实导入→启动→移除流程已验；Linux GUI 未接入。
+  同包导入可选择覆盖指定实例或另加副本；覆盖保留存档和设置，不选新数据包时保留原数据包，macOS 定向回归及 Release WebView 冒烟通过，向导点击未实测。
   数据包导入默认复制入库（[GUI-12](KNOWN-ISSUES.md)，APFS 克隆），GUI 向导点击未实测；
   游戏退出后按运行时缺失路径提示挂载位置（[GUI-13](KNOWN-ISSUES.md)），App 内点击未实测。
   每次库启动记录运行结果（last-run.json），失败游戏归入“待排查”，CLI `library list --filter attention` 同源（[GUI-23](KNOWN-ISSUES.md)），App 内点击未实测。

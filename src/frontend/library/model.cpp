@@ -795,6 +795,140 @@ std::string LibraryStore::Import(const LibraryImport& request, bool new_instance
     return PathUtf8(target.filename());
 }
 
+void LibraryStore::Replace(const std::string_view key, const LibraryImport& request, ImportProgress* progress) {
+    ValidateMetadata(request.metadata);
+    ValidateExternalGuestDirectory(request.external_guest_dir);
+    if (!SafeEntryKey(key)) throw LibraryError(LibraryErrorCode::invalid_argument, "library entry key is unsafe");
+    if (request.external_dir.has_value() && !request.external_dir->is_absolute()) {
+        throw LibraryError(LibraryErrorCode::invalid_argument, "library external directory must be absolute");
+    }
+    const bool replace_data = request.external_dir.has_value();
+    std::optional<StagedExternalData> staged_data;
+    if (replace_data && request.external_mode == ExternalDataMode::copy)
+        staged_data.emplace(root_, *request.external_dir, progress);
+    auto library_lock = RequireLibraryLock(root_);
+    const auto target = EntriesRoot() / Utf8Path(key);
+    std::error_code error;
+    if (!std::filesystem::is_directory(target, error) || error)
+        throw LibraryError(LibraryErrorCode::not_found, "library entry does not exist", target);
+    try {
+        if (DecodeMetadata(ReadText(target / "meta.toml")).package != request.metadata.package)
+            throw LibraryError(LibraryErrorCode::invalid_argument, "replacement APK is another package", target);
+    } catch (const LibraryError&) {
+        throw;
+    } catch (const std::exception& exception) {
+        throw LibraryError(LibraryErrorCode::corrupt_config,
+                           std::string("damaged library entry cannot be replaced: ") + exception.what(), target);
+    }
+    // Held through the swap; the library lock also keeps a new launch out.
+    const auto running = TryRunningLock(*this, key);
+    if (!running)
+        throw LibraryError(LibraryErrorCode::running,
+                           "instance_running: game is running; stop it before replacing this instance",
+                           UiMessage{"host.error.gameRunning"}, target);
+    if (replace_data && request.external_mode != ExternalDataMode::copy) {
+        if (!std::filesystem::is_directory(*request.external_dir))
+            throw LibraryError(LibraryErrorCode::not_found, "external data directory is unavailable",
+                               *request.external_dir);
+        const auto relative = std::filesystem::weakly_canonical(*request.external_dir)
+                                  .lexically_relative(std::filesystem::weakly_canonical(target));
+        if (!relative.empty() && *relative.begin() != "..")
+            throw LibraryError(LibraryErrorCode::invalid_argument, "replacement data must be outside the entry",
+                               *request.external_dir);
+    }
+    GameSettings settings;
+    if (replace_data) {
+        settings = LoadGameSettingsUnlocked(target);
+        settings.values.erase("external_dir");
+        settings.values.erase("external_guest_dir");
+        if (request.external_mode == ExternalDataMode::link)
+            settings.values["external_dir"] = PathUtf8(*request.external_dir);
+        if (request.external_guest_dir != "/sdcard") settings.values["external_guest_dir"] = request.external_guest_dir;
+    }
+    if (!std::filesystem::is_regular_file(request.source_apk, error) || error)
+        throw LibraryError(LibraryErrorCode::not_found, "source APK is unavailable", request.source_apk);
+    static std::atomic_uint64_t next_replace_token{};
+    std::filesystem::path temporary;
+    for (;;) {
+        const auto token = next_replace_token.fetch_add(1U, std::memory_order_relaxed);
+        temporary = EntriesRoot() / ("." + std::string(key) + ".replace-" + std::to_string(token) + ".importing");
+        error.clear();
+        if (std::filesystem::create_directory(temporary, error)) break;
+        if (error)
+            throw LibraryError(LibraryErrorCode::io_error, "cannot reserve import temporary directory", temporary);
+    }
+    // Keep backups inside the entry: interrupted/failed recovery must never be
+    // swept as an abandoned .importing directory. The running lock stays in place.
+    const auto backup = target / ".replace-backup";
+
+    struct Swap {
+        std::filesystem::path name;
+        bool backed_up{};
+        bool published{};
+    };
+
+    std::vector<Swap> swaps{{kLibraryApkName}, {kLegacyLibraryApkName}, {"meta.toml"}};
+    if (replace_data) {
+        swaps.push_back({"data"});
+        swaps.push_back({"settings.toml"});
+        swaps.push_back({"settings.toml.bak"});
+    }
+    swaps.push_back({"icon.png"});
+    bool backup_created = false;
+    try {
+        std::filesystem::copy_file(request.source_apk, temporary / kLibraryApkName,
+                                   std::filesystem::copy_options::none);
+        if (staged_data) staged_data->Publish(temporary / "data");
+        if (replace_data && request.external_mode == ExternalDataMode::move)
+            std::filesystem::rename(*request.external_dir, temporary / "data");
+        WriteText(temporary / "meta.toml", EncodeMetadata(request.metadata));
+        if (!request.icon_png.empty()) {
+            std::ofstream icon(temporary / "icon.png", std::ios::binary | std::ios::trunc);
+            if (!icon) throw std::runtime_error("cannot create icon cache");
+            icon.write(reinterpret_cast<const char*>(request.icon_png.data()),
+                       static_cast<std::streamsize>(request.icon_png.size()));
+            if (!icon) throw std::runtime_error("cannot write icon cache");
+        }
+        if (replace_data) SaveGameSettingsUnlocked(temporary, settings);
+        // Last point where a cancel request leaves the instance untouched.
+        ThrowIfImportCancelled(progress);
+        if (!std::filesystem::create_directory(backup))
+            throw std::runtime_error("previous replacement backup needs recovery");
+        backup_created = true;
+        try {
+            for (auto& swap : swaps) {
+                if (std::filesystem::exists(target / swap.name)) {
+                    std::filesystem::rename(target / swap.name, backup / swap.name);
+                    swap.backed_up = true;
+                }
+                if (std::filesystem::exists(temporary / swap.name)) {
+                    std::filesystem::rename(temporary / swap.name, target / swap.name);
+                    swap.published = true;
+                }
+            }
+        } catch (...) {
+            for (auto it = swaps.rbegin(); it != swaps.rend(); ++it) {
+                if (it->published) std::filesystem::rename(target / it->name, temporary / it->name);
+                if (it->backed_up) std::filesystem::rename(backup / it->name, target / it->name);
+            }
+            std::filesystem::remove(backup);
+            backup_created = false;
+            throw;
+        }
+        // Publication has succeeded. A cleanup error must not report a failed update.
+        static_cast<void>(std::filesystem::remove_all(backup, error));
+        static_cast<void>(std::filesystem::remove_all(temporary, error));
+    } catch (const LibraryError&) {
+        if (std::filesystem::exists(temporary)) RemoveTree(temporary);
+        throw;
+    } catch (const std::exception& exception) {
+        std::error_code cleanup_error;
+        static_cast<void>(std::filesystem::remove_all(temporary, cleanup_error));
+        throw LibraryError(LibraryErrorCode::io_error, std::string("cannot replace game: ") + exception.what(),
+                           backup_created ? backup : target);
+    }
+}
+
 void LibraryStore::Remove(const std::string_view key, const bool delete_saves) {
     auto library_lock = RequireLibraryLock(root_);
     if (!SafeEntryKey(key)) {

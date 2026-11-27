@@ -164,7 +164,9 @@ struct SettingDefinition {
     bool directory{};
     std::string unit{};
     std::string reserved{};
-    bool global_default{};  // the global page reads it as the default of a per-game value ("Default interpreter")
+    // Launcher-only: no game can override it. Every other global field is the default of a per-game value, and
+    // GameSettingDefinitions() lists it in the same group.
+    bool global_only{};
 };
 
 [[nodiscard]] OGPLAYCORE_API const std::vector<SettingDefinition>& SettingDefinitions();

@@ -28,7 +28,7 @@ constexpr bool kReservedVisible = true;
 // it again. Like reserved ones, they stay in the schema: saved values, validation and launches are unchanged.
 constexpr std::array<std::string_view, 3> kHiddenSettings{
     "cartridge",            // 常规 · 主界面卡带
-    "supersample",          // 图形 · 默认超采样，游戏设置 · 显示 · 超采样
+    "supersample",          // 显示 · 超采样（全局与游戏设置）
     "dashboard_auto_open",  // 开发者工具 · 自动打开 Dashboard
 };
 
@@ -62,9 +62,20 @@ SettingValue ReadValue(app::JsonValue value, const SettingDefinition& field) {
     throw std::invalid_argument(field.key + ": invalid value type");
 }
 
+// Where a field's value lives: "global" (launcher only), "shared" (global, games may override) or "game" (this game
+// alone, no global value).
+std::string_view FieldScope(const SettingDefinition& field, bool game_page) {
+    if (!game_page) return field.global_only ? "global" : "shared";
+    const auto& globals = app::SettingDefinitions();
+    return std::any_of(globals.begin(), globals.end(), [&](const auto& global) { return global.key == field.key; })
+               ? "shared"
+               : "game";
+}
+
 // Fields of capabilities the platform leaves out are not part of its schema; hidden ones are, but stay off the pages.
 app::JsonWriter::Value FieldList(app::JsonWriter& writer, const std::vector<SettingDefinition>& definitions,
-                                 const GuiPlatform& platform, const std::span<const std::string_view> hidden = {}) {
+                                 const GuiPlatform& platform, bool game_page,
+                                 const std::span<const std::string_view> hidden = {}) {
     const auto fields = writer.Array();
     for (const auto& field : definitions) {
         if (!SettingAvailable(platform, field.key)) continue;
@@ -73,7 +84,7 @@ app::JsonWriter::Value FieldList(app::JsonWriter& writer, const std::vector<Sett
         writer.AddString(item, "group", field.group);
         writer.AddString(item, "unit", field.unit);
         writer.AddString(item, "reserved", field.reserved);
-        writer.AddBool(item, "global_default", field.global_default);
+        writer.AddString(item, "scope", FieldScope(field, game_page));
         writer.Add(item, "initial", Json(writer, field.initial));
         writer.AddBool(item, "directory", field.directory);
         writer.AddBool(item, "hidden", std::find(hidden.begin(), hidden.end(), field.key) != hidden.end());
@@ -169,7 +180,7 @@ app::ConsoleResponse GuiRpcService::GameSettingsRequest(std::string_view method,
             writer.Add(inherited, field.key, Json(writer, EffectiveGameSetting({}, global, entry, field.key)));
     writer.Add(result, "values", overrides);
     writer.Add(result, "inherited", inherited);
-    writer.Add(result, "fields", FieldList(writer, GameSettingDefinitions(), platform_, kHiddenSettings));
+    writer.Add(result, "fields", FieldList(writer, GameSettingDefinitions(), platform_, true, kHiddenSettings));
     writer.AddBool(result, "reserved_visible", kReservedVisible);
     writer.AddString(result, "config_path", PathText(entry.directory / "settings.toml"));
     const auto previews = writer.Object();
@@ -282,7 +293,7 @@ app::ConsoleResponse GuiRpcService::SettingsRequest(std::string_view method, app
     writer.AddString(result, "system_language", UiLanguageTag(SystemUiLanguage()));
     writer.AddString(result, "revision", Revision(config));
     writer.Add(result, "values", Values(writer, config, &platform_));
-    const auto fields = FieldList(writer, SettingDefinitions(), platform_, kHiddenSettings);
+    const auto fields = FieldList(writer, SettingDefinitions(), platform_, false, kHiddenSettings);
     writer.Add(result, "fields", fields);
     writer.AddBool(result, "reserved_visible", kReservedVisible);
     writer.AddString(result, "library_root", PathText(store_.Root()));

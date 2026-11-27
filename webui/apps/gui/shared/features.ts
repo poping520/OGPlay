@@ -24,7 +24,7 @@ export const hostPlatform = (): string => current.platform;
 
 // Settings groups that exist only for a capability: with it left out their fields are gone, and so are their notes.
 const groupCapabilities: Record<string, Feature[]> = {
-  input: ['key_editor'], control: ['mcp', 'dashboard'], advanced: ['mcp', 'developer'],
+  input: ['key_editor'], developer: ['mcp', 'dashboard', 'developer'],
 };
 export const groupAvailable = (key: string): boolean => !(key in groupCapabilities) || groupCapabilities[key].some(has);
 

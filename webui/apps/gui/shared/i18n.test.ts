@@ -106,13 +106,12 @@ describe('GUI-14 language switching', () => {
   });
 
   it('words host fields from their key, unit and reserved codes', () => {
-    const field = (key: string, unit: string, reserved: string, global_default = false): SettingField =>
-      ({ key, group: 'g', unit, reserved, global_default, initial: 1, choices: [], min: 0, max: 10, directory: false, hidden: false });
+    const field = (key: string, unit: string, reserved: string): SettingField =>
+      ({ key, group: 'g', unit, reserved, scope: 'shared', initial: 1, choices: [], min: 0, max: 10, directory: false, hidden: false });
     setLanguage('en-US');
     expect(fieldMeta(field('stall_timeout', 'seconds', 'launchArgs')))
       .toEqual({ label: 'Stall snapshot threshold', unit: 's', hint: '', reserved: 'Not wired to launch arguments yet' });
     expect(fieldMeta(field('ephemeral_sandbox', '', '')).hint).toBe('saves from this run are discarded on exit');
-    expect(fieldMeta(field('interpreter', '', '', true)).label).toBe('Default interpreter');
     expect(fieldMeta(field('interpreter', '', '')).label).toBe('Interpreter');
   });
   it('names games in the launcher language before the APK default', () => {

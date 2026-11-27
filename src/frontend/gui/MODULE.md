@@ -111,7 +111,7 @@ ogplay_desktop_app，Android 外壳见 `frontend/android`。
   由 `app::UiMessage` 随异常携带（GuiTextError/GuiArgumentError、LibraryError），无 ID 的失败只给诊断文本。
   导入失败（`failure`）、启动预览错误与自动打开 Dashboard 的失败事件同为 `{text, id?, params?}`；
   `dashboard.list` 的状态说明为 `detail_id`/`key_editor_detail_id`。设置字段只发 key/group/unit/reserved/
-  global_default 等结构事实，标签与说明由前端按 key 取 `setting.*` 文案。
+  scope（`global` 仅启动器、`shared` 全局值且游戏可覆盖、`game` 仅该游戏）等结构事实，标签与说明由前端按 key 取 `setting.*` 文案。
 - Web UI 只渲染模型事实。状态优先级：损坏 > Profile catalog 不可用 > 缺数据包 > 运行中 >
   ready。通用启动路径是默认状态，无 Profile 不产生状态、提示或条件。
 - Profile 条件只在记录了精确 Profile 或 catalog 失效（unavailable）时下发，

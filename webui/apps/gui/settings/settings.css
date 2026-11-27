@@ -70,6 +70,7 @@
 .rows { display: flex; flex-direction: column; gap: 8px; max-width: 980px; }
 .rows > * { animation: cfg-rise .35s backwards cubic-bezier(.2,.8,.2,1); }
 .sect { margin: 18px 0 2px 4px; color: var(--dim); font-size: 11px; font-weight: 800; letter-spacing: .14em; }
+.scope-note { margin: 0 4px 10px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .row { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(280px, max-content); gap: 16px; align-items: center; min-height: 70px; padding: 12px 18px;
   border-radius: 18px; background: var(--glass); transition: background .12s, box-shadow .15s; }
 .row:hover { background: rgba(255,255,255,.08); }
@@ -85,6 +86,7 @@
 .cfg .tag { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 6px; font-size: 11px; font-weight: 800; white-space: nowrap; }
 .cfg .tag.pending { color: #ffcf7a; background: rgba(255,176,32,.12); box-shadow: inset 0 0 0 1px rgba(255,176,32,.28); }
 .cfg .tag.over { color: #b9dbff; background: rgba(74,163,255,.16); }
+.cfg .tag.only { color: #c9d1e4; background: rgba(160,174,205,.14); box-shadow: inset 0 0 0 1px rgba(160,174,205,.26); }
 .ctl { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
 /* a game's own value: an accent bar on the row's leading edge (the legend's 已单独设置 colour) */
 .row.override::before { content: ''; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; border-radius: 0 3px 3px 0; background: var(--running); }
@@ -312,6 +314,7 @@ details.credit details.credit { background: rgba(255,255,255,.04); }
 .skin-glass .sect { margin-left: 10px; color: var(--muted); }
 .cfg.skin-glass .tag.pending { color: #ffe0a0; background: rgba(255,176,32,.16); box-shadow: none; }
 .cfg.skin-glass .tag.over { color: #d8e8ff; background: rgba(127,184,255,.22); }
+.cfg.skin-glass .tag.only { color: #e6ebf7; background: rgba(200,210,235,.18); box-shadow: none; }
 .skin-glass .legend .l-inh { background: var(--mint2); }
 /* controls */
 .cfg.skin-glass .switch { background: rgba(255,255,255,.18); box-shadow: inset 0 1px 2px rgba(0,0,0,.25); }

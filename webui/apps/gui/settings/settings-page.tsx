@@ -2,7 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { rpc } from '../shared/rpc';
 import { pickPath } from '../import/import';
-import { factRows, groups, overlayFields, settingsError, shownFields, type Settings } from './settings';
+import { factRows, groups, isLauncherGroup, overlayFields, settingsError, shownFields, type Settings } from './settings';
 import { Note, Paths, SettingsFrame, useAutoSave, useToast } from './settings-ui';
 import { IconPreview } from './icon-preview';
 import { Credits } from './credits';
@@ -41,8 +41,9 @@ export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved:
   const top: Record<string, ComponentChildren> = saved ? {
     general: <Note icon="info" title={t('settings.global.keepRunning')}><p>{t('settings.global.keepRunningNote')}</p></Note>,
     input: <Note icon="input" title={t('common.keySettings')}><p>{t('settings.keysHint')}</p></Note>,
-    storage: <Note icon="storage" title={t('common.library')}><Paths rows={[[t('settings.global.libraryRoot'), saved.library_root], [t('settings.global.config'), saved.config_path], [t('settings.global.sandboxUsage'), t('settings.global.notMeasured')], ['FFmpeg', t('settings.global.notProbed')]]} />
+    data: <Note icon="data" title={t('common.library')}><Paths rows={[[t('settings.global.libraryRoot'), saved.library_root], [t('settings.global.config'), saved.config_path], [t('settings.global.sandboxUsage'), t('settings.global.notMeasured')], ['FFmpeg', t('settings.global.notProbed')]]} />
       {actions(has('open_directory') && <button class="mini" disabled={busy} onClick={openLibrary}>{t('settings.global.openLibrary')}</button>, <button class="mini" disabled>{t('settings.global.cleanSandboxes')}<em>{t('settings.notAvailableYet')}</em></button>)}</Note>,
+    device: <Note icon="device" title="Android 4.4.4 · API 19"><p>{t('settings.game.deviceNote')}{saved.reserved_visible && t('settings.game.presetNote')}</p></Note>,
     network: <Note icon="network" title={t('settings.intentOnly')} warn><p>{t('settings.global.networkNote')}</p></Note>,
     about: <><StarCard onError={setError} /><Note icon="about" title="OGPlay"><p>{t('settings.global.about')}</p>
       <Paths rows={[[t('common.version'), saved.facts.ogplay_version ?? t('common.unknown')]]} />
@@ -53,7 +54,7 @@ export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved:
   const end: Record<string, ComponentChildren> = {
     audio: <Note icon="audio"><p>{t('settings.global.audioNote')}</p></Note>,
     diagnostics: <Note icon="diagnostics"><p>{t('settings.global.logsNote')}</p>{has('open_directory') && actions(<button class="mini" disabled={busy} onClick={openLibrary}>{t('settings.global.openLogsLibrary')}</button>)}</Note>,
-    control: <Note icon="control"><p>{t('settings.global.mcpNote')}</p></Note>,
+    developer: <Note icon="developer"><p>{t('settings.global.mcpNote')}</p></Note>,
   };
   // The style setting previews while it is still a draft.
   const skin = skinOf(draft.settings_style ?? saved?.values.settings_style);
@@ -66,7 +67,8 @@ export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved:
     change={(field, value) => store.edit(current => ({ ...current, [field.key]: value }))}
     browse={field => void run(async () => { const path = await pickPath('directory'); if (path) store.edit(current => ({ ...current, [field.key]: path })); })}
     fileLabel={t('settings.global.configFile')} filePath={saved?.config_path ?? ''} kicker={t('settings.global.crumb')} note={saved?.reserved_visible === false ? '' : t('settings.global.reservedNote')}
-    top={top[group]} end={end[group]} error={store.error} toast={toast}
+    top={<>{!isLauncherGroup(group) && <p class="scope-note">{t('settings.global.sharedGroup')}</p>}{top[group]}</>} end={end[group]} error={store.error} toast={toast}
+    sectionBefore={{ brand: t('settings.game.identityReserved') }}
     after={saved ? { running_icon: <IconPreview value={String(draft.running_icon ?? saved.values.running_icon)} disabled={busy}
       choose={value => store.edit(current => ({ ...current, running_icon: value }))} />,
       screen_resolution: <ScreenSizeNote values={draft} display={display} /> } : undefined}

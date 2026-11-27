@@ -1,7 +1,7 @@
 import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
-import { changedKeys, choiceLabel, fieldMeta, stepValue, shownFields, shownGroups, type SettingField, type SettingValue } from './settings';
+import { changedKeys, choiceLabel, fieldMeta, globalOnlyInSharedGroup, stepValue, shownFields, shownGroups, type SettingField, type SettingValue } from './settings';
 import { shellStyle } from '../cartridge/cartridge';
 import { t } from '../shared/i18n';
 import { Back, Brand, type Skin } from '../kit';
@@ -15,18 +15,14 @@ import './settings.css';
 // written as they are made. The skin (kit.tsx) only changes classes.
 const ICON: Record<string, string> = {
   general: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
-  storage: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
-  graphics: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
   display: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
   audio: '<path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',
   input: '<rect x="2" y="7" width="20" height="10" rx="5"/><path d="M7 10v4M5 12h4"/><circle cx="16" cy="11" r=".6"/><circle cx="18" cy="13" r=".6"/>',
-  vm: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
   performance: '<path d="M12 14l4-4"/><path d="M3.3 17a9 9 0 1 1 17.4 0"/>',
   device: '<rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/>',
   network: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
   diagnostics: '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
-  control: '<path d="M4 17l6-5-6-5M12 19h8"/>',
-  advanced: '<path d="M4 17l6-5-6-5M12 19h8"/>',
+  developer: '<path d="M4 17l6-5-6-5M12 19h8"/>',
   data: '<path d="M21 8v12H3V8"/><path d="M1 4h22v4H1zM10 12h4"/>',
   compatibility: '<path d="M10 3h4v3a2 2 0 1 0 0 4v0h3v4h-3a2 2 0 1 0 0 4v3h-4v-3a2 2 0 1 0-4 0v3H3v-7h3a2 2 0 1 0 0-4H3V6h7z"/>',
   about: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v0"/>',
@@ -34,10 +30,9 @@ const ICON: Record<string, string> = {
 };
 // glass skin: each group has its own glossy chip colours
 const TINT: Record<string, [string, string]> = {
-  general: ['#ff8be0', '#c13dff'], storage: ['#86e3ff', '#3b6ff6'], graphics: ['#ffd36e', '#ff6a3d'], audio: ['#7ff5cf', '#10a39a'],
-  input: ['#b9c3ff', '#5b4cf0'], vm: ['#6ff0de', '#0b8fd8'], network: ['#9fd0ff', '#2563eb'], diagnostics: ['#ffb1c1', '#e11d5c'],
-  control: ['#d2c2ff', '#7c3aed'], about: ['#fff07a', '#f59e0b'], performance: ['#ffd36e', '#ff4f7b'], device: ['#86e3ff', '#5b4cf0'],
-  display: ['#ffd36e', '#ff6a3d'], data: ['#9bf3b4', '#16a34a'], compatibility: ['#f7b5ff', '#a21caf'], advanced: ['#d2c2ff', '#7c3aed'],
+  general: ['#ff8be0', '#c13dff'], display: ['#ffd36e', '#ff6a3d'], data: ['#9bf3b4', '#16a34a'], input: ['#b9c3ff', '#5b4cf0'],
+  audio: ['#7ff5cf', '#10a39a'], device: ['#86e3ff', '#5b4cf0'], performance: ['#ffd36e', '#ff4f7b'], network: ['#9fd0ff', '#2563eb'],
+  diagnostics: ['#ffb1c1', '#e11d5c'], developer: ['#d2c2ff', '#7c3aed'], about: ['#fff07a', '#f59e0b'], compatibility: ['#f7b5ff', '#a21caf'],
   info: ['#9fd0ff', '#2563eb'], warn: ['#ffd36e', '#ff8a3d'],
 };
 // `glyph` draws a setting's own icon (setting-icons.ts) on its group's chip.
@@ -196,7 +191,8 @@ function ChoicePicker({ field, value, disabled, change }: { field: SettingField;
 // What a page tells the frame about one row.
 export interface RowModel {
   value: SettingValue; disabled: boolean;
-  inherit?: { overridden: boolean; shown: string };
+  // shown: the value this game falls back to; fromDefault: it is the built-in default, there being no global value.
+  inherit?: { overridden: boolean; shown: string; fromDefault?: boolean };
   confirmed?: boolean;                           // a wrong value stops the game: edits wait for the row's save button
 }
 // Per-game rows never lock: editing one makes it this game's own value (outlined, 'settings.customized'), and the restore
@@ -228,18 +224,19 @@ function FieldRow({ field, model, focused, focus, change, browse, restoreInherit
     onClick={rowClick(field, model, change)}>
     <GroupIcon name={field.group} glyph={SETTING_ICONS[field.key]} />
     <div class="lbl"><b>{meta.label}</b>
-      {(inherit || meta.reserved || meta.hint) && <div class="meta">
-        {inherit && !overridden && <span class="inherit-val">{t('settings.inherit.source')} · {inherit.shown}</span>}
+      {(inherit || meta.reserved || meta.hint || globalOnlyInSharedGroup(field)) && <div class="meta">
+        {inherit && !overridden && <span class="inherit-val">{t(inherit.fromDefault ? 'settings.inherit.defaultSource' : 'settings.inherit.source')} · {inherit.shown}</span>}
         {inherit && overridden && <><span class="tag over">{t('settings.customized')}</span>
-          <span class="inherit-val">{t('settings.inherit.globalValue', { value: inherit.shown })}</span></>}
+          <span class="inherit-val">{t(inherit.fromDefault ? 'settings.inherit.defaultValue' : 'settings.inherit.globalValue', { value: inherit.shown })}</span></>}
+        {globalOnlyInSharedGroup(field) && <span class="tag only" title={t('settings.scope.globalOnlyHint')}>{t('settings.scope.globalOnly')}</span>}
         {meta.reserved && <span class="tag pending" title={meta.reserved}>{t('settings.reservedLegend')}</span>}
         {(meta.hint || meta.reserved) && <span>{meta.hint || meta.reserved}</span>}
       </div>}
     </div>
     <div class="ctl">
       {inherit && overridden &&
-        <button class="restore" disabled={model.disabled} title={t('settings.inherit.restoreGlobal')} onClick={restoreInherit}>
-          <Glyph name="reload" />{t('settings.inherit.restoreGlobal')}</button>}
+        <button class="restore" disabled={model.disabled} title={t(inherit.fromDefault ? 'settings.inherit.restoreDefault' : 'settings.inherit.restoreGlobal')} onClick={restoreInherit}>
+          <Glyph name="reload" />{t(inherit.fromDefault ? 'settings.inherit.restoreDefault' : 'settings.inherit.restoreGlobal')}</button>}
       <Control field={field} value={model.value} disabled={model.disabled} change={change} browse={field.directory ? browse : undefined} />
     </div>
   </div>;

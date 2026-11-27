@@ -1367,7 +1367,7 @@ TEST_CASE("gui_platform android leaves out desktop and developer capabilities") 
     const auto fields = *settings.Root().Member("result")->Member("fields");
     const auto values = *settings.Root().Member("result")->Member("values");
     CHECK(HasField(fields, "language"));
-    CHECK(HasField(fields, "cpu_cores") == false);  // a per-game field, not global
+    CHECK(HasField(fields, "cpu_cores"));  // the global default of a per-game value
     for (const auto* key : {"mcp_enabled", "mcp_port", "dashboard_auto_open", "interpreter", "profiles_dir",
                             "window_mode", "minimize_on_launch", "running_icon", "angle_backend", "keymap"}) {
         CHECK_FALSE(HasField(fields, key));
@@ -1424,8 +1424,8 @@ TEST_CASE("gui_platform android leaves out desktop and developer capabilities") 
 }
 
 TEST_CASE("gui_rpc setting schema has its wording in the web UI source catalog") {
-    // The host sends keys and codes only; settings.ts words them as setting.<key>.label/.defaultLabel/.hint,
-    // setting.unit.<unit> and setting.reserved.<reserved>.
+    // The host sends keys and codes only; settings.ts words them as setting.<key>.label/.hint,
+    // settings.group.<group>, setting.unit.<unit> and setting.reserved.<reserved>.
     std::ifstream file(std::filesystem::path(OGPLAY_SOURCE_DIR) / "webui/apps/gui/shared/messages/zh-CN.ts");
     REQUIRE(file);
     const std::string catalog{std::istreambuf_iterator<char>(file), {}};
@@ -1435,14 +1435,12 @@ TEST_CASE("gui_rpc setting schema has its wording in the web UI source catalog")
         for (const auto& field : *definitions) {
             keys.insert(field.key);
             CHECK_MESSAGE(has("setting." + field.key + ".label"), field.key);
-            if (field.global_default) CHECK_MESSAGE(has("setting." + field.key + ".defaultLabel"), field.key);
+            CHECK_MESSAGE(has("settings.group." + field.group), field.key);
             if (!field.unit.empty()) CHECK_MESSAGE(has("setting.unit." + field.unit), field.key);
             if (!field.reserved.empty()) CHECK_MESSAGE(has("setting.reserved." + field.reserved), field.key);
             CHECK(field.label.find_first_of("\xE4\xE5\xE6\xE7\xE8\xE9") == std::string::npos);  // English for CLI
         }
     }
-    for (const auto& field : app::GameSettingDefinitions())
-        CHECK_FALSE(field.global_default);
     // Every field message belongs to a field the host still has.
     for (std::size_t at = catalog.find("\"setting."); at != std::string::npos;
          at = catalog.find("\"setting.", at + 1)) {

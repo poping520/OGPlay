@@ -72,9 +72,10 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: 
         <button class="mini" disabled={busy || !item || item.running} title={item?.running ? t('library.clear.running') : undefined}
           onClick={() => store.afterSave(clearData)}>{t('library.clear.menu')}</button>)}</Note>,
     network: <Note icon="network" title={t('settings.intentOnly')} warn><p>{t('settings.game.networkNote')}</p></Note>,
-    compatibility: <Note icon="compatibility" title={saved.profile_id ? t('settings.game.exactProfile', { id: saved.profile_id }) : t('settings.game.compatFolders')}>
-      {Object.keys(saved.facts).length > 0 && <Paths rows={factRows(saved.facts)} />}</Note>,
   } : {};
+  // The compatibility profile this game resolved, beside the folder setting that chooses where profiles come from.
+  const profile = saved && <Note icon="compatibility" title={saved.profile_id ? t('settings.game.exactProfile', { id: saved.profile_id }) : t('settings.game.compatFolders')}>
+    {Object.keys(saved.facts).length > 0 && <Paths rows={factRows(saved.facts)} />}</Note>;
   const reservedVisible = saved?.reserved_visible ?? true;
   // This game's values over the global ones: what decides which screen rows show and the size they give.
   const effective = { ...saved?.inherited, ...draft }, display = deviceDisplay();
@@ -96,14 +97,14 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack, clearData }: 
       return {
         value: overridden ? draft[field.key] : saved!.inherited[field.key], disabled: busy, confirmed: isInstanceOnlySetting(field.key),
         inherit: isInstanceOnlySetting(field.key) ? undefined : { overridden,
-          shown: displayValue(field, saved!.inherited[field.key]) },
+          shown: displayValue(field, saved!.inherited[field.key]), fromDefault: field.scope === 'game' },
       };
     }}
     change={(field, value) => store.edit(current => ({ ...current, [field.key]: value }))}
     restoreInherit={field => { if (saved && !busy) store.edit(current => inheritSetting(current, field.key)); }}
     browse={(field, apply) => void run(async () => { const path = await pickPath('directory'); if (path) { if (apply) apply(path); else store.edit(current => ({ ...current, [field.key]: path })); } })}
     fileLabel={t('settings.game.config')} filePath={saved?.config_path ?? ''} kicker={t('settings.game.crumb')} note={t('settings.savesInstantly')}
-    top={top[group]} end={group === 'advanced' || group === 'compatibility' ? launch : undefined} error={store.error} toast={toast}
+    top={top[group]} end={group === 'data' ? profile : group === 'developer' ? launch : undefined} error={store.error} toast={toast}
     back={() => { if (!busy) store.afterSave(onBack); }}
     reload={() => void run(async () => { await store.load(); say(t('settings.reloaded')); })}
     reset={() => store.edit(inheritAllSettings)} />;

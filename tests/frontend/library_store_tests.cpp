@@ -10,6 +10,7 @@
 #include <iterator>
 #include <algorithm>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -163,6 +164,58 @@ TEST_CASE("GUI schema two validates typed settings without replacing good config
         Write(tree.path / "config.toml", text);
         CHECK_THROWS(static_cast<void>(LoadLibraryConfig(tree.path)));
     }
+}
+
+TEST_CASE("game settings place every field in the global page's group and order") {
+    using namespace ogplay::app;
+    const auto& globals = SettingDefinitions();
+    const auto& games = GameSettingDefinitions();
+    const auto global_index = [&](std::string_view key) {
+        return std::find_if(globals.begin(), globals.end(), [&](const auto& field) { return field.key == key; });
+    };
+    // Groups the launcher alone has; every other group is the same section on both pages.
+    const std::array<std::string_view, 2> launcher_groups{"general", "diagnostics"};
+    std::vector<std::string> global_groups, game_groups;
+    for (const auto& field : globals) {
+        const bool launcher_group =
+            std::find(launcher_groups.begin(), launcher_groups.end(), field.group) != launcher_groups.end();
+        if (launcher_group) CHECK_MESSAGE(field.global_only, field.key);
+        if (global_groups.empty() || global_groups.back() != field.group) global_groups.push_back(field.group);
+    }
+    auto previous = globals.begin();
+    std::vector<std::string_view> instance_only;
+    for (const auto& field : games) {
+        if (game_groups.empty() || game_groups.back() != field.group) game_groups.push_back(field.group);
+        const auto global = global_index(field.key);
+        if (global == globals.end()) {
+            instance_only.push_back(field.key);
+            continue;
+        }
+        // A shared field is the global definition itself: same group, label and limits, in the global order.
+        CHECK_FALSE(global->global_only);
+        CHECK(global->group == field.group);
+        CHECK(global->label == field.label);
+        CHECK(global->choices == field.choices);
+        CHECK(global >= previous);
+        previous = global;
+    }
+    for (const auto& field : globals)
+        if (!field.global_only) CHECK_NOTHROW(static_cast<void>(FindGameSetting(field.key)));
+    CHECK(instance_only ==
+          std::vector<std::string_view>{"external_dir", "external_guest_dir", "ephemeral_sandbox", "mcp_manual_step"});
+    // Each group is one block on each page, and the game page keeps the global page's group order.
+    for (const auto* groups : {&global_groups, &game_groups}) {
+        auto sorted = *groups;
+        std::sort(sorted.begin(), sorted.end());
+        CHECK(std::adjacent_find(sorted.begin(), sorted.end()) == sorted.end());
+    }
+    std::vector<std::string> shared_groups;
+    for (const auto& group : global_groups)
+        if (std::find(game_groups.begin(), game_groups.end(), group) != game_groups.end())
+            shared_groups.push_back(group);
+    CHECK(shared_groups == game_groups);
+    CHECK(game_groups == std::vector<std::string>{"display", "data", "input", "audio", "device", "performance",
+                                                  "network", "developer"});
 }
 
 TEST_CASE("GUI instance settings persist only overrides with strict schema and backup recovery") {

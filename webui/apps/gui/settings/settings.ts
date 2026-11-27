@@ -6,7 +6,7 @@ export interface SettingField {
   choices: string[]; min: number; max: number; directory: boolean;
   unit: string;                                  // setting.unit.<unit>, empty for none
   reserved: string;                              // setting.reserved.<reserved> when saved only, else empty
-  global_default: boolean;                       // read as "Default …" on the global page
+  scope: 'global' | 'shared' | 'game';           // launcher only / global value games may override / this game alone
   hidden: boolean;                               // kept off the page by the host until it is polished
 }
 export interface Settings {
@@ -15,11 +15,17 @@ export interface Settings {
   library_root: string; config_path: string; facts: Record<string, string | null>;
   reserved_visible: boolean;                     // false in release builds
 }
-// Same priority as the per-game page: graphics before storage, input before audio.
+// One section list for both pages, in page order: a field sits in the same section on the global page and on every
+// game page. The launcher's own sections (general, diagnostics, about) are on the global page alone.
 export const groups = [
-  ['general', 'settings.group.general'], ['graphics', 'settings.group.graphics'], ['storage', 'settings.group.storage'], ['input', 'settings.group.input'], ['audio', 'settings.group.audio'],
-  ['vm', 'settings.group.vm'], ['network', 'settings.group.network'], ['diagnostics', 'settings.group.diagnostics'], ['control', 'settings.group.control'], ['about', 'settings.group.about'],
+  ['general', 'settings.group.general'], ['display', 'settings.group.display'], ['data', 'settings.group.data'], ['input', 'settings.group.input'],
+  ['audio', 'settings.group.audio'], ['device', 'settings.group.device'], ['performance', 'settings.group.performance'], ['network', 'settings.group.network'],
+  ['diagnostics', 'settings.group.diagnostics'], ['developer', 'settings.group.developer'], ['about', 'settings.group.about'],
 ] as const;
+const launcherGroups: readonly string[] = ['general', 'diagnostics', 'about'];
+export const isLauncherGroup = (group: string): boolean => launcherGroups.includes(group);
+// A launcher-only field among the sections games share: marked so that it is not looked for on a game page.
+export const globalOnlyInSharedGroup = (field: SettingField): boolean => field.scope === 'global' && !isLauncherGroup(field.group);
 // Host facts arrive under stable ids with data values (versions, file text, paths, codes); the labels and
 // coded values are worded here, in this order. null is a file the host could not read.
 const factLabels: Record<string, string> = {
@@ -58,14 +64,13 @@ export function changedKeys(saved: Record<string, SettingValue>, draft: Record<s
   return [...new Set([...Object.keys(saved), ...Object.keys(draft)])].filter(key => saved[key] !== draft[key]);
 }
 
-// The host schema carries no wording: each field is worded here from its key (setting.<key>.label, .defaultLabel on
-// the global page for a per-game value's default, .hint), with the unit and the reason a saved-only field is not
-// wired yet (reserved) as codes.
+// The host schema carries no wording: each field is worded here from its key (setting.<key>.label and .hint, the same
+// on both pages), with the unit and the reason a saved-only field is not wired yet (reserved) as codes.
 export interface FieldMeta { label: string; unit: string; hint: string; reserved: string }
 export function fieldMeta(field: SettingField): FieldMeta {
   const id = `setting.${field.key}`;
   return {
-    label: t(field.global_default && has(`${id}.defaultLabel`) ? `${id}.defaultLabel` : `${id}.label`),
+    label: t(`${id}.label`),
     unit: field.unit ? t(`setting.unit.${field.unit}`) : '',
     hint: has(`${id}.hint`) ? t(`${id}.hint`) : '',
     reserved: field.reserved ? t(`setting.reserved.${field.reserved}`) : '',

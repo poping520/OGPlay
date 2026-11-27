@@ -1,5 +1,5 @@
 import { t, type UiText } from '../shared/i18n';
-import { settingsError, type SettingField, type SettingValue } from './settings';
+import { groups, isLauncherGroup, settingsError, type SettingField, type SettingValue } from './settings';
 export interface GameSettings {
   schema: number; installation_id: string; display_name: string; profile_id: string | null;
   revision: string; config_path: string; fields: SettingField[];
@@ -8,11 +8,8 @@ export interface GameSettings {
   previews: Record<string, { argv: string[]; error: UiText | null }>;
   reserved_visible: boolean;                     // false in release builds
 }
-// Most-changed, effective groups first; developer switches last.
-export const gameGroups = [
-  ['display', 'settings.group.display'], ['data', 'settings.group.data'], ['input', 'settings.group.input'], ['audio', 'settings.group.audio'], ['performance', 'settings.group.performance'],
-  ['device', 'settings.group.device'], ['compatibility', 'settings.group.compatibility'], ['network', 'settings.group.network'], ['advanced', 'settings.group.advanced'],
-] as const;
+// The global page's sections without the launcher's own.
+export const gameGroups = groups.filter(([key]) => !isLauncherGroup(key));
 
 export function inheritSetting(values: Record<string, SettingValue>, key: string): Record<string, SettingValue> {
   const next = { ...values }; delete next[key]; return next;

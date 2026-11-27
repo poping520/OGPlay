@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { changedKeys, displayValue, factRows, fieldMeta, groups, isDirty, overlayFields, settingsError, shownFields, shownGroups, stepValue, type SettingField } from './settings';
+import { changedKeys, displayValue, factRows, fieldMeta, globalOnlyInSharedGroup, groups, isDirty, isLauncherGroup, overlayFields, settingsError, shownFields, shownGroups, stepValue, type SettingField } from './settings';
 import { gameGroups } from './game-settings';
 import { SETTING_ICONS, SHARED_ICONS } from './setting-icons';
 import { creditSummary, creditTree, type CreditProject } from './credits';
 const field = (key: string, initial: string | number | boolean, choices: string[] = []): SettingField =>
-  ({ key, initial, choices, min: 1, max: 4, group: 'general', unit: '', reserved: '', global_default: false, directory: false, hidden: false });
+  ({ key, initial, choices, min: 1, max: 4, group: 'general', unit: '', reserved: '', scope: 'shared', directory: false, hidden: false });
 describe('settings drafts', () => {
   it('shows and validates the shared app-language choices', () => {
     const locale = field('locale', 'ui', ['ui', 'zh-CN', 'zh-TW', 'en-US', 'ja-JP']);
@@ -39,7 +39,6 @@ describe('settings drafts', () => {
     expect(fieldMeta(jit)).toEqual({ label: 'JIT 缓存', unit: 'MB', hint: '', reserved: '运行时配置入口尚未接入' });
     expect(fieldMeta(field('cpu_cores', 1))).toEqual({ label: '虚拟 CPU 核数', unit: '', hint: '游戏查询到的核数；不限制宿主线程', reserved: '' });
     expect(fieldMeta(field('ephemeral_sandbox', false))).toEqual({ label: '临时沙盒', unit: '', hint: '退出不保留本次存档', reserved: '' });
-    expect(fieldMeta({ ...field('max_fps', 'unlimited'), global_default: true }).label).toBe('默认帧率上限');
     expect(fieldMeta(field('max_fps', 'unlimited')).label).toBe('帧率上限');
     expect(displayValue({ ...jit }, 128)).toBe('128 MB');
     expect(displayValue({ ...field('dir', ''), directory: true }, '')).toBe('默认');
@@ -58,20 +57,20 @@ describe('settings drafts', () => {
 });
 
 // Host field definitions: `{"key", "group", "label", ...}` rows (one line or one field per line, as clang-format
-// leaves them) plus the per-game device identity `{key, label}` list.
+// leaves them).
 const hostSettings = Object.values(import.meta.glob(['../../../../src/frontend/library/settings.cpp', '../../../../src/frontend/library/game_settings.cpp'],
   { query: '?raw', import: 'default', eager: true })) as string[];
 describe('reserved settings in release builds', () => {
   it('drops reserved rows and the groups they leave empty, keeping groups that never had fields', () => {
     const reserved = { ...field('volume', 100), group: 'audio', reserved: 'runtime' };
-    const live = { ...field('supersample', 1), group: 'graphics' };
+    const live = { ...field('supersample', 1), group: 'display' };
     const all = [reserved, live];
     expect(shownFields(all, true)).toEqual(all);
     const shown = shownFields(all, false);
     expect(shown).toEqual([live]);
-    const pageGroups = [['graphics', '图形', ''], ['audio', '音频', ''], ['about', '关于', '']] as const;
-    expect(shownGroups(pageGroups, all, shown).map(([key]) => key)).toEqual(['graphics', 'about']);
-    expect(shownGroups(pageGroups, all, all).map(([key]) => key)).toEqual(['graphics', 'audio', 'about']);
+    const pageGroups = [['display', '显示', ''], ['audio', '音频', ''], ['about', '关于', '']] as const;
+    expect(shownGroups(pageGroups, all, shown).map(([key]) => key)).toEqual(['display', 'about']);
+    expect(shownGroups(pageGroups, all, all).map(([key]) => key)).toEqual(['display', 'audio', 'about']);
   });
   it('never shows rows the host hides, in any build', () => {
     const hidden = { ...field('cartridge', '3d'), hidden: true };
@@ -87,7 +86,6 @@ describe('setting row icons', () => {
     const keys = new Set<string>();
     for (const text of hostSettings) {
       for (const [, key, group] of text.matchAll(/\{\s*"([a-z0-9_]+)",\s*"([a-z]+)",\s*"/g)) if (groupKeys.has(group)) keys.add(key);
-      for (const [, key] of text.match(/\[key, label\][\s\S]*?\}\)/)?.[0].matchAll(/\{\s*"([a-z0-9_]+)",\s*"/g) ?? []) keys.add(key);
     }
     expect(hostSettings.length).toBe(2);
     expect(keys.size).toBeGreaterThan(60);
@@ -134,5 +132,16 @@ describe('play license row', () => {
     expect(overlayFields(fields, { google_play: false }).map(item => item.key)).toEqual(['google_play']);
     expect(overlayFields(fields, { google_play: true }).map(item => item.key)).toEqual(['google_play', 'google_play_license']);
     expect(displayValue(fields[1], 'error-contacting-server')).toBe('无法连接服务器 (0x101)');
+  });
+});
+describe('setting sections', () => {
+  it('gives game pages the global sections in the same order, without the launcher ones', () => {
+    expect(gameGroups.map(([key]) => key)).toEqual(['display', 'data', 'input', 'audio', 'device', 'performance', 'network', 'developer']);
+    expect(groups.map(([key]) => key).filter(key => !isLauncherGroup(key))).toEqual(gameGroups.map(([key]) => key));
+  });
+  it('marks launcher-only fields only where games share the section', () => {
+    expect(globalOnlyInSharedGroup({ ...field('audio_device', ''), group: 'audio', scope: 'global' })).toBe(true);
+    expect(globalOnlyInSharedGroup({ ...field('theme', 'dark'), group: 'general', scope: 'global' })).toBe(false);
+    expect(globalOnlyInSharedGroup({ ...field('volume', 100), group: 'audio', scope: 'shared' })).toBe(false);
   });
 });

@@ -6,6 +6,19 @@
 namespace ogplay::app {
 const std::vector<SettingDefinition>& GameSettingDefinitions() {
     static const auto fields = [] {
+        // A global field seen per game: per-instance values are not defaults, so "Default interpreter" reads
+        // "Interpreter" here.
+        const auto Inherited = [](std::string_view key, std::string group) {
+            auto field = FindSetting(key);
+            field.group = std::move(group);
+            constexpr std::string_view kDefault = "Default ";
+            if (field.global_default && field.label.starts_with(kDefault)) {
+                field.label.erase(0, kDefault.size());
+                field.label[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(field.label[0])));
+            }
+            field.global_default = false;
+            return field;
+        };
         std::vector<SettingDefinition> result;
         for (const auto& [key, group] :
              std::vector<std::pair<std::string, std::string>>{{"interpreter", "performance"},
@@ -32,16 +45,7 @@ const std::vector<SettingDefinition>& GameSettingDefinitions() {
                                                               {"profiles_dir", "compatibility"},
                                                               {"mcp_enabled", "advanced"},
                                                               {"mcp_port", "advanced"}}) {
-            auto field = FindSetting(key);
-            field.group = group;
-            // Per-instance values are not defaults: "Default interpreter" reads "Interpreter" here.
-            constexpr std::string_view kDefault = "Default ";
-            if (field.global_default && field.label.starts_with(kDefault)) {
-                field.label.erase(0, kDefault.size());
-                field.label[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(field.label[0])));
-            }
-            field.global_default = false;
-            result.push_back(std::move(field));
+            result.push_back(Inherited(key, group));
         }
         const auto pending = "Reserved · Runtime configuration is not wired yet";
         const std::vector<SettingDefinition> extra{
@@ -153,18 +157,8 @@ const std::vector<SettingDefinition>& GameSettingDefinitions() {
              "",
              "runtimeConfig",
              false},
-            {"google_play",
-             "device",
-             "Google Play Store and services",
-             true,
-             {},
-             0,
-             0,
-             "Simulates the Play Store with no account signed in (license checks fail; in-app purchases and Play Games sign-in are unavailable). Turning this off may prevent some games from starting.",
-             false,
-             "",
-             "",
-             false},
+            Inherited("google_play", "device"),
+            Inherited("google_play_license", "device"),
             {"external_guest_dir",
              "data",
              "Data pack guest mount folder",

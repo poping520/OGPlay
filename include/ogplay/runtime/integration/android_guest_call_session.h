@@ -83,6 +83,8 @@ struct AndroidGuestPlatformConfig final {
     // Installed Play Store, disabled GSF and no account; local LVL/billing
     // services only report failure. Off removes the Google Play environment.
     bool google_play{true};
+    // LVL response code: 0 LICENSED, 1 NOT_LICENSED or 0x101 ERROR_CONTACTING_SERVER.
+    std::int32_t play_license_response{1};
     // disabled/loopback keep the device offline; online uses the host egress (runtime/net).
     net::NetworkMode network_mode{net::NetworkMode::disabled};
     // OGPlayJSSE engine: host TLS with host roots, or guest libssl with the bundled CA set.

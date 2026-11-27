@@ -144,6 +144,12 @@ GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args) {
             options.exit_after_frames = ParsePositive(args[++index], option);
         } else if (option == "--no-google-play") {
             options.google_play = false;
+        } else if (option == "--play-license" && index + 1 < args.size()) {
+            const auto value = args[++index];
+            if (value != "licensed" && value != "not-licensed" && value != "error-contacting-server")
+                throw std::invalid_argument(
+                    "--play-license requires licensed, not-licensed or error-contacting-server");
+            options.play_license = std::string(value);
         } else if (option == "--network" && index + 1 < args.size()) {
             const auto value = args[++index];
             if (value != "disabled" && value != "loopback" && value != "allow")
@@ -439,6 +445,10 @@ std::vector<std::string> FormatGameRunArgs(const GameRunOptions& o) {
     if (o.max_fps) add("--max-fps", std::to_string(o.max_fps));
     if (o.fps_overlay) add("--fps-overlay", std::string(OverlayCornerName(*o.fps_overlay)));
     if (!o.google_play) args.emplace_back("--no-google-play");
+    if (o.play_license != "not-licensed") {
+        args.emplace_back("--play-license");
+        args.emplace_back(o.play_license);
+    }
     if (o.network != "disabled") {
         args.emplace_back("--network");
         args.emplace_back(o.network);

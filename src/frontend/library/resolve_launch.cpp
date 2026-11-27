@@ -76,6 +76,7 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
     o.cpu_config.execution.max_mticks_per_second =
         std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "cpu_max_mticks_per_second"));
     o.google_play = std::get<bool>(EffectiveGameSetting(settings, global, entry, "google_play"));
+    o.play_license = std::get<std::string>(EffectiveGameSetting(settings, global, entry, "google_play_license"));
     o.network = std::get<std::string>(EffectiveGameSetting(settings, global, entry, "network_policy"));
     o.tls = std::get<std::string>(EffectiveGameSetting(settings, global, entry, "tls_mode"));
     const auto interpreter = std::get<std::string>(Setting(config, "interpreter"));

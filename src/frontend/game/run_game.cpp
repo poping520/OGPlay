@@ -215,7 +215,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
           mcp_manual_step, preflight, survey_gaps_output, sandbox_directory, installation_id, ephemeral_sandbox,
           input_config_path, library_root, missing_data_report, run_report, window_title, window_icon,
           window_icon_style, ui_language, app_language, surface_size_explicit, surface_adaptation, fps_overlay,
-          google_play, network, tls] = std::move(options);
+          google_play, play_license, network, tls] = std::move(options);
     const auto language = ui_language ? *ui_language : app::SystemUiLanguage();
     const auto guest_language = app_language.value_or(language);
     const auto bundled_data = HostBundledDataPaths();
@@ -592,6 +592,9 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             .android_id = sandbox.android_id,
             .version_name = manifest.version_name.value_or("unknown"),
             .google_play = google_play,
+            .play_license_response = play_license == "licensed"                  ? 0
+                                     : play_license == "error-contacting-server" ? 0x101
+                                                                                 : 1,
             .network_mode = runtime::net::ParseNetworkMode(network).value_or(runtime::net::NetworkMode::disabled),
             .host_tls = tls != "guest",
             .wall_epoch_millis = dex_context->wall_epoch_millis};

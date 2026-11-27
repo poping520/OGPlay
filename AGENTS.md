@@ -21,7 +21,7 @@ framework 代码）会直接调用的能力，进程外的系统组件不实现�
 不经 Parcel 传输）；禁止 Binder 驱动、跨进程通信、system_server 进程、Zygote、完整
 ART/Dalvik、Play 服务、现代支付/社交/反作弊能力。允许进程内虚拟进程：fork/vfork/execve/wait
 由 runtime/process 在游戏进程内模拟，exec 只运行注册的内置命令（宿主代码），不启动宿主进程。Google Play 只模拟“装有商店、未登录账号”的
-设备事实（vending/gsf 包、LVL 固定失败、IAB 计费不可用、商店链接静默成功），由 `google_play`
+设备事实（vending/gsf 包、LVL 按设置回答且签名无效、IAB 计费不可用、商店链接静默成功），由 `google_play`
 开关控制；不实现 GMS、真实授权、购买或推送。网络由进程内 socket 栈提供（AF_UNIX、回环与 netd
 `dnsproxyd` 端点在进程内实现），只有启动器 `network_policy=allow` 时经宿主 socket 与宿主解析器真实联网，
 默认离线；TLS 默认由宿主 OpenSSL 引擎与宿主信任根承担（`tls_mode=guest` 用原版 libssl）。范围有争议时先与用户确认；用户已明确

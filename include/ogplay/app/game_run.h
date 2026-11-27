@@ -103,6 +103,8 @@ struct GameRunOptions final {
     std::optional<OverlayCorner> fps_overlay;
     // Installed Play Store with no account: LVL fails, billing is unavailable; off removes Google packages.
     bool google_play{true};
+    // Launcher google_play_license: the LVL answer "not-licensed", "licensed" or "error-contacting-server".
+    std::string play_license{"not-licensed"};
     // Launcher network_policy: "disabled" (offline device), "loopback" or "allow" (host egress).
     std::string network{"disabled"};
     // Launcher tls_mode: "host" (host TLS and roots) or "guest" (API 19 libssl and bundled CAs).

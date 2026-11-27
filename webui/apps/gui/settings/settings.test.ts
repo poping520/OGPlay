@@ -128,3 +128,11 @@ describe('fps overlay rows', () => {
     expect(displayValue(fields[1], 'bottom-right')).toBe('右下');
   });
 });
+describe('play license row', () => {
+  it('shows the license answer only while Google Play is on', () => {
+    const fields = [field('google_play', true), field('google_play_license', 'not-licensed', ['not-licensed', 'licensed', 'error-contacting-server'])];
+    expect(overlayFields(fields, { google_play: false }).map(item => item.key)).toEqual(['google_play']);
+    expect(overlayFields(fields, { google_play: true }).map(item => item.key)).toEqual(['google_play', 'google_play_license']);
+    expect(displayValue(fields[1], 'error-contacting-server')).toBe('无法连接服务器 (0x101)');
+  });
+});

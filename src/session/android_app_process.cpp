@@ -256,6 +256,7 @@ public:
         const auto android_id = request.platform.android_id;
         const auto strict_webview_errors = request.platform.strict_webview_errors;
         const auto google_play = request.platform.google_play;
+        const auto play_license_response = request.platform.play_license_response;
         const auto host_tls = request.platform.host_tls;
         request.boundary_options.compressed_texture_family = ResolveManifestCompressedTextureFamily(manifest);
         if (request.logger != nullptr) {
@@ -362,6 +363,7 @@ public:
                     context->target_sdk_version = manifest.target_sdk.value_or(0U);
                     context->strict_webview_errors = strict_webview_errors;
                     context->google_play = google_play;
+                    context->play_license_response = play_license_response;
                     context->application_class_name = manifest.application_class;
                     context->application_process_name = manifest.application_process_name;
                     context->application_label = manifest.application_label;

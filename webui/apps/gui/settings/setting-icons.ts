@@ -24,6 +24,7 @@ export const SETTING_ICONS: Record<string, string> = {
   external_dir: DATA_PACK,
   external_guest_dir: '<path d="M7 3h8l4 4v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M9 7v3M12 7v3M15 8v2"/>',
   google_play: '<path d="M6 3l13 9-13 9z"/><path d="M10 12l2 2 3-4"/>',
+  google_play_license: '<path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/>',
   data_mount_hint: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.8.8 1 1.5 1 2.5h6c0-1 .2-1.7 1-2.5A6 6 0 0 0 12 3z"/>',
   log_retention: '<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10h14V9M10 13h4"/>',
   // graphics and display

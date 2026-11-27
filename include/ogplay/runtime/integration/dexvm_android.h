@@ -393,6 +393,10 @@ struct DexVmAndroidContext final {
 
     // Installed Play Store, no signed-in account; GMS is always absent.
     bool google_play{true};
+    // LVL server response code the local LicensingService reports: 0 LICENSED,
+    // 1 NOT_LICENSED (signed data with an invalid signature) or 0x101
+    // ERROR_CONTACTING_SERVER (no signed data).
+    std::int32_t play_license_response{1};
 
     struct GooglePlayBinding final {
         dexvm::VmObjectRef binder;

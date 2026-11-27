@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
+#include "ogplay/core/encoding.h"
 #include "ogplay/core/logger.h"
 #include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
@@ -251,7 +252,7 @@ TEST_CASE("DVM-144 failed service binding retains a Context owned dispatcher unt
     }
 }
 
-TEST_CASE("Play licensing bind answers SDK server contact failure") {
+TEST_CASE("Play licensing bind answers the configured LVL response in SDK format") {
     constexpr auto action = "com.android.vending.licensing.ILicensingService";
     constexpr auto transact_signature = "(ILandroid/os/Parcel;Landroid/os/Parcel;I)Z";
     constexpr int interface_transaction = 0x5f4e5446;
@@ -260,7 +261,7 @@ TEST_CASE("Play licensing bind answers SDK server contact failure") {
         int disconnected = 0;
         VmObjectRef delivered_binder;
         int listener_code = -1;
-        std::string listener_payload;
+        std::string signed_data, signature;
         auto connection_decl = IntrinsicClassBuilder::Class("Ltest/PlayLicensingConnection;", "Ljava/lang/Object;",
                                                             {"Landroid/content/ServiceConnection;"});
         connection_decl.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
@@ -292,7 +293,8 @@ TEST_CASE("Play licensing bind answers SDK server contact failure") {
                 const auto second = ogplay::runtime::android_intrinsics::CallAndroidMethod(call.vm, data, "readString",
                                                                                            "()Ljava/lang/String;")
                                         .ref;
-                listener_payload = call.vm.StringUtf8(first) + "|" + call.vm.StringUtf8(second);
+                signed_data = call.vm.StringUtf8(first);
+                signature = call.vm.StringUtf8(second);
                 return VmValue::Int(1);
             });
         AndroidValueVm f(backend, {std::move(connection_decl).Build(), std::move(listener_decl).Build()});
@@ -378,18 +380,69 @@ TEST_CASE("Play licensing bind answers SDK server contact failure") {
         CHECK(f.On(delivered_binder, "transact", transact_signature,
                    {VmValue::Int(2), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}), VmValue::Int(0)})
                   .AsInt() == 0);
-        f.On(parcel, "setDataPosition", "(I)V", {VmValue::Int(0)});
-        f.On(parcel, "writeInterfaceToken", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8(action))});
-        f.On(parcel, "writeLong", "(J)V", {VmValue::Long(7)});
-        f.On(parcel, "writeString", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("org.example.game"))});
-        f.On(parcel, "writeStrongBinder", "(Landroid/os/IBinder;)V", {VmValue::Ref(listener)});
-        REQUIRE(f.On(delivered_binder, "transact", transact_signature,
-                     {VmValue::Int(1), VmValue::Ref(parcel), VmValue::Ref(VmObjectRef{}), VmValue::Int(1)})
-                    .AsInt() == 1);
-        CHECK(listener_code == -1);
-        drain();
+        f.context->package_version_code = 42;
+        const auto check_license = [&](std::int64_t nonce) {
+            listener_code = -1;
+            f.On(parcel, "setDataPosition", "(I)V", {VmValue::Int(0)});
+            f.On(parcel, "writeInterfaceToken", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8(action))});
+            f.On(parcel, "writeLong", "(J)V", {VmValue::Long(nonce)});
+            f.On(parcel, "writeString", "(Ljava/lang/String;)V",
+                 {VmValue::Ref(f.vm.NewStringUtf8("org.example.game"))});
+            f.On(parcel, "writeStrongBinder", "(Landroid/os/IBinder;)V", {VmValue::Ref(listener)});
+            REQUIRE(f.On(delivered_binder, "transact", transact_signature,
+                         {VmValue::Int(1), VmValue::Ref(parcel), VmValue::Ref(VmObjectRef{}), VmValue::Int(1)})
+                        .AsInt() == 1);
+            CHECK(listener_code == -1);
+            drain();
+        };
+        // responseCode|nonce|packageName|versionCode|userId|timestamp[:extras] (LVL ResponseData.parse).
+        const auto fields = [&] {
+            std::vector<std::string> result;
+            const auto main = signed_data.substr(0, signed_data.find(':'));
+            for (std::size_t begin = 0;;) {
+                const auto end = main.find('|', begin);
+                result.push_back(main.substr(begin, end - begin));
+                if (end == std::string::npos) return result;
+                begin = end + 1;
+            }
+        };
+        const auto check_signature = [&] {
+            CHECK(signature.size() == 344);  // Base64 of a 2048-bit RSA signature.
+            const auto bytes = ogplay::core::DecodeBase64(signature);
+            REQUIRE(bytes.has_value());
+            CHECK(bytes->size() == 256);
+        };
+
+        check_license(-7);  // Default: NOT_LICENSED with signed data that cannot verify.
+        CHECK(listener_code == 1);
+        auto parts = fields();
+        REQUIRE(parts.size() == 6);
+        CHECK(parts[0] == "1");
+        CHECK(parts[1] == "-7");
+        CHECK(parts[2] == "org.example.game");
+        CHECK(parts[3] == "42");
+        CHECK(ogplay::core::DecodeBase64(parts[4]).value_or(std::vector<std::byte>{}).size() == 25);
+        CHECK(std::stoll(parts[5]) <= f.context->WallTimeMillis());
+        CHECK(signed_data.find(':') == std::string::npos);
+        check_signature();
+
+        f.context->play_license_response = 0;
+        check_license(1579380448);
+        CHECK(listener_code == 0);
+        parts = fields();
+        REQUIRE(parts.size() == 6);
+        CHECK(parts[0] == "0");
+        CHECK(parts[1] == "1579380448");
+        const auto timestamp = std::stoll(parts[5]);
+        CHECK(signed_data.substr(signed_data.find(':')) == ":VT=" + std::to_string(timestamp + 86'400'000) + "&GT=" +
+                                                               std::to_string(timestamp + 604'800'000) + "&GR=10");
+        check_signature();
+
+        f.context->play_license_response = 0x101;
+        check_license(7);
         CHECK(listener_code == 0x101);  // SDK ERROR_CONTACTING_SERVER; no signed response is required.
-        CHECK(listener_payload == "|");
+        CHECK(signed_data.empty());
+        CHECK(signature.empty());
         unbind();
         CHECK(f.context->google_play_bindings.empty());
     }

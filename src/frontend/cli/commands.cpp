@@ -112,6 +112,8 @@ constexpr std::string_view kRunApkHelp =
     "    --dexvm-interpreter <switch|threaded>\n"
     "                                DexVM interpreter override\n"
     "    --no-google-play           No Play Store or Google services framework on the device\n"
+    "    --play-license <licensed|not-licensed|error-contacting-server>\n"
+    "                                LVL license check answer (default not-licensed)\n"
     "  Guest CPU\n"
     "    --cpu-cores <1..32>         Core count (default 1)\n"
     "    --cpu-frequency-mhz <1..10000>\n"

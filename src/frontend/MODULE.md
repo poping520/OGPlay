@@ -66,7 +66,8 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   两项独立、默认关闭；GUI 对应速率值 0 表示省略限速参数。启动日志记录查询和执行配置。
   不限制 Java 解释/HLE、宿主 CPU 占用或物理频率，也不改变游戏 Clock。
 - `--no-google-play` 关闭 Google Play 环境（默认开启），设备不再发布 Play 商店或 Google Services Framework；
-  GUI 单游戏“虚拟设备”设置 `google_play` 关闭时传递该参数。
+  GUI 的 `google_play`（全局设置，游戏可覆盖）生效值关闭时传递该参数。`--play-license licensed|not-licensed|error-contacting-server`
+  选择 LVL 授权验证的回答（默认 not-licensed，对应 `google_play_license`，非默认值才传递）。
 - `--network disabled|loopback|allow`（启动器 `network_policy`，默认 disabled）选择 socket 栈模式：disabled 为
   Wi-Fi 开启未连接的离线设备，allow 经宿主出口真实联网并报告已连接 Wi-Fi；`--tls host|guest`（`tls_mode`，
   默认 host）选择 OGPlayJSSE 的宿主引擎或 guest libssl。会话启动时 guest 墙钟原点取宿主 UTC 时间。

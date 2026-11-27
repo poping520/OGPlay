@@ -79,10 +79,13 @@ const labels: Record<string, string> = {
   disabled: 'setting.choice.disabled', loopback: 'setting.choice.loopback', allow: 'setting.choice.allow', host: 'setting.choice.host', guest: 'setting.choice.guest', realtime: 'setting.choice.realtime', fixed: 'setting.choice.fixed', portrait: 'setting.choice.portrait', landscape: 'setting.choice.landscape', unlimited: 'setting.choice.unlimited',
   '3d': 'setting.choice.3d', css: 'setting.choice.css', console: 'setting.choice.console', glass: 'setting.choice.glass', cradle: 'setting.choice.cradle', badge: 'setting.choice.badge',
   'top-left': 'setting.choice.topLeft', 'top-right': 'setting.choice.topRight', 'bottom-left': 'setting.choice.bottomLeft', 'bottom-right': 'setting.choice.bottomRight',
+  licensed: 'setting.choice.licensed', 'not-licensed': 'setting.choice.notLicensed', 'error-contacting-server': 'setting.choice.errorContactingServer',
 };
-// The FPS corner only matters while the counter is shown.
+// The FPS corner only matters while the counter is shown, the license answer only while Google Play is on.
 export function overlayFields(fields: SettingField[], values: Record<string, SettingValue>): SettingField[] {
-  return values.fps_overlay === true ? fields : fields.filter(field => field.key !== 'fps_overlay_position');
+  return fields.filter(field =>
+    (field.key !== 'fps_overlay_position' || values.fps_overlay === true) &&
+    (field.key !== 'google_play_license' || values.google_play !== false));
 }
 // Hidden rows never show; release builds (host reserved_visible false) also leave reserved rows out, and with
 // them the groups that only had such rows; groups without any field (e.g. 关于) stay.

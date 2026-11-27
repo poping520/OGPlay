@@ -7,7 +7,9 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -311,7 +313,7 @@ TEST_CASE("BND-43 GUI persists optional execution limits independently of nomina
     CHECK(std::find(defaults.begin(), defaults.end(), "--cpu-max-mticks-per-second") == defaults.end());
 }
 
-TEST_CASE("GUI passes the Google Play switch only when the game turns it off") {
+TEST_CASE("GUI passes the Google Play switch only when the effective setting turns it off") {
     using namespace ogplay::frontend;
     using namespace ogplay::app;
     TemporaryDirectory tree;
@@ -322,6 +324,13 @@ TEST_CASE("GUI passes the Google Play switch only when the game turns it off") {
     entry.external_dir.reset();
     const auto defaults = BuildLaunchPlan(cli, tree.path, entry, {}).argv;
     CHECK(std::find(defaults.begin(), defaults.end(), "--no-google-play") == defaults.end());
+    LibraryConfig global;
+    SetSetting(global, "google_play", false);
+    const auto inherited = BuildLaunchPlan(cli, tree.path, entry, global).argv;
+    CHECK(std::find(inherited.begin(), inherited.end(), "--no-google-play") != inherited.end());
+    SaveGameSettings(directory, {{{"google_play", true}}});
+    const auto overridden = BuildLaunchPlan(cli, tree.path, entry, global).argv;
+    CHECK(std::find(overridden.begin(), overridden.end(), "--no-google-play") == overridden.end());
     SaveGameSettings(directory, {{{"google_play", false}}});
     const auto disabled = BuildLaunchPlan(cli, tree.path, entry, {}).argv;
     CHECK(std::find(disabled.begin(), disabled.end(), "--no-google-play") != disabled.end());
@@ -329,6 +338,38 @@ TEST_CASE("GUI passes the Google Play switch only when the game turns it off") {
     CHECK_FALSE(ParseGameRunArgs(args).google_play);
     const std::array<std::string_view, 1> plain{"game.apk"};
     CHECK(ParseGameRunArgs(plain).google_play);
+}
+
+TEST_CASE("GUI passes the Play license answer only when it differs from not licensed") {
+    using namespace ogplay::frontend;
+    using namespace ogplay::app;
+    TemporaryDirectory tree;
+    const auto cli = tree.path / "ogplay", directory = tree.path / "library" / "org.example.game";
+    Write(cli, "exe");
+    Write(directory / "base.apk", "apk");
+    auto entry = Entry(directory, {});
+    entry.external_dir.reset();
+    const auto defaults = BuildLaunchPlan(cli, tree.path, entry, {}).argv;
+    CHECK(std::find(defaults.begin(), defaults.end(), "--play-license") == defaults.end());
+    LibraryConfig global;
+    SetSetting(global, "google_play_license", std::string("error-contacting-server"));
+    const auto inherited = BuildLaunchPlan(cli, tree.path, entry, global).argv;
+    const auto inherited_flag = std::find(inherited.begin(), inherited.end(), "--play-license");
+    REQUIRE(inherited_flag != inherited.end());
+    REQUIRE(std::next(inherited_flag) != inherited.end());
+    CHECK(*std::next(inherited_flag) == "error-contacting-server");
+    SaveGameSettings(directory, {{{"google_play_license", std::string("licensed")}}});
+    const auto licensed = BuildLaunchPlan(cli, tree.path, entry, global).argv;
+    const auto flag = std::find(licensed.begin(), licensed.end(), "--play-license");
+    REQUIRE(flag != licensed.end());
+    REQUIRE(std::next(flag) != licensed.end());
+    CHECK(*std::next(flag) == "licensed");
+    const std::array<std::string_view, 3> args{"game.apk", "--play-license", "error-contacting-server"};
+    CHECK(ParseGameRunArgs(args).play_license == "error-contacting-server");
+    const std::array<std::string_view, 1> plain{"game.apk"};
+    CHECK(ParseGameRunArgs(plain).play_license == "not-licensed");
+    const std::array<std::string_view, 3> invalid{"game.apk", "--play-license", "1"};
+    CHECK_THROWS_AS(static_cast<void>(ParseGameRunArgs(invalid)), std::invalid_argument);
 }
 
 TEST_CASE("GUI launch tracker rejects duplicates and returns exact exits") {

@@ -7,7 +7,10 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
+
+#include "ogplay/loader/link_namespace.h"
 
 #include "ogplay/runtime/bionic/bionic_tls.h"
 
@@ -15,6 +18,108 @@ namespace ogplay::runtime {
 namespace {
 
 constexpr std::size_t kMaximumProgramNameBytes = 31;
+// struct prop_area: bytes_used, serial, magic, version, reserved[28].
+constexpr std::uint32_t kPropertyAreaHeaderBytes = 128;
+constexpr std::uint32_t kPropertyAreaMagic = 0x504f5250U;
+constexpr std::uint32_t kPropertyAreaVersion = 0xfc6ed0abU;
+// PROP_NAME_MAX / PROP_VALUE_MAX include the terminator.
+constexpr std::size_t kPropertyNameMax = 32;
+constexpr std::size_t kPropertyValueMax = 92;
+// struct prop_bt: namelen, reserved[3], prop, left, right, children, name[].
+constexpr std::uint32_t kPropBtBytes = 20;
+// struct prop_info: serial, value[PROP_VALUE_MAX], name[].
+constexpr std::uint32_t kPropInfoBytes = 4 + kPropertyValueMax;
+
+// Builds the data region exactly as bionic's find_property(..., alloc=true)
+// would while adding the properties in order.
+class PropertyTrie final {
+public:
+    explicit PropertyTrie(const std::uint32_t capacity) : data_(capacity) {
+        Allocate(kPropBtBytes);  // root node; bionic reserves sizeof(prop_bt) for it
+    }
+
+    void Add(const std::string_view name, const std::string_view value) {
+        if (name.empty() || name.size() >= kPropertyNameMax)
+            throw std::invalid_argument("system property name must be 1..31 bytes: " + std::string(name));
+        if (value.size() >= kPropertyValueMax)
+            throw std::invalid_argument("system property value exceeds 91 bytes: " + std::string(name));
+        if (name.find('\0') != std::string_view::npos || value.find('\0') != std::string_view::npos)
+            throw std::invalid_argument("system property contains a null byte");
+        std::uint32_t trie = 0;
+        for (std::size_t start = 0;;) {
+            const auto separator = name.find('.', start);
+            const auto segment =
+                name.substr(start, separator == std::string_view::npos ? std::string_view::npos : separator - start);
+            if (segment.empty())
+                throw std::invalid_argument("system property name has an empty segment: " + std::string(name));
+            trie = FindOrAddChild(trie, segment);
+            if (separator == std::string_view::npos) break;
+            start = separator + 1U;
+        }
+        if (Read(trie + 4U) != 0) throw std::invalid_argument("duplicate system property: " + std::string(name));
+        const auto info = Allocate(kPropInfoBytes + static_cast<std::uint32_t>(name.size()) + 1U);
+        Write(info, static_cast<std::uint32_t>(value.size()) << 24U);
+        Copy(info + 4U, value);
+        Copy(info + kPropInfoBytes, name);
+        Write(trie + 4U, info);
+    }
+
+    [[nodiscard]] std::uint32_t BytesUsed() const noexcept { return used_; }
+
+    [[nodiscard]] const std::vector<std::byte>& Data() const noexcept { return data_; }
+
+private:
+    std::uint32_t FindOrAddChild(const std::uint32_t parent, const std::string_view segment) {
+        if (Read(parent + 16U) == 0) return Link(parent + 16U, segment);
+        auto node = Read(parent + 16U);
+        while (true) {
+            const auto length = static_cast<std::size_t>(data_[node]);
+            const std::string_view current(reinterpret_cast<const char*>(data_.data() + node + kPropBtBytes), length);
+            // cmp_prop_name: shorter names sort first, then strncmp.
+            const int order = segment.size() != length ? (segment.size() < length ? -1 : 1) : segment.compare(current);
+            if (order == 0) return node;
+            const auto link = node + (order < 0 ? 8U : 12U);
+            if (Read(link) == 0) return Link(link, segment);
+            node = Read(link);
+        }
+    }
+
+    std::uint32_t Link(const std::uint32_t slot, const std::string_view segment) {
+        const auto node = Allocate(kPropBtBytes + static_cast<std::uint32_t>(segment.size()) + 1U);
+        data_[node] = static_cast<std::byte>(segment.size());
+        Copy(node + kPropBtBytes, segment);
+        Write(slot, node);
+        return node;
+    }
+
+    std::uint32_t Allocate(const std::uint32_t size) {
+        const auto aligned = (size + 3U) & ~3U;
+        if (aligned > data_.size() - used_) throw std::length_error("system properties exceed the prop_area");
+        const auto offset = used_;
+        used_ += aligned;
+        return offset;
+    }
+
+    [[nodiscard]] std::uint32_t Read(const std::uint32_t offset) const {
+        std::uint32_t value{};
+        for (std::uint32_t index = 0; index < 4U; ++index)
+            value |= static_cast<std::uint32_t>(data_[offset + index]) << (index * 8U);
+        return value;
+    }
+
+    void Write(const std::uint32_t offset, const std::uint32_t value) {
+        for (std::uint32_t index = 0; index < 4U; ++index)
+            data_[offset + index] = static_cast<std::byte>((value >> (index * 8U)) & 0xffU);
+    }
+
+    void Copy(const std::uint32_t offset, const std::string_view text) {
+        for (std::size_t index = 0; index < text.size(); ++index)
+            data_[offset + index] = static_cast<std::byte>(static_cast<unsigned char>(text[index]));
+    }
+
+    std::vector<std::byte> data_;
+    std::uint32_t used_{};
+};
 
 void Write32(memory::MemoryBus& bus, const memory::GuestAddress address,
              const std::uint32_t value, const std::uint64_t thread_id) {
@@ -81,8 +186,7 @@ Api19GuestProcessMemory InitializeApi19GuestProcess(
     const memory::GuestRange stack{kApi19GuestStackAddress,
                                    kApi19GuestStackSize};
     const memory::GuestRange return_trap{kApi19GuestReturnAddress, page_size};
-    const memory::GuestRange property_area{kApi19GuestPropertyAreaAddress,
-                                           page_size};
+    const memory::GuestRange property_area{kApi19GuestPropertyAreaAddress, kApi19GuestPropertyAreaSize};
     bool thread_info_mapped{};
     bool preinit_mapped{};
     bool environment_mapped{};
@@ -195,6 +299,18 @@ Api19GuestProcessMemory InitializeApi19GuestProcess(
                 kApi19GuestPropertyAreaAddress.Value(),
                 request.root_thread_id);
         export_written = true;
+        // map_prop_area() normally sets these after mapping the area; lookups
+        // past pa_data_size fail, so publish the mapped extent as well.
+        for (const auto& [name, value] :
+             {std::pair{"pa_size", kApi19GuestPropertyAreaSize},
+              std::pair{"pa_data_size", kApi19GuestPropertyAreaSize - kPropertyAreaHeaderBytes}}) {
+            try {
+                const auto symbol = loader::LookupElf32Symbol(link_namespace, name);
+                Write32(memory_bus, symbol.address, value, request.root_thread_id);
+            } catch (const loader::LinkError&) {
+                // Minimal libc fixtures export only __system_property_area__.
+            }
+        }
 
         return {request.root_thread_id, tls->thread_pointer,
                 kApi19GuestStackAddress.Add(kApi19GuestStackSize - 64U),
@@ -217,6 +333,21 @@ Api19GuestProcessMemory InitializeApi19GuestProcess(
         if (thread_info_mapped) address_space.Unmap(thread_info);
         throw;
     }
+}
+
+void PublishApi19SystemProperties(memory::AddressSpace& address_space, memory::MemoryBus& memory_bus,
+                                  const memory::GuestAddress property_area,
+                                  const std::span<const std::pair<std::string, std::string>> properties,
+                                  const std::uint64_t thread_id) {
+    PropertyTrie trie(kApi19GuestPropertyAreaSize - kPropertyAreaHeaderBytes);
+    for (const auto& [name, value] : properties)
+        trie.Add(name, value);
+    // Write the trie before the header so a concurrent reader never sees
+    // bytes_used beyond initialized nodes.
+    address_space.Write(property_area.Add(kPropertyAreaHeaderBytes), trie.Data(), thread_id);
+    Write32(memory_bus, property_area, trie.BytesUsed(), thread_id);
+    Write32(memory_bus, property_area.Add(8), kPropertyAreaMagic, thread_id);
+    Write32(memory_bus, property_area.Add(12), kPropertyAreaVersion, thread_id);
 }
 
 }  // namespace ogplay::runtime

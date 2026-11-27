@@ -1,8 +1,10 @@
 #include <bit>
 #include "boot_dex.h"
+#include "ogplay/session/device_preset.h"
 #include <doctest/doctest.h>
 
 #include <cstdint>
+#include <filesystem>
 #include <algorithm>
 #include <memory>
 #include <atomic>
@@ -93,6 +95,10 @@ TEST_CASE("API19 regex requires the guest ICU bridge") {
 TEST_CASE("API19 Build family executes from BootDex without class intrinsics") {
     for (const auto backend : ogplay::test::InterpreterBackends()) {
         Dvm87Vm f(backend);
+        // Build's static initializer reads ro.* through SystemProperties.
+        f.context->device_state.build_identity =
+            ogplay::session::LoadDevicePreset(std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/devices", "sm-g900f")
+                .build;
         for (const auto descriptor :
              {"Landroid/os/Build;", "Landroid/os/Build$VERSION;", "Landroid/os/Build$VERSION_CODES;"}) {
             const auto type = f.linker.ResolveDescriptor(descriptor);
@@ -117,10 +123,16 @@ TEST_CASE("API19 Build family executes from BootDex without class intrinsics") {
             REQUIRE(field.has_value());
             return static_cast<std::int32_t>(f.linker.Class(type).static_storage[f.linker.Field(*field).slot]);
         };
-        CHECK(string_field("Landroid/os/Build;", "BRAND") == "unknown");
+        CHECK(string_field("Landroid/os/Build;", "BRAND") == "samsung");
         CHECK(string_field("Landroid/os/Build;", "MANUFACTURER") == "samsung");
-        CHECK(string_field("Landroid/os/Build;", "MODEL") == "GT-I9300");
-        CHECK(string_field("Landroid/os/Build;", "CPU_ABI") == "armeabi");
+        CHECK(string_field("Landroid/os/Build;", "MODEL") == "SM-G900F");
+        CHECK(string_field("Landroid/os/Build;", "PRODUCT") == "kltexx");
+        CHECK(string_field("Landroid/os/Build;", "DEVICE") == "klte");
+        CHECK(string_field("Landroid/os/Build;", "BOARD") == "MSM8974");
+        CHECK(string_field("Landroid/os/Build;", "CPU_ABI") == "armeabi-v7a");
+        CHECK(string_field("Landroid/os/Build;", "FINGERPRINT") ==
+              "samsung/kltexx/klte:4.4.4/KTU84Q/G900FXXU1BNL9:user/release-keys");
+        CHECK(string_field("Landroid/os/Build;", "HARDWARE") == "unknown");
         CHECK(string_field("Landroid/os/Build;", "TAGS") == "release-keys");
         CHECK(string_field("Landroid/os/Build$VERSION;", "RELEASE") == "4.4.4");
         CHECK(string_field("Landroid/os/Build$VERSION;", "SDK") == "19");

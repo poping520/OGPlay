@@ -15,13 +15,6 @@
 #include "catalog.h"
 #include "rom_input.h"
 
-namespace ogplay::runtime {
-
-SimulatedDeviceState::BuildIdentity::BuildIdentity()
-    : manufacturer(OGPLAY_DEFAULT_ANDROID_MANUFACTURER), model(OGPLAY_DEFAULT_ANDROID_MODEL) {}
-
-}  // namespace ogplay::runtime
-
 namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_os_Debug_MemoryInfo_Fields(const Context&, DebugMemoryInfoFields& fields) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Debug$MemoryInfo;");
@@ -88,17 +81,31 @@ struct AndroidProperty final {
 
 constexpr std::uint64_t kBytesPerMiB = 1024U * 1024U;
 
+using BuildIdentity = SimulatedDeviceState::BuildIdentity;
+
+template <std::string BuildIdentity::* Field>
+std::string BuildIdentityField(dx::Interpreter&, const Context& context) {
+    return context->device_state.build_identity.*Field;
+}
+
 // Every property the simulated device defines. SystemProperties.get and the
 // getprop command both read this table, so the two can never disagree.
 constexpr std::array kAndroidProperties{
     AndroidProperty{"config.disable_renderscript",
                     [](dx::Interpreter&, const Context&) { return std::string("true"); }},
-    AndroidProperty{
-        "ro.product.manufacturer",
-        [](dx::Interpreter&, const Context& context) { return context->device_state.build_identity.manufacturer; }},
-    AndroidProperty{
-        "ro.product.model",
-        [](dx::Interpreter&, const Context& context) { return context->device_state.build_identity.model; }},
+    AndroidProperty{"ro.build.version.sdk", [](dx::Interpreter&, const Context&) { return std::string("19"); }},
+    AndroidProperty{"ro.build.version.release", [](dx::Interpreter&, const Context&) { return std::string("4.4.4"); }},
+    AndroidProperty{"ro.build.version.codename", [](dx::Interpreter&, const Context&) { return std::string("REL"); }},
+    AndroidProperty{"ro.build.tags", [](dx::Interpreter&, const Context&) { return std::string("release-keys"); }},
+    AndroidProperty{"ro.build.fingerprint", BuildIdentityField<&BuildIdentity::fingerprint>},
+    AndroidProperty{"ro.build.product", BuildIdentityField<&BuildIdentity::build_product>},
+    AndroidProperty{"ro.product.manufacturer", BuildIdentityField<&BuildIdentity::manufacturer>},
+    AndroidProperty{"ro.product.brand", BuildIdentityField<&BuildIdentity::brand>},
+    AndroidProperty{"ro.product.name", BuildIdentityField<&BuildIdentity::name>},
+    AndroidProperty{"ro.product.model", BuildIdentityField<&BuildIdentity::model>},
+    AndroidProperty{"ro.product.device", BuildIdentityField<&BuildIdentity::device>},
+    AndroidProperty{"ro.product.board", BuildIdentityField<&BuildIdentity::board>},
+    AndroidProperty{"ro.product.cpu.abi", BuildIdentityField<&BuildIdentity::cpu_abi>},
     AndroidProperty{"persist.sys.language",
                     [](dx::Interpreter&, const Context& context) { return context->locale_language; }},
     AndroidProperty{"ro.product.locale.language",
@@ -126,11 +133,6 @@ constexpr std::array kAndroidProperties{
                     [](dx::Interpreter& vm, const Context&) {
                         return std::to_string(vm.Model().MaximumHeapBytes() / kBytesPerMiB) + "m";
                     }},
-    AndroidProperty{"ro.product.cpu.abi", [](dx::Interpreter&, const Context&) { return std::string("armeabi"); }},
-    AndroidProperty{"ro.build.tags", [](dx::Interpreter&, const Context&) { return std::string("release-keys"); }},
-    AndroidProperty{"ro.build.version.release", [](dx::Interpreter&, const Context&) { return std::string("4.4.4"); }},
-    AndroidProperty{"ro.build.version.sdk", [](dx::Interpreter&, const Context&) { return std::string("19"); }},
-    AndroidProperty{"ro.build.version.codename", [](dx::Interpreter&, const Context&) { return std::string("REL"); }},
 };
 
 [[nodiscard]] std::string ReadAndroidProperty(dx::Interpreter& vm, const Context& context, const std::string& key) {

@@ -1,0 +1,35 @@
+schema = 1
+id = "gt-i9500"
+label = "Samsung Galaxy S4"
+description = "GT-I9500 · Exynos 5410 · PowerVR SGX 544MP"
+
+[product]
+manufacturer = "samsung"
+brand = "samsung"
+name = "ja3gxx"
+model = "GT-I9500"
+device = "ja3g"
+board = "universal5410"
+cpu_abi = "armeabi-v7a"
+
+[build]
+product = "ja3g"
+fingerprint = "samsung/ja3gxx/ja3g:4.4.4/KTU84Q/I9500XXUHOB7:user/release-keys"
+version_release = "4.4.4"
+version_sdk = 19
+
+[cpu]
+name = "Exynos 5410"
+cores = 4
+
+[gpu]
+vendor = "Imagination Technologies"
+renderer = "PowerVR SGX 544MP"
+
+[display]
+width = 1080
+height = 1920
+density_dpi = 480
+
+[memory]
+ram_mb = 2048

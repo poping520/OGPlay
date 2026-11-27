@@ -55,7 +55,7 @@ ogplay_stage_ffmpeg_runtime(ogplaycore)
 
 # Data directories are replaced wholesale so files removed from the source tree
 # do not linger in the staged or installed runtime.
-set(OGPLAY_DATA_DIRECTORIES profiles android branding)
+set(OGPLAY_DATA_DIRECTORIES profiles devices android branding)
 # OGPlay's own demo games, committed prebuilt by their samples and staged as data/demos; the launcher
 # seeds them into the library while the show_demo_games setting is on.
 set(OGPLAY_DEMO_APKS "${CMAKE_CURRENT_SOURCE_DIR}/samples/sweetshop/out/ogplay-sweetshop.apk")

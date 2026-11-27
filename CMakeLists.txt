@@ -562,9 +562,6 @@ target_include_directories(ogplay_runtime SYSTEM PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
 target_compile_definitions(ogplay_runtime PRIVATE BOOST_URL_NO_LIB=1)
-set_property(SOURCE src/runtime/integration/dexvm_android/android_os.cpp APPEND PROPERTY COMPILE_DEFINITIONS
-    OGPLAY_DEFAULT_ANDROID_MANUFACTURER="samsung"
-    OGPLAY_DEFAULT_ANDROID_MODEL="GT-I9300")
 ogplay_suppress_source_warnings(${OGPLAY_BOOST_URL_CODEC_SOURCES})
 
 ogplay_add_module(ogplay_session Session
@@ -575,6 +572,7 @@ ogplay_add_module(ogplay_session Session
     src/session/lifecycle.cpp
     src/session/profile_apk.cpp
     src/session/session.cpp
+    src/session/device_preset.cpp
     src/session/title_profile.cpp
     src/session/title_profile_toml.cpp
     src/session/control_config.cpp

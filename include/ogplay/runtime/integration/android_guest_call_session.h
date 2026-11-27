@@ -331,6 +331,8 @@ public:
     // In-process virtual processes of this guest process (fork/exec/wait,
     // built-in commands); shared by native syscalls and Java ProcessManager.
     [[nodiscard]] VirtualProcessKernel& VirtualProcesses() noexcept;
+    // Publishes the system property set to the native prop_area read by bionic.
+    void PublishSystemProperties(std::span<const std::pair<std::string, std::string>> properties);
     [[nodiscard]] const GuestCpuConfig& CpuConfig() const noexcept;
     [[nodiscard]] const GuestMemorySnapshot& MemorySnapshot() const noexcept;
     void WriteStandardStream(bool error, std::span<const std::byte> bytes, std::uint64_t thread);

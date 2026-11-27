@@ -373,7 +373,7 @@ export const messages: Record<string, string> = {
   "settings.game.runPreflight": "Run preflight",
   "settings.game.runLaunch": "Launch",
   "settings.game.deviceNote": "The system version is fixed. CPU cores and nominal frequency apply on next launch for the game to query; the frequency does not limit execution speed. ",
-  "settings.game.presetNote": "Device presets are not wired yet; other reserved items are saved only.",
+  "settings.game.presetNote": "Other reserved items are saved only.",
   "settings.game.androidId": "View / regenerate ANDROID_ID",
   "settings.game.managementPending": "Management API pending",
   "settings.game.savesFolders": "Saves & folders",

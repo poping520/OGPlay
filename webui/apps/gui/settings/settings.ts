@@ -100,7 +100,13 @@ export function shownFields(fields: SettingField[], reservedVisible: boolean): S
 export function shownGroups<G extends readonly [string, ...string[]]>(groups: readonly G[], fields: SettingField[], shown: SettingField[]): G[] {
   return groups.filter(([key]) => shown.some(field => field.group === key) || !fields.some(field => field.group === key));
 }
+// Device preset ids (data/devices) shown as the phone they model; names are not translated.
+const DEVICE_PRESETS: Record<string, string> = {
+  'gt-i9100': 'Galaxy S2 (GT-I9100)', 'gt-i9300': 'Galaxy S3 (GT-I9300)', 'gt-i9500': 'Galaxy S4 (GT-I9500)',
+  'gt-i9505': 'Galaxy S4 (GT-I9505)', 'sm-g900f': 'Galaxy S5 (SM-G900F)',
+};
 export function choiceLabel(field: SettingField, value: string): string {
+  if (field.key === 'device_preset') return DEVICE_PRESETS[value] ?? value;
   if (field.key === 'clock_rate') return `${value}×`;
   if (field.key === 'max_fps' && value !== 'unlimited') return `${value} FPS`;
   if (field.key === 'screen_resolution') return value === 'custom' ? t('settings.screen.custom') : value === '1440p' ? '1440p (2K)' : value === '2160p' ? '2160p (4K)' : value;

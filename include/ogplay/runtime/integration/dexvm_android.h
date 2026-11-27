@@ -149,11 +149,13 @@ AssembleAndroidContext(std::vector<BootClasspathJar> boot_classpath);
 
 // First boot jar, in classpath order, that contains the entry.
 struct SimulatedDeviceState final {
+    // ro.product.* / ro.build.* identity from the selected device preset. Empty
+    // fields are not published, so Build reads them as "unknown".
     struct BuildIdentity final {
-        BuildIdentity();
+        std::string manufacturer, brand, name, model, device, board, cpu_abi;
+        std::string build_product, fingerprint;
 
-        std::string manufacturer;
-        std::string model;
+        bool operator==(const BuildIdentity&) const = default;
     } build_identity;
 
     struct Location final {

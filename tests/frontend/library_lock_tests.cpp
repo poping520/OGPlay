@@ -60,10 +60,11 @@ TEST_CASE("Library launch resolution shares settings inheritance and parameter c
     GameSettings settings;
     settings.values["cpu_cores"] = std::uint32_t(4);
     settings.values["ephemeral_sandbox"] = true;
-    settings.values["device_preset"] = std::string("reserved-value");
+    settings.values["device_preset"] = std::string("sm-g900f");
     SaveGameSettings(f.store.EntriesRoot() / "org.example.lock", settings);
     const auto resolved = ResolveLaunch(f.store, "org.example.lock", LaunchMode::preflight);
     CHECK(resolved.options.cpu_config.cores == 4);
+    CHECK(resolved.options.device_preset == "sm-g900f");
     CHECK(resolved.options.ephemeral_sandbox);
     CHECK_FALSE(resolved.options.sandbox_directory);
     CHECK(resolved.options.library_root == f.root);

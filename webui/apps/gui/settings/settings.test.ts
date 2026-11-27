@@ -134,6 +134,13 @@ describe('play license row', () => {
     expect(displayValue(fields[1], 'error-contacting-server')).toBe('无法连接服务器 (0x101)');
   });
 });
+describe('device preset row', () => {
+  it('names each preset by the phone it models', () => {
+    const preset = field('device_preset', 'gt-i9300', ['gt-i9100', 'gt-i9300', 'gt-i9500', 'gt-i9505', 'sm-g900f']);
+    expect(displayValue(preset, 'gt-i9300')).toBe('Galaxy S3 (GT-I9300)');
+    expect(displayValue(preset, 'gt-i9505')).toBe('Galaxy S4 (GT-I9505)');
+  });
+});
 describe('setting sections', () => {
   it('gives game pages the global sections in the same order, without the launcher ones', () => {
     expect(gameGroups.map(([key]) => key)).toEqual(['display', 'data', 'input', 'audio', 'device', 'performance', 'network', 'developer']);

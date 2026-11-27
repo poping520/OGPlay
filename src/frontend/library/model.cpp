@@ -316,8 +316,12 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
             SetSetting(config, key, value == "true");
         } else if (std::holds_alternative<std::uint32_t>(field->initial))
             SetSetting(config, key, ParseUint32(value, key));
-        else
-            SetSetting(config, key, ParseTomlString(value));
+        else {
+            auto text = ParseTomlString(value);
+            // The former reserved device_preset row stored an empty string.
+            if (key == "device_preset" && text.empty()) continue;
+            SetSetting(config, key, std::move(text));
+        }
     }
     MigrateLegacyScreenSize(config.values, true);
     return config;
@@ -414,8 +418,8 @@ static GameSettings LoadGameSettingsUnlocked(const std::filesystem::path& direct
                 parsed = ParseUint32(value, key);
             else
                 parsed = ParseTomlString(value);
-            // The former reserved locale row used an empty string for no override.
-            if (key == "locale" && parsed == SettingValue{std::string()}) continue;
+            // The former reserved locale/device_preset rows used an empty string for no override.
+            if ((key == "locale" || key == "device_preset") && parsed == SettingValue{std::string()}) continue;
             ValidateSettingValue(*field, parsed);
             settings.values[key] = std::move(parsed);
         }

@@ -104,7 +104,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   存活 guest TID 作保留号），注册内置命令并绑定 fork/vfork/execve/wait4/kill；析构时在 guest 线程
   停止后、其余成员析构前停止命令线程。DexVM 桥把包名设为应用进程名，并以该内核提供 ProcessManager
   的 spawn（三对管道，环境缺省继承进程 environ，按 PATH 解析）与 waitpid/kill 服务；VM 建立后注册
-  系统属性源（持 VM 执行锁读取 SystemProperties 同一张属性表），桥析构时先释放执行锁清除该源。
+  系统属性源（持 VM 执行锁读取 SystemProperties 同一张属性表），并把同一张表的启动快照写入 native
+  prop_area；桥析构时先释放执行锁清除该源。Java 侧之后变化的属性（如语言）不回写 native 快照。
 - AndroidGuestProcess 注册 `/dev/urandom` (1:9) 与 `/dev/random` (1:8)，通过 VFS reader
   注入 `hal::FillSecureRandom`；每次读取生成新的完整随机字节，失败由 VFS 映射 EIO。
   两者均使用宿主 OS CSPRNG，不模拟 Linux 熵池；O_NONBLOCK 不引入 EAGAIN/熵量等待。
@@ -114,7 +115,11 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 - PreflightAndroidGuestLink 只用生产 Bionic namespace、API-sealed Virtual SO 元数据和 loader
   检查映射/重定位；不创建 boundary runtime、ANGLE 或 surface，缺导入明确失败。
 - InitializeApi19GuestProcess 事务建立 TLS/thread-info/preinit、独立环境页、4 MiB 栈、
-  SVC #1 返回 trap 与空 property area，只写受检 libc 导出槽；冲突/非法名称/写失败回滚。
+  SVC #1 返回 trap 与空 property area（16 KiB），只写受检 libc 导出槽（含 libc 导出时的
+  `pa_size`/`pa_data_size`，等同 map_prop_area 的结果）；冲突/非法名称/写失败回滚。
+  `PublishApi19SystemProperties` 按 API19 bionic trie 格式整体重写该区，ROM libc 的
+  `__system_property_get/find` 原样读取；名称 1..31 字节、值至多 91 字节，超限、重复或放不下时
+  不写入并失败。
   配置来自 guest；Java 环境查询读 Bionic 当前 environ，不读宿主或另存影子快照。
   默认 API19 环境在 PATH 后发布 `LD_LIBRARY_PATH=/vendor/lib:/system/lib`，供 ROM System 初始化
   `java.library.path`；不创建 `/vendor/lib`，不实现 linker 动态环境搜索。显式设置 TZ=UTC；

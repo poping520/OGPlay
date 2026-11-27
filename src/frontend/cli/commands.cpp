@@ -111,6 +111,8 @@ constexpr std::string_view kRunApkHelp =
     "                                bottom-left or bottom-right (default hidden)\n"
     "    --dexvm-interpreter <switch|threaded>\n"
     "                                DexVM interpreter override\n"
+    "    --device-preset <id>        Device identity from data/devices, named by model\n"
+    "                                (default gt-i9300; gt-i9100, gt-i9500, gt-i9505, sm-g900f)\n"
     "    --no-google-play           No Play Store or Google services framework on the device\n"
     "    --play-license <licensed|not-licensed|error-contacting-server>\n"
     "                                LVL license check answer (default not-licensed)\n"

@@ -1,13 +1,21 @@
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <fstream>
+#include <iterator>
 #include <ostream>
+#include <span>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <doctest/doctest.h>
 
+#include "ogplay/runtime/dexvm/guest_memory.h"
+#include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/runtime/integration/api19_guest_process.h"
 
 namespace {
@@ -223,4 +231,72 @@ TEST_CASE("API 19 guest process rejects invalid identity before mapping") {
             {ogplay::runtime::kApi19GuestThreadInfoAddress,
              address_space.PageSize()}),
         ogplay::memory::MemoryFault);
+}
+
+TEST_CASE("Published system properties are read by the real API19 libc trie lookup") {
+    using namespace ogplay;
+    std::vector<std::vector<std::byte>> images;
+    std::vector<loader::Elf32ModuleInput> modules;
+    for (const auto* name : {"libc.so", "libdl.so"}) {
+        std::ifstream input(std::string(OGPLAY_SOURCE_DIR) + "/data/android/19/lib/" + name, std::ios::binary);
+        REQUIRE(input.good());
+        const std::vector<char> bytes{std::istreambuf_iterator<char>(input), {}};
+        auto& image = images.emplace_back(bytes.size());
+        std::transform(bytes.begin(), bytes.end(), image.begin(),
+                       [](char value) { return static_cast<std::byte>(value); });
+        modules.push_back(
+            {name, image,
+             memory::GuestAddress{0x10000000U + static_cast<std::uint32_t>(modules.size()) * 0x10000000U}});
+    }
+    runtime::VirtualFileSystem fs;
+    auto process = runtime::AndroidGuestProcess::Start({19, modules, {}, 64, 36, 1000000, 1, &fs, {}});
+    const auto call = [&](std::string_view name, std::array<std::uint32_t, 4> args) {
+        return process->Invoke({process->FindModuleExport(0, name), args}).return_value;
+    };
+    const memory::GuestAddress scratch{call("malloc", {256})};
+    REQUIRE(scratch.Value() != 0);
+    const auto get = [&](const std::string& name) {
+        process->GuestMemoryAccess().write(scratch, std::as_bytes(std::span{name.c_str(), name.size() + 1}));
+        const auto length = call("__system_property_get", {scratch.Value(), scratch.Add(64).Value(), 0, 0});
+        std::array<char, 92> value{};
+        process->GuestMemoryAccess().read(scratch.Add(64), std::as_writable_bytes(std::span{value}));
+        CHECK(std::strlen(value.data()) == length);
+        return std::string(value.data());
+    };
+    // Siblings at every level exercise both binary-tree links and the
+    // length-first ordering of cmp_prop_name.
+    const std::string fingerprint(91, 'f');
+    const std::vector<std::pair<std::string, std::string>> properties{
+        {"ro.product.model", "SM-G900F"},       {"ro.product.brand", "samsung"},
+        {"ro.product.cpu.abi", "armeabi-v7a"},  {"ro.build.fingerprint", fingerprint},
+        {"ro.build.product", "klte"},           {"gsm.sim.state", "ABSENT"},
+        {"ro.build.version.sdk", "19"},         {"ro.sf.lcd_density", "480"},
+        {"config.disable_renderscript", "true"}};
+    process->PublishSystemProperties(properties);
+    for (const auto& [name, value] : properties) {
+        CAPTURE(name);
+        CHECK(get(name) == value);
+    }
+    CHECK(get("ro.product").empty());
+    CHECK(get("ro.product.model.extra").empty());
+    CHECK(get("ro.hardware").empty());
+    // A later set replaces the earlier one entirely.
+    process->PublishSystemProperties(
+        std::vector<std::pair<std::string, std::string>>{{"ro.product.model", "GT-I9300"}});
+    CHECK(get("ro.product.model") == "GT-I9300");
+    CHECK(get("ro.product.brand").empty());
+    for (const auto& invalid : std::vector<std::pair<std::string, std::string>>{
+             {"ro.product.model", std::string(92, 'x')}, {std::string(32, 'n'), "1"}, {"ro..model", "1"}, {"", "1"}}) {
+        CAPTURE(invalid.first);
+        CHECK_THROWS_AS(process->PublishSystemProperties(std::span{&invalid, 1}), std::invalid_argument);
+    }
+    const std::vector<std::pair<std::string, std::string>> duplicate{{"ro.a", "1"}, {"ro.a", "2"}};
+    CHECK_THROWS_AS(process->PublishSystemProperties(duplicate), std::invalid_argument);
+    std::vector<std::pair<std::string, std::string>> oversized;
+    for (int index = 0; index < 200; ++index)
+        oversized.emplace_back("ro.oversized.p" + std::to_string(index), "v");
+    CHECK_THROWS_AS(process->PublishSystemProperties(oversized), std::length_error);
+    CHECK(get("ro.product.model") == "GT-I9300");  // rejected sets leave the area untouched
+    static_cast<void>(call("free", {scratch.Value()}));
+    process->Stop();
 }

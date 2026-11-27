@@ -1,0 +1,35 @@
+schema = 1
+id = "gt-i9100"
+label = "Samsung Galaxy S2"
+description = "GT-I9100 · Exynos 4210 · Mali-400 MP"
+
+[product]
+manufacturer = "samsung"
+brand = "samsung"
+name = "GT-I9100"
+model = "GT-I9100"
+device = "GT-I9100"
+board = "smdk4210"
+cpu_abi = "armeabi-v7a"
+
+[build]
+product = "GT-I9100"
+fingerprint = "samsung/GT-I9100/GT-I9100:4.4.4/KTU84Q/I9100XWLSW:user/release-keys"
+version_release = "4.4.4"
+version_sdk = 19
+
+[cpu]
+name = "Exynos 4210"
+cores = 2
+
+[gpu]
+vendor = "ARM"
+renderer = "Mali-400 MP"
+
+[display]
+width = 480
+height = 800
+density_dpi = 240
+
+[memory]
+ram_mb = 1024

@@ -373,7 +373,7 @@ export const messages: Record<string, string> = {
   "settings.game.runPreflight": "Lancer la pré-vérification",
   "settings.game.runLaunch": "Lancer",
   "settings.game.deviceNote": "La version du système est fixe. Le nombre de cœurs et la fréquence nominale du processeur s’appliquent au prochain lancement pour que le jeu les consulte ; la fréquence ne limite pas la vitesse réelle.",
-  "settings.game.presetNote": "Les profils de modèle ne sont pas encore branchés ; les autres éléments réservés sont seulement enregistrés.",
+  "settings.game.presetNote": "Les autres éléments réservés sont seulement enregistrés.",
   "settings.game.androidId": "Afficher / régénérer ANDROID_ID",
   "settings.game.managementPending": "Gestion à venir",
   "settings.game.savesFolders": "Sauvegardes et dossiers",

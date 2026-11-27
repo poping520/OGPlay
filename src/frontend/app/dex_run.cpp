@@ -17,6 +17,7 @@
 #include "ogplay/runtime/integration/dexvm_bridge.h"
 #include "ogplay/runtime/integration/native_library_loader.h"
 #include "ogplay/runtime/vfs/vfs.h"
+#include "ogplay/session/device_preset.h"
 #include <array>
 #include <chrono>
 #include <cstdio>
@@ -212,6 +213,8 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
     context->system_font_source = std::move(system_font_source);
     context->framework_resource_apk = payload_root / "framework/framework-res.apk";
     context->standalone_dex_path = "/data/local/ogplay-main.dex";
+    context->device_state.build_identity =
+        session::LoadDevicePreset(BundledDataPaths().root / "devices", session::kDefaultDevicePresetId).build;
     auto boot_dex = runtime::BootClasspathDexFiles(context->boot_classpath);
 
     core::CapabilityLedger ledger;

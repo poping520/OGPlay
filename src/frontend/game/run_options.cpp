@@ -150,6 +150,9 @@ GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args) {
                 throw std::invalid_argument(
                     "--play-license requires licensed, not-licensed or error-contacting-server");
             options.play_license = std::string(value);
+        } else if (option == "--device-preset" && index + 1 < args.size()) {
+            options.device_preset = std::string(args[++index]);
+            if (options.device_preset.empty()) throw std::invalid_argument("--device-preset requires a preset id");
         } else if (option == "--network" && index + 1 < args.size()) {
             const auto value = args[++index];
             if (value != "disabled" && value != "loopback" && value != "allow")
@@ -448,6 +451,10 @@ std::vector<std::string> FormatGameRunArgs(const GameRunOptions& o) {
     if (o.play_license != "not-licensed") {
         args.emplace_back("--play-license");
         args.emplace_back(o.play_license);
+    }
+    if (o.device_preset != "gt-i9300") {
+        args.emplace_back("--device-preset");
+        args.emplace_back(o.device_preset);
     }
     if (o.network != "disabled") {
         args.emplace_back("--network");

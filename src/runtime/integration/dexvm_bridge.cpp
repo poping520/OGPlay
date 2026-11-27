@@ -1714,6 +1714,10 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
             } release{lock};
             return android_intrinsics::AndroidSystemProperties(*bridge_state->vm, bridge_state->android_context);
         });
+        // Native code reads a startup snapshot of the same set through bionic.
+        const dx::VmExecutionLockScope guard(impl_->vm->ExecutionLock());
+        session.Process().PublishSystemProperties(
+            android_intrinsics::AndroidSystemProperties(*impl_->vm, impl_->android_context));
     }
     session.DirectBuffers() = {
         [bridge_state](std::uint64_t thread, memory::GuestAddress address, std::int32_t capacity) {

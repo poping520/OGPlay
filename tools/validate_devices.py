@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the reserved device-preset catalog; never applies runtime settings."""
+"""Validate the bundled device-preset catalog (data/devices, schema 1)."""
 from __future__ import annotations
 
 import argparse
@@ -11,24 +11,29 @@ from pathlib import Path
 MAX_BYTES = 16 * 1024
 MAX_PRESETS = 128
 ID = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
+# Android system property values hold at most PROP_VALUE_MAX - 1 = 91 bytes.
+PROPERTY = 91
+FINGERPRINT_TAIL = re.compile(r":4\.4\.4/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+:user/release-keys")
 # Exact keys and scalar rules are the executable schema 1 definition.
 # Integers use inclusive bounds; strings use UTF-8 byte limits or finite choices.
+# ("prop", n) strings become system property values: printable ASCII, at most n bytes.
 SCHEMA = {
     "schema": (int, 1, 1), "id": (str, 64), "label": (str, 128),
     "description": (str, 512),
+    "product": {
+        "manufacturer": ("prop", PROPERTY), "brand": ("prop", PROPERTY), "name": ("prop", PROPERTY),
+        "model": ("prop", PROPERTY), "device": ("prop", PROPERTY), "board": ("prop", PROPERTY),
+        "cpu_abi": (str, {"armeabi-v7a"}),
+    },
     "build": {
-        "brand": (str, 128), "manufacturer": (str, 128), "model": (str, 128),
-        "device": (str, 128), "product": (str, 128),
-        "android_release": (str, {"4.4.4"}), "api_level": (int, 19, 19),
-        "abi": (str, {"armeabi-v7a"}),
+        "product": ("prop", PROPERTY), "fingerprint": ("prop", PROPERTY),
+        "version_release": (str, {"4.4.4"}), "version_sdk": (int, 19, 19),
     },
     "cpu": {"name": (str, 128), "cores": (int, 1, 32)},
     "gpu": {"vendor": (str, 128), "renderer": (str, 128)},
     "display": {"width": (int, 240, 4096), "height": (int, 240, 4096),
                 "density_dpi": (int, 72, 960)},
     "memory": {"ram_mb": (int, 128, 8192)},
-    "locale": {"language": (str, 2), "region": (str, 2),
-               "timezone": (str, {"UTC", "Asia/Shanghai"})},
 }
 
 
@@ -46,6 +51,11 @@ def validate_fields(value: object, schema: dict, prefix: str = "") -> None:
         field, item = f"{prefix}.{key}" if prefix else key, value[key]
         if isinstance(rule, dict):
             validate_fields(item, rule, field)
+            continue
+        if rule[0] == "prop":
+            if type(item) is not str or not item or item != item.strip() or len(item) > rule[1] \
+                    or any(not 32 <= ord(c) <= 126 for c in item):
+                raise PresetError(f"{field}: expected 1..{rule[1]} printable ASCII bytes without padding")
             continue
         if type(item) is not rule[0]:  # bool must not pass as an integer.
             raise PresetError(f"{field}: expected {rule[0].__name__}")
@@ -74,9 +84,11 @@ def load_preset(path: Path) -> dict:
         validate_fields(value, SCHEMA)
         if not ID.fullmatch(value["id"]) or path.name != value["id"] + ".toml":
             raise PresetError("id must be lowercase kebab-case and match filename")
-        locale = value["locale"]
-        if not re.fullmatch(r"[a-z]{2}", locale["language"]) or not re.fullmatch(r"[A-Z]{2}", locale["region"]):
-            raise PresetError("locale: expected two lowercase language / uppercase region letters")
+        product = value["product"]
+        head = f"{product['brand']}/{product['name']}/{product['device']}"
+        fingerprint = value["build"]["fingerprint"]
+        if not fingerprint.startswith(head) or not FINGERPRINT_TAIL.fullmatch(fingerprint[len(head):]):
+            raise PresetError(f"build.fingerprint: expected {head}:4.4.4/<id>/<incremental>:user/release-keys")
         return value
     except (OSError, UnicodeError, ValueError) as error:
         raise PresetError(f"{path}: {error}") from error
@@ -112,7 +124,7 @@ def main() -> int:
     except PresetError as error:
         print(f"device preset validation failed: {error}", file=sys.stderr)
         return 1
-    print(f"validated {len(presets)} device presets (schema 1; data only)")
+    print(f"validated {len(presets)} device presets (schema 1)")
     return 0
 
 

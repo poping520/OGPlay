@@ -215,8 +215,8 @@ note = "ogplay 桌面主入口与 ogplay-cli 共用 ogplaycore；Windows 使用 
 
 [frontend.device_presets]
 status = "partial"
-test = "tools.device_presets_current; tools.device_presets_validator"
-note = "完成纯数据 schema 1、通用虚拟预设与严格有界校验；不宣称真实硬件身份。device_preset 仍为预留字符串，RPC/选择器及运行时消费未接入，不改变 Build/ro.*、CPU/GPU、屏幕或沙盒身份"
+test = "tools.device_presets_current; tools.device_presets_validator; tests/runtime/api19_guest_process_tests.cpp#real API19 libc trie lookup; tests/dexvm/bootdex_library_tests.cpp#API19 Build family; tests/frontend/library_lock_tests.cpp#Library launch resolution; webui/apps/gui/settings/settings.test.ts"
+note = "data/devices schema 1 内置 Galaxy S2–S5 五款，GUI device_preset 与 run-apk --device-preset 选择（默认 gt-i9300）。预设注入 ro.product.*（manufacturer/brand/name/model/device/board/cpu.abi）与 ro.build.product/fingerprint，Java、getprop 与 native 属性区同源（native 为启动快照）。逐字段自定义、cpuinfo、GPU 字符串、分辨率与内存未接入；fingerprint 为合成值。"
 
 [frontend.gui_library]
 status = "complete"

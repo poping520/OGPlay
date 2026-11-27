@@ -12,8 +12,8 @@ from validate_devices import MAX_BYTES, MAX_PRESETS, PresetError, SCHEMA, load_p
 
 class DevicePresetTests(unittest.TestCase):
     def setUp(self):
-        self.text = (ROOT / "data/devices/generic-hd.toml").read_text(encoding="utf-8")
-        self.good = load_preset(ROOT / "data/devices/generic-hd.toml")
+        self.text = (ROOT / "data/devices/gt-i9300.toml").read_text(encoding="utf-8")
+        self.good = load_preset(ROOT / "data/devices/gt-i9300.toml")
 
     def test_catalog(self):
         values = validate_catalog(ROOT / "data/devices")
@@ -69,22 +69,32 @@ class DevicePresetTests(unittest.TestCase):
         value = copy.deepcopy(self.good)
         value["label"] = "中" * 42 + "ab"  # Exactly 128 UTF-8 bytes.
         validate_fields(value, SCHEMA)
+        for text in ["", " m0", "m0\t", "机型", "a" * 92]:
+            value = copy.deepcopy(self.good)
+            value["product"]["model"] = text
+            with self.subTest(property=text[:8]), self.assertRaises(PresetError):
+                validate_fields(value, SCHEMA)
+        value = copy.deepcopy(self.good)
+        value["product"]["model"] = "a" * 91  # Exactly PROP_VALUE_MAX - 1 bytes.
+        validate_fields(value, SCHEMA)
 
     def test_bad_files(self):
+        fingerprint = "samsung/m0xx/m0:4.4.4/KTU84Q/I9300XXUGNG3:user/release-keys"
         invalid = [
-            self.text.replace('id = "generic-hd"', 'id = "../escape"'),
-            self.text.replace('id = "generic-hd"', 'id = "other"'),
+            self.text.replace('id = "gt-i9300"', 'id = "../escape"'),
+            self.text.replace('id = "gt-i9300"', 'id = "other"'),
             self.text.replace('schema = 1', 'schema = 1\nschema = 1'),
-            self.text.replace('android_release = "4.4.4"', 'android_release = "5.0"'),
-            self.text.replace('abi = "armeabi-v7a"', 'abi = "arm64-v8a"'),
-            self.text.replace('language = "en"', 'language = "EN"'),
-            self.text.replace('region = "US"', 'region = "us"'),
-            self.text.replace('timezone = "UTC"', 'timezone = "Invalid/Zone"'),
+            self.text.replace('version_release = "4.4.4"', 'version_release = "5.0"'),
+            self.text.replace('cpu_abi = "armeabi-v7a"', 'cpu_abi = "arm64-v8a"'),
+            self.text.replace(fingerprint, fingerprint.replace("m0xx", "m0")),
+            self.text.replace(fingerprint, fingerprint.replace(":4.4.4/", ":4.3/")),
+            self.text.replace(fingerprint, fingerprint.replace(":user/", ":eng/")),
+            self.text.replace(fingerprint, fingerprint.replace("KTU84Q", "KTU 84Q")),
             self.text + "\n[extra]\nunknown = 1\n",
             "#" * (MAX_BYTES + 1),
         ]
         with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "generic-hd.toml"
+            path = Path(temp) / "gt-i9300.toml"
             for text in invalid:
                 path.write_text(text, encoding="utf-8")
                 with self.subTest(text=text[:60]), self.assertRaises(PresetError):

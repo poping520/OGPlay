@@ -1,0 +1,35 @@
+schema = 1
+id = "gt-i9505"
+label = "Samsung Galaxy S4"
+description = "GT-I9505 · Snapdragon 600 · Adreno (TM) 320"
+
+[product]
+manufacturer = "samsung"
+brand = "samsung"
+name = "jfltexx"
+model = "GT-I9505"
+device = "jflte"
+board = "MSM8960"
+cpu_abi = "armeabi-v7a"
+
+[build]
+product = "jflte"
+fingerprint = "samsung/jfltexx/jflte:4.4.4/KTU84Q/I9505XXUHOJ2:user/release-keys"
+version_release = "4.4.4"
+version_sdk = 19
+
+[cpu]
+name = "Snapdragon 600"
+cores = 4
+
+[gpu]
+vendor = "Qualcomm"
+renderer = "Adreno (TM) 320"
+
+[display]
+width = 1080
+height = 1920
+density_dpi = 480
+
+[memory]
+ram_mb = 2048

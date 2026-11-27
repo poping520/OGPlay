@@ -60,7 +60,10 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
 
 - `run-apk --cpu-cores`（1..32）与 `--cpu-frequency-mhz`（1..10000）在进程创建前固定
   guest CPU 查询参数；默认 1 核/1000 MHz。GUI 单游戏配置通过相同 CLI 参数接入，主频
-  仅为标称值，不改变 Clock/执行速度。全局设备预设和 CPU 名称仍未接入。
+  仅为标称值，不改变 Clock/执行速度。CPU 名称仍未接入。
+- `run-apk --device-preset <id>`（默认 gt-i9300）在启动前从 bundled `data/devices/<id>.toml` 读取
+  设备预设，只把 Build 身份注入 Android context；未知或无效预设在创建窗口前失败。GUI 的
+  `device_preset` 设置经同一参数接入，选项与 data/devices 的 ID 一致。run-dex 固定使用默认预设。
 - `--cpu-limit-parallelism` 按虚拟核数限制同时执行的原生 guest CPU；
   `--cpu-max-mticks-per-second` 接受 1..10000，限制进程总 backend tick 速率。
   两项独立、默认关闭；GUI 对应速率值 0 表示省略限速参数。启动日志记录查询和执行配置。

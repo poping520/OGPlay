@@ -33,6 +33,8 @@ inline constexpr memory::GuestAddress kApi19GuestStackAddress{0x6b000000U};
 inline constexpr std::uint64_t kApi19GuestStackSize = UINT64_C(4) * 1024U * 1024U;
 inline constexpr memory::GuestAddress kApi19GuestReturnAddress{0x6f001000U};
 inline constexpr memory::GuestAddress kApi19GuestPropertyAreaAddress{0x6f002000U};
+// Bionic prop_area (128-byte header + trie); room for the published property set.
+inline constexpr std::uint32_t kApi19GuestPropertyAreaSize = 4U * 4096U;
 
 inline constexpr memory::GuestAddress kJniGuestAbiDataBegin{0x71200000U};
 inline constexpr memory::GuestAddress kJniGuestEnvironmentTable{kJniGuestAbiDataBegin};
@@ -97,7 +99,7 @@ inline constexpr std::array kFixedRegions{
     kOpaqueHandles,
     memory::GuestRange{kNativeActivityPage, 4096U},
     memory::GuestRange{kApi19GuestReturnAddress, 4096U},
-    memory::GuestRange{kApi19GuestPropertyAreaAddress, 4096U},
+    memory::GuestRange{kApi19GuestPropertyAreaAddress, kApi19GuestPropertyAreaSize},
     memory::GuestRange{memory::GuestAddress{kBionicHleThunkBegin}, kBionicHleThunkEnd - kBionicHleThunkBegin},
     kBoundaryGles1Strings,
     kBoundaryGles2Strings,

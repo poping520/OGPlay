@@ -1,0 +1,35 @@
+schema = 1
+id = "sm-g900f"
+label = "Samsung Galaxy S5"
+description = "SM-G900F · Snapdragon 801 · Adreno (TM) 330"
+
+[product]
+manufacturer = "samsung"
+brand = "samsung"
+name = "kltexx"
+model = "SM-G900F"
+device = "klte"
+board = "MSM8974"
+cpu_abi = "armeabi-v7a"
+
+[build]
+product = "klte"
+fingerprint = "samsung/kltexx/klte:4.4.4/KTU84Q/G900FXXU1BNL9:user/release-keys"
+version_release = "4.4.4"
+version_sdk = 19
+
+[cpu]
+name = "Snapdragon 801"
+cores = 4
+
+[gpu]
+vendor = "Qualcomm"
+renderer = "Adreno (TM) 330"
+
+[display]
+width = 1080
+height = 1920
+density_dpi = 480
+
+[memory]
+ram_mb = 2048

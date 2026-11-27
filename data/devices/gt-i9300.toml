@@ -1,0 +1,35 @@
+schema = 1
+id = "gt-i9300"
+label = "Samsung Galaxy S3"
+description = "GT-I9300 · Exynos 4412 · Mali-400 MP"
+
+[product]
+manufacturer = "samsung"
+brand = "samsung"
+name = "m0xx"
+model = "GT-I9300"
+device = "m0"
+board = "smdk4x12"
+cpu_abi = "armeabi-v7a"
+
+[build]
+product = "m0"
+fingerprint = "samsung/m0xx/m0:4.4.4/KTU84Q/I9300XXUGNG3:user/release-keys"
+version_release = "4.4.4"
+version_sdk = 19
+
+[cpu]
+name = "Exynos 4412"
+cores = 4
+
+[gpu]
+vendor = "ARM"
+renderer = "Mali-400 MP"
+
+[display]
+width = 720
+height = 1280
+density_dpi = 320
+
+[memory]
+ram_mb = 1024

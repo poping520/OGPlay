@@ -52,6 +52,6 @@ integration 经 `CoreIntrinsicServices` 接入，两者共用同一个 `VirtualP
 ## 支持边界
 
 - 只运行注册命令；未注册的可执行文件（含 su 等）与未 root 手机一样返回 ENOENT。getprop 只读，
-  不提供 setprop/watchprops；native `__system_property_*` 仍不读这份属性表。
+  不提供 setprop/watchprops；native `__system_property_*` 读取 integration 在 VM 建立时写入的同源快照。
   `/system/bin` 下不发布对应的 VFS 文件节点，`/proc/<pid>` 不列出虚拟进程。
 - SIGCHLD 不投递给应用；作业控制、进程组与会话不建模。

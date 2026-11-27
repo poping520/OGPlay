@@ -109,6 +109,8 @@ struct GameRunOptions final {
     std::string network{"disabled"};
     // Launcher tls_mode: "host" (host TLS and roots) or "guest" (API 19 libssl and bundled CAs).
     std::string tls{"host"};
+    // Launcher device_preset: data/devices/<id>.toml supplying the Build/ro.* identity.
+    std::string device_preset{"gt-i9300"};
     bool operator==(const GameRunOptions&) const = default;
 };
 

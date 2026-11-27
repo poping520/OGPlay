@@ -3,7 +3,10 @@
 #include "ogplay/runtime/common/guest_address_layout.h"
 
 #include <cstdint>
+#include <span>
+#include <string>
 #include <string_view>
+#include <utility>
 
 #include "ogplay/loader/link_namespace.h"
 #include "ogplay/memory/address_space.h"
@@ -31,5 +34,15 @@ struct Api19GuestProcessMemory final {
     memory::AddressSpace& address_space, memory::MemoryBus& memory_bus,
     const loader::Elf32LinkNamespace& link_namespace,
     const Api19GuestProcessRequest& request = {});
+
+// Writes the properties into the process's bionic prop_area as the API 19
+// trie (bionic/libc/bionic/system_properties.c), so guest __system_property_get
+// reads the same values as Java SystemProperties. Replaces any earlier set;
+// names must be 1..31 bytes of non-empty dot-separated segments and values at
+// most 91 bytes. Fails without writing when the set does not fit.
+void PublishApi19SystemProperties(memory::AddressSpace& address_space, memory::MemoryBus& memory_bus,
+                                  memory::GuestAddress property_area,
+                                  std::span<const std::pair<std::string, std::string>> properties,
+                                  std::uint64_t thread_id);
 
 }  // namespace ogplay::runtime

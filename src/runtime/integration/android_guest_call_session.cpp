@@ -917,6 +917,12 @@ public:
 
     VirtualProcessKernel& VirtualProcesses() noexcept { return *virtual_processes_; }
 
+    void PublishSystemProperties(const std::span<const std::pair<std::string, std::string>> properties) {
+        if (process_memory_.property_area.Value() == 0U) return;  // no native process image
+        PublishApi19SystemProperties(address_space_, memory_bus_, process_memory_.property_area, properties,
+                                     kRootThreadId);
+    }
+
     void RethrowAsyncFailure() {
         if (clone_runtime_) clone_runtime_->RethrowFailure();
         if (std::this_thread::get_id() != open_sles_callback_thread_.get_id()) {
@@ -3123,6 +3129,11 @@ net::GuestNetworkStack* AndroidGuestProcess::Network() noexcept {
 
 VirtualProcessKernel& AndroidGuestProcess::VirtualProcesses() noexcept {
     return impl_->VirtualProcesses();
+}
+
+void AndroidGuestProcess::PublishSystemProperties(
+    const std::span<const std::pair<std::string, std::string>> properties) {
+    impl_->PublishSystemProperties(properties);
 }
 
 const GuestCpuConfig& AndroidGuestProcess::CpuConfig() const noexcept {

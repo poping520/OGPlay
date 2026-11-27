@@ -34,6 +34,7 @@
 #include "ogplay/frontend/host_shortcuts.h"
 #include "ogplay/frontend/mcp_input_dispatch.h"
 #include "ogplay/frontend/data_directory.h"
+#include "ogplay/session/device_preset.h"
 #include "ogplay/frontend/run_apk_progress.h"
 #include "ogplay/hal/audio.h"
 #include "ogplay/hal/clock.h"
@@ -215,12 +216,15 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
           mcp_manual_step, preflight, survey_gaps_output, sandbox_directory, installation_id, ephemeral_sandbox,
           input_config_path, library_root, missing_data_report, run_report, window_title, window_icon,
           window_icon_style, ui_language, app_language, surface_size_explicit, surface_adaptation, fps_overlay,
-          google_play, play_license, network, tls] = std::move(options);
+          google_play, play_license, network, tls, device_preset] = std::move(options);
     const auto language = ui_language ? *ui_language : app::SystemUiLanguage();
     const auto guest_language = app_language.value_or(language);
     const auto bundled_data = HostBundledDataPaths();
     logger.Write(core::LogLevel::info, "frontend.game", "runtime payload selected", {},
                  {{"data_root", PathUtf8(bundled_data.root)}});
+    const auto device = session::LoadDevicePreset(bundled_data.root / "devices", device_preset);
+    logger.Write(core::LogLevel::info, "frontend.game", "device preset selected", {},
+                 {{"device_preset", device.id}, {"model", device.build.model}});
     const auto profiles = profiles_directory
                               ? session::TitleProfileCatalog::LoadDirectory(*profiles_directory)
                               : session::TitleProfileCatalog::LoadOptionalDirectory(bundled_data.profiles_directory);
@@ -481,6 +485,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             dex_context->ui_scaled_density = dex_context->ui_density;
             dex_context->host_display_sleep_inhibited = window->State().display_sleep_inhibited;
             dex_context->api_level = static_cast<std::int32_t>(api_level);
+            dex_context->device_state.build_identity = device.build;
             // Tags are language-REGION, the device's locale as Android reports it.
             const auto guest_tag = app::UiLanguageTag(guest_language);
             dex_context->locale_language = std::string(guest_tag.substr(0, 2));

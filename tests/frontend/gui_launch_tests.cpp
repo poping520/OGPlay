@@ -660,4 +660,11 @@ TEST_CASE("gui_launch app language inherits global settings with an explicit fol
     Write(directory / "settings.toml", "schema = 1\nlocale = \"\"\n");
     CHECK_FALSE(LoadGameSettings(directory).values.contains("locale"));
     CHECK(ResolveLaunch(store, entry, config).options.app_language == UiLanguage::en_US);
+    // The former reserved device_preset row saved an empty string; it now means the inherited preset.
+    CHECK(ResolveLaunch(store, entry, config).options.device_preset == "gt-i9300");
+    Write(directory / "settings.toml", "schema = 1\ndevice_preset = \"\"\n");
+    CHECK_FALSE(LoadGameSettings(directory).values.contains("device_preset"));
+    SetSetting(config, "device_preset", std::string("gt-i9500"));
+    CHECK(ResolveLaunch(store, entry, config).options.device_preset == "gt-i9500");
+    CHECK_THROWS(SetSetting(config, "device_preset", std::string("pixel")));
 }

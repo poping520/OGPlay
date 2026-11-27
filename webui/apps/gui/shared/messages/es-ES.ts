@@ -373,7 +373,7 @@ export const messages: Record<string, string> = {
   "settings.game.runPreflight": "Ejecutar comprobación previa",
   "settings.game.runLaunch": "Iniciar",
   "settings.game.deviceNote": "La versión del sistema es fija. Los núcleos y la frecuencia nominal de la CPU se aplican en el próximo inicio para que el juego los consulte; la frecuencia no limita la velocidad real.",
-  "settings.game.presetNote": "Los perfiles de modelo aún no están conectados; los demás elementos reservados solo se guardan.",
+  "settings.game.presetNote": "Los demás elementos reservados solo se guardan.",
   "settings.game.androidId": "Ver / regenerar ANDROID_ID",
   "settings.game.managementPending": "Gestión pendiente",
   "settings.game.savesFolders": "Partidas y carpetas",

@@ -373,7 +373,7 @@ export const messages: Record<string, string> = {
   "settings.game.runPreflight": "Выполнить предпроверку",
   "settings.game.runLaunch": "Запустить",
   "settings.game.deviceNote": "Версия системы фиксирована. Число ядер и номинальная частота ЦП применяются при следующем запуске и видны игре; частота не ограничивает реальную скорость выполнения.",
-  "settings.game.presetNote": "Профили моделей пока не подключены; остальные зарезервированные пункты только сохраняются.",
+  "settings.game.presetNote": "Остальные зарезервированные пункты только сохраняются.",
   "settings.game.androidId": "Просмотр / смена ANDROID_ID",
   "settings.game.managementPending": "Управление появится позже",
   "settings.game.savesFolders": "Сохранения и папки",

@@ -57,7 +57,7 @@ void AndroidModule::SweepLoopers() {
     if (!looper_hooks_.thread_running) return;
     for (auto it = sensor_queues_.begin(); it != sensor_queues_.end();) {
         const auto current = it++;
-        if (!looper_hooks_.thread_running(current->second.owner)) {
+        if (!current->second.ndk && !looper_hooks_.thread_running(current->second.owner)) {
             CloseSensorQueueLocked(current->second);
             sensor_queues_.erase(current);
         }

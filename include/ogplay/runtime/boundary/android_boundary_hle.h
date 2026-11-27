@@ -155,7 +155,8 @@ struct AndroidLooperHooks final {
     // nullopt: descriptor type is unsupported; bits use ALOOPER_EVENT_*.
     std::function<std::optional<std::uint32_t>(std::int32_t)> poll_events;
     std::function<bool(std::uint64_t)> thread_running;
-    std::function<std::array<std::int32_t, 2>()> create_pipe{};
+    // nullopt: descriptor exhaustion, with neither pipe end retained. Other failures throw.
+    std::function<std::optional<std::array<std::int32_t, 2>>()> create_pipe{};
     std::function<void(std::int32_t)> close_fd{};
     std::function<std::int32_t(std::uint64_t, memory::GuestAddress, std::int32_t, std::uint32_t, memory::GuestAddress)>
         invoke_callback{};

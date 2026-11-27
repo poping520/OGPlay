@@ -236,6 +236,7 @@ private:
         std::array<std::int32_t, 2> pipe;
         std::unique_ptr<AndroidSensorStream> stream;
         bool signaled{};
+        bool ndk{};
     };
 
     std::map<std::uint32_t, SensorQueue> sensor_queues_;
@@ -251,7 +252,7 @@ private:
     memory::GuestAddress SensorTokenLocked(std::size_t index) const;
     std::size_t SensorIndexLocked(memory::GuestAddress token, std::uint64_t thread);
     void RetireSensorQueues(std::optional<std::uint64_t> thread);
-    std::uint32_t OpenSensorQueueLocked(std::uint64_t thread, memory::GuestAddress looper, int ident,
+    std::uint32_t OpenSensorQueueLocked(std::uint64_t thread, bool ndk, memory::GuestAddress looper, int ident,
                                         memory::GuestAddress callback, memory::GuestAddress data,
                                         std::function<void()> on_readable = {});
     void CloseSensorQueueLocked(const SensorQueue& queue);

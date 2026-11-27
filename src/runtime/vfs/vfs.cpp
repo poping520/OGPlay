@@ -815,9 +815,14 @@ VfsPipeDescriptors VirtualFileSystem::Impl::CreatePipe(const bool non_blocking) 
     };
     const auto read_descriptor = AllocateDescriptor();
     table.entries.emplace(read_descriptor, make_end(true));
-    const auto write_descriptor = AllocateDescriptor();
-    table.entries.emplace(write_descriptor, make_end(false));
-    return {read_descriptor, write_descriptor};
+    try {
+        const auto write_descriptor = AllocateDescriptor();
+        table.entries.emplace(write_descriptor, make_end(false));
+        return {read_descriptor, write_descriptor};
+    } catch (...) {
+        table.entries.erase(read_descriptor);
+        throw;
+    }
 }
 
 std::size_t VirtualFileSystem::Impl::Read(const std::int32_t descriptor, const std::span<std::byte> destination) {
@@ -1496,7 +1501,7 @@ std::int32_t VirtualFileSystem::Impl::AllocateDescriptor() const {
     for (std::int32_t descriptor = 3; descriptor < std::numeric_limits<std::int32_t>::max(); ++descriptor) {
         if (!entries.contains(descriptor)) return descriptor;
     }
-    throw VfsError(kEbadf, "VFS descriptor table is full");
+    throw VfsError(kEmfile, "VFS descriptor table is full");
 }
 
 std::shared_ptr<OpenFile> VirtualFileSystem::Impl::FindDescriptor(const std::int32_t descriptor) const {

@@ -1383,9 +1383,14 @@ public:
                 return static_cast<Impl*>(userdata)->DynamicAddress(address, output, thread_id);
             }};
         options.ledger = &owner->ledger_;
-        options.loopers.create_pipe = [owner] {
-            const auto pipe = owner->filesystem_->CreatePipe();
-            return std::array{pipe.read_descriptor, pipe.write_descriptor};
+        options.loopers.create_pipe = [owner]() -> std::optional<std::array<std::int32_t, 2>> {
+            try {
+                const auto pipe = owner->filesystem_->CreatePipe();
+                return std::array{pipe.read_descriptor, pipe.write_descriptor};
+            } catch (const VfsError& error) {
+                if (error.ErrorNumber() == 24) return std::nullopt;  // EMFILE
+                throw;
+            }
         };
         options.loopers.close_fd = [owner](std::int32_t fd) { owner->filesystem_->Close(fd); };
         options.loopers.signal_pipe = [owner](std::int32_t fd, bool signal) {

@@ -37,6 +37,7 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
 | Angry Birds 2.3.0 | macOS | 5000 呈现帧，退出 clean | onDestroy 拒绝已修；换卡 WebView 的 setScrollBarStyle/动画缺口已修（DVM-371），手测正常；JIT 整缓存提交与 APK 多副本已修，footprint 932→502 MB（WU-PERF-16）；画面未验收 | DVM-186、DVM-371、WU-PERF-16、WU7-1a |
 | Angry Birds 8.0.3 | macOS | 实现 poll/ppoll 后，13 个 worker 线程不再因 poll ENOSYS 空转（CPU 约 800%→80%），主菜单 32→120 FPS、episode 列表 10→109 FPS | 原首错为 socket 未实现后的网络失败与 worker `std::thread::join` EDEADLK abort；socket 栈已实现（离线按无网络失败），待复测 | — |
 | The Amazing Spider-Man 2 1.2.7d | macOS | `--network allow`：安装器越过“WLAN 未连接”提示进入“文件校验中”，经宿主出口解析并以宿主 TLS 1.3 访问 Gameloft HTTPS（统计上报成功，下载组件多次握手），guest 墙钟为真实时间 | 下载组件拿不到 LVL 下发的扩展文件名参数，安装器以失败结果自行结束（非网络问题，LVL 按范围固定失败） | — |
+| The Amazing Spider-Man 2 1.2.8d | macOS | 修复 NDK 传感器队列被创建线程退役错误关闭；传感器/Looper 定向回归通过，原库命令单次约 60 秒呈现 1,233 帧，SIGINT 退出 0 | 原 stale 错误消失，未触发下一阻断首错；画面/交互及长时待验 | — |
 | GTA3 | macOS | 首次启动 EULA 长消息模态已发布（1280×720、320dpi），原容纳异常消失 | 20 秒有界运行未见新 uncaught 异常，SIGINT 退出 0；EULA 手测正常；影片画面与 NV clock 提示仍待验 | DVM-370、DVM-363 |
 | GTASA | macOS | OFFLINE → 标题菜单 → Start Game 进入开场过场，约 2 分钟无 fault，SIGINT 退出 0 | OpenSL 播放器 BUFFERQUEUE/ANDROIDSIMPLEBUFFERQUEUE 未互为别名致 OpenAL 启动失败、随后堆损坏，已修；登录界面图片（guest onDraw）未绘制，游戏内交互未验 | DVM-366 |
 | Monument Valley 2.5.18 | macOS | 720×1280：序章曲柄/行走至终点，进入第二章 The Garden，非零 PCM 已确认 | 默认入口竖屏、触摸复制及长期工作 Looper 已修；退出 IAP 未 bind 却 unbind 抛 IAE，正式 title gate/跨平台未验 | DVM-369、DVM-259 |

@@ -66,7 +66,11 @@ memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，
 - ASensorManager 是进程 opaque token。列表、ASensor token 与字符串在 guest 只读内存中稳定，
   缺席类型返回 null，非法句柄和无效输出地址明确失败。
 - Java 和 NDK 队列使用可读 VFS pipe 唤醒 Looper。NDK 可用 ident 或 guest callback，Java fd
-  回调将就绪队列交还所属 MessageQueue 派发原版事件；创建线程、所属 Looper 或进程退役时关闭 pipe。
+  回调将就绪队列交还所属 MessageQueue 派发原版事件。NDK 队列只在 destroyEventQueue 或进程
+  退役时关闭 pipe 和订阅；创建线程或所属 Looper 退役只解除 Looper 登记，队列仍可启停、设周期和读取。
+  Java 队列随所属 MessageQueue 线程退役关闭。Java/NDK 合计最多 1024 个 live 队列；句柄先单调
+  分配，到区间末尾后回绕扫描并复用空位。NDK createEventQueue 在 live 上限、句柄空间或 VFS
+  描述符耗尽时返回 NULL，限频 warn 并记账，不保留 pipe 或 Looper 引用；Java 路径仍明确失败。
   API19 登记拒绝保留队列并记账，hasEvents 无事件返回 -1，getEvents 无事件返回零。
 
 ## Java Surface 窗口

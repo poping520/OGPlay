@@ -15,13 +15,15 @@ struct SensorFixture {
     std::set<std::uint64_t> retired;
     std::vector<std::array<std::int32_t, 2>> pipes;
     std::vector<std::int32_t> closed;
+    bool descriptors_exhausted{};
     BoundaryFixture f{1,
                       nullptr,
                       {},
                       true,
                       {[this](auto fd) { return fs.PipePollEvents(fd); },
                        [this](auto tid) { return !retired.contains(tid); },
-                       [this] {
+                       [this]() -> std::optional<std::array<std::int32_t, 2>> {
+                           if (descriptors_exhausted) return std::nullopt;
                            const auto p = fs.CreatePipe();
                            pipes.push_back({p.read_descriptor, p.write_descriptor});
                            return pipes.back();
@@ -104,9 +106,13 @@ TEST_CASE("APS-11 API19 sensor hasEvents preserves negative idle result") {
 
 TEST_CASE("APS-11 sensor rejects invalid handles and retires thread and process resources") {
     SensorFixture s;
+    const auto directory = runtime::StaticAndroidSensorDirectory();
+    std::int64_t now = 60'000'000'000;
+    s.f.boundary.SetSensorDirectory(directory, runtime::MakeStaticAndroidSensorSource(directory, [&] { return now; }));
     const auto manager = s.manager();
+    const auto sensor = s.call("ASensorManager_getDefaultSensor", {manager, 1});
     const auto looper = s.call("ALooper_prepare", {1});
-    const auto queue = s.queue(manager, looper);
+    const auto queue = s.queue(manager, looper, false);
     for (const auto* method :
          {"ASensor_getName", "ASensor_getVendor", "ASensor_getType", "ASensor_getResolution", "ASensor_getMinDelay"}) {
         CHECK_THROWS(s.call(method, {0}));
@@ -126,17 +132,150 @@ TEST_CASE("APS-11 sensor rejects invalid handles and retires thread and process 
     REQUIRE(other > queue);
     s.retired.insert(20);
     CHECK(s.manager() == manager);  // sweeps retired queue owners too
-    CHECK(s.closed.size() == 2);
-    CHECK_THROWS(s.call("ASensorEventQueue_getEvents", {other}));
+    s.f.boundary.RetireThreadLooper(20);
+    CHECK(s.closed.empty());
+    CHECK(s.fs.PipePollEvents(s.pipes[1][0]) == std::optional<std::uint32_t>{0});
+    CHECK(s.call("ASensorEventQueue_enableSensor", {other, sensor}) == 0);
+    CHECK(s.call("ASensorEventQueue_setEventRate", {other, sensor, 5000}) == 0);
+    CHECK(std::bit_cast<std::int32_t>(s.call("ASensorEventQueue_hasEvents", {other})) == -1);
+    now += 5'000'000;
+    CHECK(s.call("ASensorEventQueue_hasEvents", {other}) == 1);
+    CHECK(s.call("ASensorEventQueue_getEvents", {other, s.f.output.Value(), 1}) == 1);
+    CHECK(s.call("ASensorEventQueue_disableSensor", {other, sensor}) == 0);
     s.f.boundary.RetireThreadLooper(1);
-    CHECK(s.closed.size() == 4);
-    CHECK_THROWS(s.call("ASensorEventQueue_getEvents", {queue}));
+    CHECK(s.closed.empty());
+    CHECK(s.call("ALooper_removeFd", {looper, static_cast<std::uint32_t>(s.pipes[0][0])}) == 0);
+    CHECK(std::bit_cast<std::int32_t>(s.call("ALooper_pollOnce")) == -4);
     const auto next_looper = s.call("ALooper_prepare", {1});
+    CHECK(s.call("ASensorEventQueue_enableSensor", {queue, sensor}) == 0);
+    CHECK(s.call("ASensorEventQueue_setEventRate", {queue, sensor, 5000}) == 0);
+    now += 5'000'000;
+    CHECK(s.call("ASensorEventQueue_hasEvents", {queue}) == 1);
+    CHECK(s.fs.PipePollEvents(s.pipes[0][0]) == std::optional<std::uint32_t>{1});
+    CHECK(std::bit_cast<std::int32_t>(s.call("ALooper_pollOnce")) == -3);
+    CHECK(s.call("ASensorEventQueue_getEvents", {queue, s.f.output.Value(), 1}) == 1);
+    CHECK(std::bit_cast<std::int32_t>(s.call("ASensorEventQueue_hasEvents", {queue})) == -1);
+    CHECK(s.call("ASensorEventQueue_disableSensor", {queue, sensor}) == 0);
+    CHECK(s.call("ASensorManager_destroyEventQueue", {manager, other}) == 0);
+    CHECK(s.closed.size() == 2);
+    CHECK(s.fs.PipePollEvents(s.pipes[1][0]) == std::optional<std::uint32_t>{16});
+    CHECK_THROWS(s.call("ASensorManager_destroyEventQueue", {manager, other}));
+    CHECK(s.call("ASensorManager_destroyEventQueue", {manager, queue}) == 0);
+    CHECK(s.closed.size() == 4);
+    CHECK(s.fs.PipePollEvents(s.pipes[0][0]) == std::optional<std::uint32_t>{16});
+    CHECK_THROWS(s.call("ASensorManager_destroyEventQueue", {manager, queue}));
+    CHECK_THROWS(s.call("ALooper_wake", {looper}));  // last queue released the retired record
+    CHECK_THROWS(s.call("ASensorEventQueue_getEvents", {queue}));
     const auto last = s.queue(manager, next_looper);
     s.f.boundary.ShutdownLoopers();
     CHECK(s.closed.size() == 6);
     CHECK_THROWS(s.call("ASensorEventQueue_hasEvents", {last}));
     CHECK_THROWS(s.call("ASensorManager_getInstance"));
+}
+
+TEST_CASE("APS-11 Java sensor queues still close with their MessageQueue thread") {
+    SensorFixture s;
+    auto& queues = s.f.boundary.SensorQueues();
+    const auto queue = queues.OpenSensorQueue(20, [] {});
+    const auto looper = FastBoundaryCall(s.f, "libandroid.so", "ALooper_forThread", {}, 20);
+    SUBCASE("explicit retirement") {
+        s.f.boundary.RetireThreadLooper(20);
+    }
+    SUBCASE("thread liveness sweep") {
+        s.retired.insert(20);
+        s.manager();
+    }
+    CHECK(s.closed.size() == 2);
+    CHECK(s.fs.PipePollEvents(s.pipes[0][0]) == std::optional<std::uint32_t>{16});
+    CHECK_FALSE(queues.EnableSensor(queue, 1, 5000));
+    CHECK_THROWS(s.call("ALooper_wake", {looper}));
+}
+
+TEST_CASE("APS-11 sensor queue live budget returns NULL without pipe or Looper reference leaks") {
+    SensorFixture s;
+    const auto manager = s.manager();
+    const auto looper = s.call("ALooper_prepare", {1});
+    auto& queues = s.f.boundary.SensorQueues();
+    const auto java = queues.OpenSensorQueue(1, [] {});
+    std::vector<std::uint32_t> live;
+    for (std::size_t i = 1; i < 1024; ++i) {
+        live.push_back(s.queue(manager, looper, false));
+        REQUIRE(live.back() != 0);
+    }
+    CHECK(s.queue(manager, looper, false) == 0);
+    CHECK(s.queue(manager, looper, false) == 0);
+    REQUIRE(s.pipes.size() == 1024);
+    CHECK(s.closed.empty());
+    const auto warnings = s.f.logger.Snapshot(core::LogLevel::warn, "runtime.android.sensor");
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0].message == "sensor queue live budget exhausted");
+    CHECK(s.f.logger.SuppressedCount("runtime.android.sensor", warnings[0].message) == 1);
+    const auto hits = s.f.ledger.Unimplemented();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].id == "runtime.android_boundary_hle");
+    CHECK(hits[0].count == 2);
+    CHECK_THROWS(queues.OpenSensorQueue(1, [] {}));  // Java exhaustion still throws
+    CHECK(s.call("ASensorManager_destroyEventQueue", {manager, live.back()}) == 0);
+    const auto replacement = s.queue(manager, looper, false);
+    REQUIRE(replacement > live.back());  // no early reuse of stale handles
+    live.back() = replacement;
+    for (auto queue : live)
+        CHECK(s.call("ASensorManager_destroyEventQueue", {manager, queue}) == 0);
+    queues.CloseSensorQueue(java);
+    CHECK(s.closed.size() == s.pipes.size() * 2);
+    s.f.boundary.RetireThreadLooper(1);
+    CHECK_THROWS(s.call("ALooper_wake", {looper}));
+}
+
+TEST_CASE("APS-11 sensor pipe descriptor exhaustion returns NULL and leaves no Looper reference") {
+    SensorFixture s;
+    const auto manager = s.manager();
+    const auto looper = s.call("ALooper_prepare", {1});
+    s.descriptors_exhausted = true;
+    CHECK(s.queue(manager, looper, false) == 0);
+    CHECK(s.pipes.empty());
+    CHECK(s.closed.empty());
+    const auto warnings = s.f.logger.Snapshot(core::LogLevel::warn, "runtime.android.sensor");
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0].message == "sensor queue VFS descriptors exhausted");
+    const auto hits = s.f.ledger.Unimplemented();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].id == "runtime.android_boundary_hle");
+    CHECK(hits[0].count == 1);
+    CHECK_THROWS(s.f.boundary.SensorQueues().OpenSensorQueue(1, [] {}));
+    s.f.boundary.RetireThreadLooper(1);
+    CHECK_THROWS(s.call("ALooper_wake", {looper}));
+    s.descriptors_exhausted = false;
+    const auto queue = s.queue(manager, s.call("ALooper_prepare", {1}), false);
+    CHECK(queue == runtime::guest_layout::kSensorQueueHandleBegin);
+    CHECK(s.call("ASensorManager_destroyEventQueue", {manager, queue}) == 0);
+    CHECK(s.closed.size() == 2);
+}
+
+TEST_CASE("APS-11 sensor queue handles wrap and skip occupied slots") {
+    SensorFixture s;
+    const auto manager = s.manager();
+    const auto looper = s.call("ALooper_prepare", {1});
+    const auto occupied = s.queue(manager, looper, false);
+    const auto vacant = s.queue(manager, looper, false);
+    REQUIRE(occupied == runtime::guest_layout::kSensorQueueHandleBegin);
+    REQUIRE(vacant == occupied + 4);
+    CHECK(s.call("ASensorManager_destroyEventQueue", {manager, vacant}) == 0);
+    // Exercise the real shared cursor through Java's direct queue interface,
+    // without exposing private state or adding a test-only allocation hook.
+    auto& queues = s.f.boundary.SensorQueues();
+    for (auto expected = vacant + 4; expected < runtime::guest_layout::kAssetDirectoryHandleBegin; expected += 4) {
+        const auto queue = queues.OpenSensorQueue(1, [] {});
+        REQUIRE(queue == expected);
+        queues.CloseSensorQueue(queue);
+    }
+    const auto reused = s.queue(manager, looper, false);
+    CHECK(reused == vacant);
+    CHECK(s.call("ASensorManager_destroyEventQueue", {manager, reused}) == 0);
+    CHECK(s.call("ASensorManager_destroyEventQueue", {manager, occupied}) == 0);
+    CHECK(s.closed.size() == s.pipes.size() * 2);
+    s.f.boundary.RetireThreadLooper(1);
+    CHECK_THROWS(s.call("ALooper_wake", {looper}));
 }
 
 TEST_CASE("Static motion sensor events follow the supplied Clock and wake the NDK Looper") {

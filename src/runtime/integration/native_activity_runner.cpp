@@ -90,9 +90,14 @@ public:
                                          return false;
                                      }
                                  },
-                                 [this] {
-                                     const auto pipe = vfs_.CreatePipe();
-                                     return std::array{pipe.read_descriptor, pipe.write_descriptor};
+                                 [this]() -> std::optional<std::array<std::int32_t, 2>> {
+                                     try {
+                                         const auto pipe = vfs_.CreatePipe();
+                                         return std::array{pipe.read_descriptor, pipe.write_descriptor};
+                                     } catch (const VfsError& error) {
+                                         if (error.ErrorNumber() == 24) return std::nullopt;  // EMFILE
+                                         throw;
+                                     }
                                  },
                                  [this](std::int32_t fd) { vfs_.Close(fd); }},
                      .ledger = &ledger_}),

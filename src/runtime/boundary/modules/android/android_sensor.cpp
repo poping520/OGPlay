@@ -13,6 +13,7 @@ namespace {
 constexpr memory::GuestAddress kSensorManager{guest_layout::kSensorManagerHandle};
 constexpr std::int32_t kBadValue = -22;
 constexpr std::size_t kEventBatch = 256;
+constexpr std::size_t kMaxLiveSensorQueues = 1024;
 }  // namespace
 
 AndroidModule::~AndroidModule() {
@@ -66,8 +67,8 @@ void AndroidModule::BuildSensorList(std::uint64_t thread) {
     sensor_list_ = std::move(buffer);
 }
 
-std::uint32_t AndroidModule::OpenSensorQueueLocked(std::uint64_t thread, memory::GuestAddress looper, int ident,
-                                                   memory::GuestAddress callback, memory::GuestAddress data,
+std::uint32_t AndroidModule::OpenSensorQueueLocked(std::uint64_t thread, bool ndk, memory::GuestAddress looper,
+                                                   int ident, memory::GuestAddress callback, memory::GuestAddress data,
                                                    std::function<void()> on_readable) {
     if (looper.IsNull() || !loopers_.contains(looper.Value()) || RequireLooper(looper).retired)
         SensorFailure("sensor queue requires a live ALooper", thread);
@@ -75,17 +76,35 @@ std::uint32_t AndroidModule::OpenSensorQueueLocked(std::uint64_t thread, memory:
         SensorFailure("sensor queue owner thread is retired", thread);
     if (!looper_hooks_.create_pipe || !looper_hooks_.close_fd || (sensor_source_ && !looper_hooks_.signal_pipe))
         SensorFailure("sensor queue VFS pipe backend is unavailable", thread);
-    if (sensor_queues_.size() >= 1024 || next_sensor_queue_.Value() >= guest_layout::kAssetDirectoryHandleBegin)
-        SensorFailure("sensor queue handle budget exhausted", thread);
     if (RequireLooper(looper).references == UINT32_MAX) SensorFailure("sensor queue Looper reference overflow", thread);
+
+    const auto exhausted = [&](std::string_view message) -> std::uint32_t {
+        if (!ndk) SensorFailure(message, thread);
+        if (ledger_) ledger_->RecordUnimplemented("runtime.android_boundary_hle", 0);
+        if (logger_)
+            logger_->Write(core::LogLevel::warn, "runtime.android.sensor", message, {.guest_thread = thread}, {},
+                           {.mode = core::RateLimitMode::first_and_count});
+        return 0;
+    };
+    if (sensor_queues_.size() >= kMaxLiveSensorQueues) return exhausted("sensor queue live budget exhausted");
+    auto handle = next_sensor_queue_;
+    if (handle.Value() >= guest_layout::kAssetDirectoryHandleBegin)
+        handle = memory::GuestAddress{guest_layout::kSensorQueueHandleBegin};
+    const auto first = handle;
+    while (sensor_queues_.contains(handle.Value())) {
+        handle = handle.Add(4);
+        if (handle.Value() >= guest_layout::kAssetDirectoryHandleBegin)
+            handle = memory::GuestAddress{guest_layout::kSensorQueueHandleBegin};
+        if (handle == first) return exhausted("sensor queue handle space exhausted");
+    }
 
     auto stream = sensor_source_ ? sensor_source_->OpenStream() : nullptr;
     const auto pipe = looper_hooks_.create_pipe();
+    if (!pipe) return exhausted("sensor queue VFS descriptors exhausted");
     ++RequireLooper(looper).references;
-    SensorQueue queue{thread, looper, pipe, std::move(stream)};
-    const auto handle = next_sensor_queue_;
+    SensorQueue queue{thread, looper, *pipe, std::move(stream), false, ndk};
     try {
-        if (AddLooperFdLocked(looper, pipe[0], ident, 1, callback, data, std::move(on_readable)) < 0) {
+        if (AddLooperFdLocked(looper, (*pipe)[0], ident, 1, callback, data, std::move(on_readable)) < 0) {
             // API 19 retains the queue even when addFd rejects the registration.
             if (ledger_) ledger_->RecordUnimplemented("runtime.android_boundary_hle", 0);
             if (logger_)
@@ -104,7 +123,7 @@ std::uint32_t AndroidModule::OpenSensorQueueLocked(std::uint64_t thread, memory:
 std::uint32_t AndroidModule::OpenSensorQueue(std::uint64_t thread, std::function<void()> on_readable) {
     const auto looper = PrepareThreadLooper(thread);
     std::scoped_lock lock(mutex_);
-    return OpenSensorQueueLocked(thread, looper, 0, memory::GuestAddress{}, memory::GuestAddress{},
+    return OpenSensorQueueLocked(thread, false, looper, 0, memory::GuestAddress{}, memory::GuestAddress{},
                                  std::move(on_readable));
 }
 
@@ -127,7 +146,8 @@ void AndroidModule::CloseSensorQueue(std::uint32_t key) {
 
 void AndroidModule::RetireSensorQueues(std::optional<std::uint64_t> thread) {
     for (auto it = sensor_queues_.begin(); it != sensor_queues_.end();) {
-        if (!thread || it->second.owner == *thread || RequireLooper(it->second.looper).owner == *thread) {
+        if (!thread ||
+            (!it->second.ndk && (it->second.owner == *thread || RequireLooper(it->second.looper).owner == *thread))) {
             CloseSensorQueueLocked(it->second);
             it = sensor_queues_.erase(it);
         } else {
@@ -245,7 +265,7 @@ BoundaryResult AndroidModule::ASensorManager_createEventQueue(const A32CallFrame
     const auto thread = call.ThreadId();
     CheckSensorProcessLocked(thread);
     RequireSensorManager(call);
-    return OpenSensorQueueLocked(thread, call.Pointer<void>(1).Address(),
+    return OpenSensorQueueLocked(thread, true, call.Pointer<void>(1).Address(),
                                  std::bit_cast<int>(call.RegisterArguments()[2]), call.Pointer<void>(3).Address(),
                                  call.Pointer<void>(4).Address());
 }

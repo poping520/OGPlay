@@ -546,7 +546,7 @@ note = "ADR-0071/：沙盒按安装层显式 installation id 隔离，schema 3 �
 [runtime.vfs]
 status = "complete"
 test = "tests/runtime/vfs_tests.cpp; tests/runtime/syscall_tests.cpp#VFS-06; tests/runtime/syscall_tests.cpp#VFS-08; tests/runtime/syscall_tests.cpp#VFS-09; tests/runtime/syscall_tests.cpp#VFS-11; tests/runtime/syscall_tests.cpp#ARM F_GETFL; tests/runtime/guest_cpu_environment_tests.cpp#VFS-06; tests/frontend/run_apk_vfs_tests.cpp; tests/loader/apk_tests.cpp; tests/dexvm/network_sqlite_tests.cpp"
-note = "ADR-0071/0074/0110/0129：节点/打开状态/backing 分离，ReadAt/WriteAt、lease 与统一资源预算；非零 32 位 inode 共用节点分配序列，目录按规范路径惰性分配，生成快照 node_id 独立而 inode 同 provider；st_dev 与 StatVfs 共用卷分类，不依赖沙盒挂载。guest cwd/..、严格 range、宿主惰性绑定/句柄 LRU、append 与 HAL 随机设备已实现；fcntl 状态改写、跨进程追加与跨平台验收仍有缺口。"
+note = "ADR-0071/0074/0110/0129：节点/打开状态/backing 分离，ReadAt/WriteAt、lease 与统一资源预算；非零 32 位 inode 共用节点分配序列，目录按规范路径惰性分配，生成快照 node_id 独立而 inode 同 provider；st_dev 与 StatVfs 共用卷分类，不依赖沙盒挂载。guest cwd/..、严格 range、宿主惰性绑定/句柄 LRU、append、HAL 随机设备及 /dev/zero、/dev/null 已实现（零页私有映射同匿名，共享 ENOSYS）；fcntl 状态改写、跨进程追加与跨平台验收仍有缺口。"
 
 [runtime.vfs_filesystem_stats]
 status = "partial"

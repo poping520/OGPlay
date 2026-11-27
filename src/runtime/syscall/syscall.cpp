@@ -462,6 +462,7 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
     constexpr std::int32_t kEperm = 1;
     constexpr std::int32_t kEnomem = 12;
     constexpr std::int32_t kEinval = 22;
+    constexpr std::int32_t kEoverflow = 75;
     constexpr std::uint32_t kMapPrivate = 0x02;
     constexpr std::uint32_t kMapFixed = 0x10;
     constexpr std::uint32_t kMapAnonymous = 0x20;
@@ -574,6 +575,7 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
         std::scoped_lock lock(state->mapping_mutex);
         try {
             const auto size = aligned_size(request.size);
+            if (std::uint64_t{request.page_offset} + size / kApi19MmapPageSize > UINT32_MAX) return -kEoverflow;
             const auto flags = request.flags;
             const auto prot = request.protection;
             const auto permissions = protection(prot);
@@ -594,8 +596,17 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
             std::shared_ptr<State::SharedSource> shared;
             std::shared_ptr<const VfsResourceReservation> reservation;
             std::vector<std::byte> snapshot;
-            if ((flags & kMapAnonymous) != 0) {
-                if (kind != kMapPrivate || request.page_offset != 0) return -kLinuxEnosys;
+            bool anonymous = (flags & kMapAnonymous) != 0;
+            if (!anonymous) {
+                auto* vfs = *binding;
+                if (!vfs) return -9;
+                if (const auto readable = vfs->ZeroDeviceMappingReadable(request.fd); readable.has_value()) {
+                    if (!*readable) return -13;
+                    anonymous = true;
+                }
+            }
+            if (anonymous) {
+                if (kind != kMapPrivate) return -kLinuxEnosys;
             } else {
                 auto* vfs = *binding;
                 if (!vfs) return -9;
@@ -651,7 +662,7 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::Address
                 }
             }
             if (shared) shared->address = address;
-            if ((flags & kMapAnonymous) == 0) next.push_back({address, std::uint64_t{address} + size, shared});
+            if (!anonymous) next.push_back({address, std::uint64_t{address} + size, shared});
             std::ranges::sort(next, {}, &State::Mapping::begin);
             state->mappings.swap(next);
             if (shared && shared->writer)

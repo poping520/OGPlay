@@ -30,7 +30,13 @@ struct VfsGeneratedFileState;
 struct VfsCharacterDeviceState;
 using VfsCharacterReader = std::function<std::size_t(std::span<std::byte>)>;
 
-// Retirement waits for in-flight reads; retained descriptors then fail with EIO.
+struct VfsCharacterDeviceOptions final {
+    bool discard_writes{};
+    bool zero_page_mapping{};
+    bool seek_returns_zero{};
+};
+
+// Retirement waits for in-flight IO; retained descriptors then fail with EIO.
 class VfsCharacterDeviceRegistration final {
 public:
     ~VfsCharacterDeviceRegistration();
@@ -347,6 +353,9 @@ public:
     // inferred from st_size (zero); positioned IO and leases are unsupported.
     [[nodiscard]] std::unique_ptr<VfsCharacterDeviceRegistration>
     RegisterReadOnlyCharacterDevice(std::string_view path, std::uint64_t device_number, VfsCharacterReader reader);
+    [[nodiscard]] std::unique_ptr<VfsCharacterDeviceRegistration>
+    RegisterCharacterDevice(std::string_view path, std::uint64_t device_number, VfsCharacterReader reader,
+                            VfsCharacterDeviceOptions options = {});
     void PutFile(std::string_view path, std::span<const std::byte> contents, bool writable);
     // Read-only runtime file whose bytes stay with the caller; reads, leases
     // and mappings go through read_at, so the VFS keeps no copy.
@@ -425,6 +434,9 @@ public:
     // Pins a regular node and its bytes against VFS mutations (EBUSY). Diagnostic
     // runs under the metadata lock and must not reenter VFS. Token outlives FD.
     [[nodiscard]] VfsMappingSource CaptureMappingSource(std::int32_t descriptor, std::function<void()> rejected);
+    // Nullopt for other descriptors; otherwise whether the zero-page device FD
+    // is readable. Invalid FD is EBADF, retired zero-page device is EIO.
+    [[nodiscard]] std::optional<bool> ZeroDeviceMappingReadable(std::int32_t descriptor) const;
     [[nodiscard]] std::shared_ptr<const VfsReadLease>
     CaptureReadLease(std::int32_t descriptor, std::uint64_t offset,
                      std::uint64_t length = std::numeric_limits<std::uint64_t>::max());

@@ -193,6 +193,24 @@ struct ActiveGuestCall final {
 
 thread_local std::unordered_map<const void*, ActiveGuestCall> active_guest_calls;
 
+void WarnUnmappedArmExidx(core::Logger* logger, const std::string_view soname,
+                          const loader::Elf32LoadedModule& module) {
+    if (logger == nullptr || !module.lifecycle.arm_exidx) return;
+    const auto& exidx = *module.lifecycle.arm_exidx;
+    const auto start = static_cast<std::uint64_t>(exidx.address.Value());
+    const auto end = start + static_cast<std::uint64_t>(exidx.entry_count) * 8U;
+    for (const auto& segment : module.image.program_headers) {
+        if (segment.type != loader::kElfProgramLoad) continue;
+        const auto segment_start = static_cast<std::uint64_t>(segment.virtual_address.Value());
+        if (start >= segment_start && end <= segment_start + segment.memory_size) return;
+    }
+    logger->Write(core::LogLevel::warn, "runtime.native_library", "ARM EXIDX range is outside PT_LOAD memory", {},
+                  {{"soname", std::string(soname)},
+                   {"exidx_address", core::GuestAddress{exidx.address.Value()}},
+                   {"entry_count", static_cast<std::uint64_t>(exidx.entry_count)}},
+                  {.mode = core::RateLimitMode::none});
+}
+
 [[nodiscard]] std::vector<GuestLifecycleModule>
 LifecycleModules(const loader::Elf32LoadedNamespace& loaded, const std::span<const loader::Elf32ModuleInput> inputs) {
     std::vector<GuestLifecycleModule> result;
@@ -729,6 +747,16 @@ public:
         };
         urandom_ = filesystem_->RegisterReadOnlyCharacterDevice("/dev/urandom", 0x109U, random_reader);
         random_ = filesystem_->RegisterReadOnlyCharacterDevice("/dev/random", 0x108U, random_reader);
+        zero_ = filesystem_->RegisterCharacterDevice(
+            "/dev/zero", 0x105U,
+            [](const std::span<std::byte> bytes) {
+                std::ranges::fill(bytes, std::byte{0});
+                return bytes.size();
+            },
+            {.discard_writes = true, .zero_page_mapping = true, .seek_returns_zero = true});
+        null_ = filesystem_->RegisterCharacterDevice("/dev/null", 0x103U,
+                                                     [](std::span<std::byte>) -> std::size_t { return 0; },
+                                                     {.discard_writes = true, .seek_returns_zero = true});
         cpu_environment_.Publish(*filesystem_);
         proc_maps_ =
             filesystem_->RegisterGeneratedReadOnly("/proc/self/maps", 1024U * 1024U, [this] { return ProcMaps(); });
@@ -886,6 +914,9 @@ public:
         root_cpu_->SetState(root_state);
 
         lifecycle_modules_ = LifecycleModules(loaded_, request.modules);
+        for (std::size_t index = 0; index < loaded_.modules.size(); ++index) {
+            WarnUnmappedArmExidx(logger_, request.modules[index].name, loaded_.modules[index]);
+        }
         for (const auto module_index : loaded_.link_namespace.load_order) {
             if (module_index < loaded_.modules.size()) {
                 guest_load_order_.push_back(module_index);
@@ -2628,6 +2659,7 @@ public:
             for (std::size_t index = 0; index < inputs.size(); ++index) {
                 const auto namespace_index = old_namespace_size + index;
                 const auto& source = missing_sources[index];
+                WarnUnmappedArmExidx(logger_, source.name, extension.modules[index]);
                 module_paths_.emplace(source.name,
                                       source.guest_path.empty() ? "/data/app-lib/" + source.name : source.guest_path);
                 lifecycle_modules_.push_back(
@@ -2777,7 +2809,7 @@ private:
     // Declared after address_space_: provider revocation precedes memory teardown,
     // including constructor failure. Callback captures only the address space.
     std::unique_ptr<VfsGeneratedFileRegistration> proc_maps_;
-    std::unique_ptr<VfsCharacterDeviceRegistration> urandom_, random_;
+    std::unique_ptr<VfsCharacterDeviceRegistration> urandom_, random_, zero_, null_;
     GuestCpuEnvironment cpu_environment_;
     GuestMemorySnapshot memory_snapshot_;
     memory::CheckedMemoryBus memory_bus_{address_space_};

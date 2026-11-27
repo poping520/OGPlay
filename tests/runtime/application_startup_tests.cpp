@@ -101,6 +101,17 @@ TEST_CASE("ROM Application startup preserves order identity and native loads") {
     }
 }
 
+TEST_CASE("ROM Application binding allows guest replacement of the LoadedApk ClassLoader") {
+    using namespace ogplay;
+    for (const auto backend : test::InterpreterBackends()) {
+        OrchestratedApp fixture("fixture.LauncherActivity", true, false, {}, {}, true, backend,
+                                "fixture.ReplacingLoaderApplication");
+        fixture.app->StartApplication();
+        CHECK(fixture.app->State() == session::AndroidAppProcessState::application_started);
+        CHECK(fixture.CallStaticInt("Lfixture/ReplacingLoaderApplication;", "replacementIsCurrent") == 1);
+    }
+}
+
 TEST_CASE("Application failure prevents launcher construction and surface effects") {
     using namespace ogplay;
     OrchestratedApp fixture("fixture.LauncherActivity", true, false, {}, {}, true,

@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-11-26。
+更新：2026-11-27。
 
 本文件是项目当前状态的快照：只写“现在怎样”，不写过程。修改时覆盖对应行，不追加流水；
 跨会话在办事项写入任务单，完成后的过程、验证明细及证据留在提交说明中。能力见 [capabilities.toml](../../capabilities.toml)，
@@ -58,6 +58,7 @@ Java EGL 生产者与会话 Clock 双向同步。My Boy! 的浏览器、GLES/输
 | Mass Effect Infiltrator 1.0.58（mod） | macOS | 原 APK 用既有数据越过路径型 `DT_NEEDED`、FreeType 和 EA Text 字体选择，Release 呈现 180 帧并按上限退出 0 | 180 帧后的进度与交互待验证 | — |
 | N.O.V.A. 3 | macOS | 原 `libOpenSLES.so` 显式加载错误消失，`libNOVA3_neon.so` 已加载并完成 JNI_OnLoad；日志到达 GameInstaller，60 秒 7 帧，SIGINT 退出 0 | 下一阻断首错未触发；加载后首个能力缺口为 `exec("ls")` 未注册命令（警告后继续）；安装器后续与游戏内未验 | — |
 | MC4 1.2.3e | macOS | Google Play 开启，越过 GameInstaller 的 `getInstalledPackages(GET_META_DATA)`，`libModernCombat4.so` 完成 JNI_OnLoad；90 秒呈现 200 帧，SIGTERM 退出 0 | 授权回调报 `Parcel underflow`，`LicenseChecker` 随后超时；本次缺失报告未列 OBB，弹框、画面及交互未验 | — |
+| GloftG4HM（com.gameloft.android.ANMP.GloftG4HM） | macOS | 新增 /dev/zero、/dev/null 后，原 `ANONYMOUS mmap failed` 未再出现；字符设备/mmap 定向 21 用例通过，原库命令单次约 2.7 秒启动失败、0 帧 | 加固壳先报 `libdvm.so` 不可用，随后 `Native.attachBaseContext` 在 `libdexload.so+0xe79a` 读空指针；仅 reached-fault 证据，下一阻断未修 | — |
 
 ## 未闭合问题
 

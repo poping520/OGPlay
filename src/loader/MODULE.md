@@ -174,7 +174,8 @@
   HLE-only module，但不得重排/替换输入。失败只撤销本次新增映射并保留原始错误，成功保留既有索引。
 - `ReadElf32LifecycleInfo`：解析 `DT_INIT/FINI`、init/fini arrays 与 `PT_ARM_EXIDX`，
   标量动态标签取最后值，数组指针/尺寸独立缺省，尺寸按完整指针截断；
-  EXIDX 取首段并按 memory size/8 计数。实际读取仍要求 file-backed 且范围受检。
+  init/fini 数组的实际读取仍要求 file-backed 且范围受检。EXIDX 取首段并按 memory size/8 计数，
+  与 API19 一致，只记录地址与表项数，不校验 PT_LOAD 覆盖；范围不被 PT_LOAD 内存覆盖时由上层记录 warning。
 - `ReadElf32TlsInfo`：解析唯一 `PT_TLS` 模板，保留初始化字节、BSS 大小与对齐，
   并要求模板由唯一 `PT_LOAD` 覆盖且不回绕。
 - `ReadElf32SymbolVersions`：解析 `DT_VERSYM/VERDEF/VERNEED`，将每个 dynsym 映射为

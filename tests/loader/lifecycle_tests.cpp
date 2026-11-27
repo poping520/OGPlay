@@ -96,6 +96,18 @@ TEST_CASE("ELF lifecycle rejects incomplete ambiguous and unbacked metadata") {
         image.program_headers[1].memory_size = 12;
         CHECK_NOTHROW(static_cast<void>(ogplay::loader::ReadElf32LifecycleInfo(bytes, image)));
     }
+    SUBCASE("exidx in load gap with file offset beyond image") {
+        auto image = LifecycleImage();
+        image.program_headers.push_back(
+            {ogplay::loader::kElfProgramLoad, 0x40, ogplay::memory::GuestAddress{0x2000}, 0x40, 0x80, 6, 0x1000});
+        auto& exidx = image.program_headers[1];
+        exidx.virtual_address = ogplay::memory::GuestAddress{0x1800};
+        exidx.file_offset = 0x800;
+        const auto info = ogplay::loader::ReadElf32LifecycleInfo(bytes, image);
+        REQUIRE(info.arm_exidx.has_value());
+        CHECK(info.arm_exidx->address == ogplay::memory::GuestAddress{0x1800});
+        CHECK(info.arm_exidx->entry_count == 2);
+    }
 }
 
 TEST_CASE("WU11-6 ELF lifecycle last tags floor sizes and first exidx follow API19") {

@@ -69,6 +69,7 @@ struct VfsCharacterDeviceState final {
     std::atomic_bool active{true};
     VfsCharacterReader reader;
     std::uint64_t device_number{};
+    VfsCharacterDeviceOptions options;
 };
 
 struct File final {
@@ -254,7 +255,7 @@ public:
 
     // ---- mounts and files (vfs.cpp) -------------------------------------
     void RegisterGeneratedReadOnly(std::string_view path, std::shared_ptr<VfsGeneratedFileState> state);
-    void RegisterReadOnlyCharacterDevice(std::string_view path, std::shared_ptr<VfsCharacterDeviceState> state);
+    void RegisterCharacterDevice(std::string_view path, std::shared_ptr<VfsCharacterDeviceState> state);
     void PutFile(std::string_view path, std::span<const std::byte> contents, bool writable);
     void PutReadOnlyFile(std::string_view path, std::uint64_t size, VfsReadAtLoader read_at);
     void Mount(VfsSource source, std::string_view root, std::span<const VfsMountEntry> entries);

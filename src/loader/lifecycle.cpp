@@ -83,10 +83,6 @@ Elf32LifecycleInfo ReadElf32LifecycleInfo(
     for (const auto& segment : image.program_headers) {
         if (segment.type != kElfProgramArmExidx) continue;
         if (result.arm_exidx.has_value()) continue;
-        if (segment.memory_size / 8U != 0) {
-            static_cast<void>(
-                VirtualFileOffset(image, segment.virtual_address, (segment.memory_size / 8U) * 8U, bytes.size()));
-        }
         result.arm_exidx = Elf32ArmExidx{segment.virtual_address, segment.memory_size / 8U};
     }
     return result;

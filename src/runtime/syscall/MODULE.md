@@ -32,6 +32,8 @@ framework、execution 或 integration。
   guest MAP_FIXED 与任意保留窗口相交时，整次返回 ENOMEM 并以
   `memory.map_fixed_reserved_window` 记账，不提交或修改任何页；优先于文件快照读取。未注入窗口的独立 runner 保持原行为。
   brk 的宿主显式 Map 仍可在其保留窗口中扩展；munmap/mprotect/madvise 的语义不变。
+- 匿名私有映射与 `/dev/zero` 私有映射都忽略 offset，支持任意有效保护位；共享匿名映射返回 ENOSYS。
+  mmap2 在区分匿名/文件映射前检查 pgoff 加对齐后页数的 32 位溢出，回绕返回 EOVERFLOW。
 - 文件 mmap2 的 pgoff 单位为 4096 字节；支持 PRIVATE 的 R/RW、只读 fd 的 SHARED R 与读写 fd 的 SHARED RW。
   读取 VFS 节点快照后一次发布内存，尾页补零；失败不消耗地址或破坏固定目标。
   SHARED RW 在 msync、munmap、固定覆盖前，以及 VFS 读取或落盘该节点前，把改动写回节点；不扩展文件，

@@ -319,6 +319,31 @@ TEST_CASE("Android mmap avoids occupied regions and reuses released space") {
     CHECK(std::bit_cast<std::uint32_t>(dispatcher.Dispatch(frame)) == 0xb6ffb000U);
 }
 
+TEST_CASE("Android anonymous private mmap2 ignores page offset after overflow checking") {
+    using namespace ogplay::memory;
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    AddressSpace memory;
+    ogplay::runtime::BindAndroidMemorySyscalls(dispatcher, memory);
+    ogplay::runtime::A32SyscallFrame frame{};
+    frame.number = 192;
+    frame.arguments = {0, 0xee58, 7, 0x22, UINT32_MAX, 0x28};
+    const auto mapped = std::bit_cast<std::uint32_t>(dispatcher.Dispatch(frame));
+    REQUIRE(mapped >= 0x60000000U);
+    REQUIRE(mapped < 0xb7000000U);
+    CHECK(mapped % 4096 == 0);
+    std::vector<std::byte> contents(0xf000);
+    memory.Read(GuestAddress{mapped}, contents);
+    CHECK(std::ranges::all_of(contents, [](auto byte) { return byte == std::byte{}; }));
+    memory.Write32(GuestAddress{mapped}, 0x12345678);
+    CHECK(memory.Read32(GuestAddress{mapped}) == 0x12345678);
+    frame.arguments[3] = 0x21;
+    CHECK(dispatcher.Dispatch(frame) == -38);
+    frame.arguments[3] = 0x22;
+    frame.arguments[5] = UINT32_MAX - 14U;
+    CHECK(dispatcher.Dispatch(frame) == -75);
+}
+
 TEST_CASE("SBX-15 mmap fixed anonymously replaces reserved BSS pages") {
     using namespace ogplay::memory;
     ogplay::core::CapabilityLedger ledger;
@@ -381,6 +406,7 @@ TEST_CASE("SBX-15 mmap fixed errors preserve mappings and the last page is valid
     CHECK(ledger.Unimplemented().empty());
     frame.arguments = valid;
     frame.arguments[5] = 1;
+    frame.arguments[3] = 0x31;  // Shared anonymous mappings remain unsupported.
     CHECK(dispatcher.Dispatch(frame) == -38);
     REQUIRE(ledger.Unimplemented().size() == 1);
     CHECK(ledger.Unimplemented()[0].id == "syscall.mmap2");
@@ -399,6 +425,7 @@ TEST_CASE("SBX-15 mmap fixed errors preserve mappings and the last page is valid
     CHECK(memory.TrySnapshot()->pages_by_protection == before->pages_by_protection);
     frame.arguments = valid;
     frame.arguments[0] = 0xfffff000;
+    frame.arguments[5] = 1;  // Private anonymous mappings ignore nonzero offsets.
     CHECK(dispatcher.Dispatch(frame) == std::bit_cast<std::int32_t>(0xfffff000U));
     CHECK(memory.Read8(GuestAddress{0xffffffff}) == 0);
 }
@@ -608,7 +635,7 @@ TEST_CASE("SBX-16 file mapping errors are explicit accounted and preserve addres
         Error{static_cast<std::uint32_t>(ro), 5, 2, 0, 4096, -38},
         Error{static_cast<std::uint32_t>(ro), 1, 2, 0, 12288, -38},
         Error{static_cast<std::uint32_t>(ro), 1, 2, 2, 4096, -38},
-        Error{static_cast<std::uint32_t>(ro), 1, 2, UINT32_MAX, 4096, -38},
+        Error{static_cast<std::uint32_t>(ro), 1, 2, UINT32_MAX, 4096, -75},
         Error{static_cast<std::uint32_t>(pipe.read_descriptor), 1, 2, 0, 4096, -19},
         Error{static_cast<std::uint32_t>(dir), 1, 2, 0, 4096, -19},
         Error{static_cast<std::uint32_t>(dev), 1, 2, 0, 4096, -19},
@@ -2016,6 +2043,88 @@ TEST_CASE("VFS-06 ARM random device flags metadata and errors") {
     CHECK(fixture.Call(3, {dup, 0x20300, 128, 0, 0, 0}) == -5);
     CHECK(fixture.Call(6, {dup, 0, 0, 0, 0, 0}) == 0);
     CHECK(fixture.Call(6, {static_cast<std::uint32_t>(dir), 0, 0, 0, 0, 0}) == 0);
+}
+
+TEST_CASE("VFS-06 ARM zero device IO metadata and anonymous private mappings") {
+    MetadataSyscallFixture f;
+    ogplay::runtime::BindAndroidMemorySyscalls(f.dispatcher, f.memory);
+    auto device =
+        f.vfs.RegisterCharacterDevice("/dev/zero", 0x105,
+                                      [](auto bytes) {
+                                          std::ranges::fill(bytes, std::byte{0});
+                                          return bytes.size();
+                                      },
+                                      {.discard_writes = true, .zero_page_mapping = true, .seek_returns_zero = true});
+    f.WriteString(0x20000, "/dev/zero");
+    const auto opened = f.Call(5, {0x20000, 2, 0, 0, 0, 0});  // O_RDWR
+    REQUIRE(opened >= 3);
+    const auto fd = static_cast<std::uint32_t>(opened);
+    CHECK(f.Call(33, {0x20000, 2, 0, 0, 0, 0}) == 0);  // W_OK
+    CHECK(f.Call(197, {fd, 0x20200, 0, 0, 0, 0}) == 0);
+    CHECK(f.ReadField(0x20200, 16, 4) == 0020666);
+    CHECK(f.ReadField(0x20200, 32, 8) == 0x105);
+    f.memory.Write32(GuestAddress{0x20300}, 0xffffffff);
+    CHECK(f.Call(4, {fd, 0x20300, 128, 0, 0, 0}) == 128);
+    CHECK(f.Call(3, {fd, 0x20300, 128, 0, 0, 0}) == 128);
+    std::array<std::byte, 128> bytes;
+    f.memory.Read(GuestAddress{0x20300}, bytes);
+    CHECK(std::ranges::all_of(bytes, [](auto byte) { return byte == std::byte{0}; }));
+    CHECK(f.Call(19, {fd, 123, 2, 0, 0, 0}) == 0);
+    CHECK(f.Call(180, {fd, 0x20300, 128, 0, 0, 0}) == -29);
+    CHECK(f.Call(192, {0, 4096, 3, 1, fd, 0}) == -38);  // MAP_SHARED
+    const auto write_only = f.Call(5, {0x20000, 1, 0, 0, 0, 0});
+    REQUIRE(write_only >= 3);
+    CHECK(f.Call(192, {0, 4096, 3, 2, static_cast<std::uint32_t>(write_only), 0}) == -13);
+    CHECK(f.Call(6, {static_cast<std::uint32_t>(write_only), 0, 0, 0, 0, 0}) == 0);
+    CHECK(f.Call(192, {0, 4096, 3, 2, fd, UINT32_MAX}) == -75);
+    // Every valid protection, including EXEC/NONE, and a nonzero offset without overflow.
+    for (std::uint32_t prot = 0; prot < 8; ++prot) {
+        const auto mapped = std::bit_cast<std::uint32_t>(f.Call(192, {0, 4096, prot, 2, fd, 0xfffffffe}));
+        REQUIRE(mapped == 0xb6fff000U);
+        CHECK(f.Call(125, {mapped, 4096, 7, 0, 0, 0}) == 0);
+        std::array<std::byte, 4096> page;
+        f.memory.Read(GuestAddress{mapped}, page);
+        CHECK(std::ranges::all_of(page, [](auto byte) { return byte == std::byte{0}; }));
+        f.memory.Write32(GuestAddress{mapped}, 0x12345678);
+        CHECK(f.memory.Read32(GuestAddress{mapped}) == 0x12345678);
+        // DONTNEED clears anonymous pages; file snapshots would reject it.
+        CHECK(f.Call(220, {mapped, 4096, 4, 0, 0, 0}) == 0);
+        CHECK(f.memory.Read32(GuestAddress{mapped}) == 0);
+        CHECK(f.Call(91, {mapped, 4096, 0, 0, 0, 0}) == 0);
+    }
+    const auto read_only = f.Call(5, {0x20000, 0x240, 0, 0, 0, 0});  // O_CREAT|O_TRUNC|O_RDONLY
+    REQUIRE(read_only >= 3);
+    const auto mapped =
+        std::bit_cast<std::uint32_t>(f.Call(192, {0, 4096, 3, 2, static_cast<std::uint32_t>(read_only), 0}));
+    REQUIRE(mapped == 0xb6fff000U);
+    CHECK(f.Call(6, {static_cast<std::uint32_t>(read_only), 0, 0, 0, 0, 0}) == 0);
+    CHECK(f.Call(6, {fd, 0, 0, 0, 0, 0}) == 0);
+    device.reset();
+    f.memory.Write32(GuestAddress{mapped}, 42);
+    CHECK(f.memory.Read32(GuestAddress{mapped}) == 42);
+    CHECK(f.Call(91, {mapped, 4096, 0, 0, 0, 0}) == 0);
+}
+
+TEST_CASE("VFS-06 ARM null device discards writes returns EOF and rejects mmap") {
+    MetadataSyscallFixture f;
+    ogplay::runtime::BindAndroidMemorySyscalls(f.dispatcher, f.memory);
+    auto device = f.vfs.RegisterCharacterDevice("/dev/null", 0x103, [](auto) -> std::size_t { return 0; },
+                                                {.discard_writes = true, .seek_returns_zero = true});
+    f.WriteString(0x20000, "/dev/null");
+    const auto opened = f.Call(5, {0x20000, 2, 0, 0, 0, 0});
+    REQUIRE(opened >= 3);
+    const auto fd = static_cast<std::uint32_t>(opened);
+    CHECK(f.Call(197, {fd, 0x20200, 0, 0, 0, 0}) == 0);
+    CHECK(f.ReadField(0x20200, 16, 4) == 0020666);
+    CHECK(f.ReadField(0x20200, 32, 8) == 0x103);
+    f.memory.Write32(GuestAddress{0x20300}, 0x12345678);
+    CHECK(f.Call(3, {fd, 0x20300, 128, 0, 0, 0}) == 0);
+    CHECK(f.memory.Read32(GuestAddress{0x20300}) == 0x12345678);
+    CHECK(f.Call(4, {fd, 0x20300, 128, 0, 0, 0}) == 128);
+    CHECK(f.Call(19, {fd, 123, 1, 0, 0, 0}) == 0);
+    CHECK(f.Call(180, {fd, 0x20300, 128, 0, 0, 0}) == -29);
+    CHECK(f.Call(192, {0, 4096, 3, 2, fd, 0}) == -19);
+    CHECK(f.Call(6, {fd, 0, 0, 0, 0, 0}) == 0);
 }
 
 TEST_CASE("VFS-06 ARM device transfers preserve completed bytes on later failure") {

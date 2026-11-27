@@ -250,8 +250,8 @@ VfsCharacterDeviceRegistration::~VfsCharacterDeviceRegistration() {
     state_->reader = {};
 }
 
-void VirtualFileSystem::Impl::RegisterReadOnlyCharacterDevice(const std::string_view path,
-                                                              std::shared_ptr<VfsCharacterDeviceState> state) {
+void VirtualFileSystem::Impl::RegisterCharacterDevice(const std::string_view path,
+                                                      std::shared_ptr<VfsCharacterDeviceState> state) {
     std::scoped_lock lock(mutex_);
     const auto normalized = ResolvePath(path, std::nullopt, aliases_);
     const auto found = files_.find(normalized);
@@ -262,6 +262,8 @@ void VirtualFileSystem::Impl::RegisterReadOnlyCharacterDevice(const std::string_
     file->node_id = file->inode = AllocateNodeIdLocked();
     file->canonical_path = normalized;
     file->spelling = NewPathSpellingLocked(normalized, path);
+    file->writable = state->options.discard_writes;
+    if (file->writable) file->metadata.permissions = 0666U;
     file->character_device = std::move(state);
     files_[normalized] = std::move(file);
 }
@@ -673,13 +675,14 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path, const Vf
         throw VfsError(kEinval, "VFS nonblocking IO requires a character device");
     if (found->second->character_device) {
         if (!found->second->character_device->active) throw VfsError(kEnoent, "VFS character device retired");
-        if (options.write || options.create || options.truncate)
+        if (!found->second->character_device->options.discard_writes &&
+            (options.write || options.create || options.truncate))
             throw VfsError(kEacces, "VFS character device is read-only");
     }
     if (options.write && !found->second->writable) {
         throw VfsError(kEacces, "VFS file is read-only");
     }
-    if (options.write) {
+    if (options.write && !found->second->character_device) {
         if (sandbox_ != nullptr && !IsWritableNamespaceLocked(normalized)) {
             throw VfsError(kEacces, "VFS path is outside the writable namespace");
         }
@@ -718,7 +721,7 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path, const Vf
         snapshot->canonical_path = normalized;
         selected_file = std::move(snapshot);
     }
-    if (options.truncate) {
+    if (options.truncate && !selected_file->character_device) {
         if (!options.write) {
             throw VfsError(kEinval, "VFS truncate requires write access");
         }
@@ -949,6 +952,13 @@ std::size_t VirtualFileSystem::Impl::Write(const std::int32_t descriptor, const 
     if (open->directory) throw VfsError(kEisdir, "VFS descriptor is a directory");
     if (!open->writable) throw VfsError(kEbadf, "VFS descriptor is not writable");
     auto file = open->file;
+    if (file->character_device) {
+        const auto state = file->character_device;
+        std::scoped_lock device_lock(state->mutex);
+        if (!state->active) throw VfsError(kEio, "VFS character device retired");
+        if (!state->options.discard_writes) throw VfsError(kEbadf, "VFS character device is read-only");
+        return source.size();
+    }
     std::scoped_lock file_lock(*file->mutex);
     {
         std::scoped_lock lock(mutex_);
@@ -1001,6 +1011,7 @@ std::size_t VirtualFileSystem::Impl::WriteAt(const std::int32_t descriptor, cons
     if (open->pipe || open->endpoint) throw VfsError(kEspipe, "VFS pipe does not support positioned IO");
     if (!open->writable) throw VfsError(kEbadf, "VFS descriptor is not writable");
     auto file = open->file;
+    if (file->character_device) throw VfsError(kEspipe, "VFS character device does not support positioned IO");
     std::scoped_lock file_lock(*file->mutex);
     {
         std::scoped_lock lock(mutex_);
@@ -1097,6 +1108,15 @@ private:
     std::shared_ptr<File> file_;
     std::shared_ptr<const std::function<void()>> barrier_;
 };
+
+std::optional<bool> VirtualFileSystem::ZeroDeviceMappingReadable(const std::int32_t descriptor) const {
+    std::scoped_lock lock(impl_->mutex_);
+    const auto open = impl_->FindDescriptor(descriptor);
+    if (!open->file || !open->file->character_device || !open->file->character_device->options.zero_page_mapping)
+        return std::nullopt;
+    if (!open->file->character_device->active) throw VfsError(kEio, "VFS character device retired");
+    return open->readable;
+}
 
 VfsMappingSource VirtualFileSystem::CaptureMappingSource(const std::int32_t descriptor,
                                                          std::function<void()> rejected) {
@@ -1207,7 +1227,12 @@ std::uint64_t VirtualFileSystem::Impl::Seek(const std::int32_t descriptor, const
         return result;
     }
     if (open->pipe || open->endpoint) throw VfsError(kEspipe, "VFS pipe is not seekable");
-    if (open->file->character_device) throw VfsError(kEspipe, "VFS character device is not seekable");
+    if (open->file->character_device) {
+        if (!open->file->character_device->options.seek_returns_zero)
+            throw VfsError(kEspipe, "VFS character device is not seekable");
+        open->offset = 0;
+        return 0;
+    }
     std::uint64_t base{};
     if (whence == VfsSeekWhence::current) base = open->offset;
     if (whence == VfsSeekWhence::end) {
@@ -1761,12 +1786,19 @@ GuestFileSystemStats VirtualFileSystem::StatVfs(std::int32_t descriptor) const {
 std::unique_ptr<VfsCharacterDeviceRegistration>
 VirtualFileSystem::RegisterReadOnlyCharacterDevice(const std::string_view path, const std::uint64_t device_number,
                                                    VfsCharacterReader reader) {
+    return RegisterCharacterDevice(path, device_number, std::move(reader));
+}
+
+std::unique_ptr<VfsCharacterDeviceRegistration>
+VirtualFileSystem::RegisterCharacterDevice(const std::string_view path, const std::uint64_t device_number,
+                                           VfsCharacterReader reader, const VfsCharacterDeviceOptions options) {
     if (!reader) throw VfsError(kEinval, "VFS character device requires a reader");
     auto state = std::make_shared<VfsCharacterDeviceState>();
     state->reader = std::move(reader);
     state->device_number = device_number;
+    state->options = options;
     auto registration = std::unique_ptr<VfsCharacterDeviceRegistration>(new VfsCharacterDeviceRegistration(state));
-    impl_->RegisterReadOnlyCharacterDevice(path, std::move(state));
+    impl_->RegisterCharacterDevice(path, std::move(state));
     return registration;
 }
 

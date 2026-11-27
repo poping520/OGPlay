@@ -103,6 +103,60 @@
     return v0
 .end method
 
+.class public Lfixture/ReplacingLoaderApplication;
+.super Landroid/app/Application;
+.field static public replacement:Ljava/lang/ClassLoader;
+
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Landroid/app/Application;-><init>()V
+    return-void
+.end method
+
+.method public onCreate()V
+.registers 9
+    invoke-virtual {v8}, Landroid/app/Application;->getBaseContext()Landroid/content/Context;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/content/Context;->getClassLoader()Ljava/lang/ClassLoader;
+    move-result-object v4
+    invoke-virtual {v0}, Ljava/lang/Object;->getClass()Ljava/lang/Class;
+    move-result-object v1
+    const-string v2, "mPackageInfo"
+    invoke-virtual {v1, v2}, Ljava/lang/Class;->getDeclaredField(Ljava/lang/String;)Ljava/lang/reflect/Field;
+    move-result-object v1
+    const/4 v3, 1
+    invoke-virtual {v1, v3}, Ljava/lang/reflect/Field;->setAccessible(Z)V
+    invoke-virtual {v1, v0}, Ljava/lang/reflect/Field;->get(Ljava/lang/Object;)Ljava/lang/Object;
+    move-result-object v0
+    invoke-virtual {v0}, Ljava/lang/Object;->getClass()Ljava/lang/Class;
+    move-result-object v1
+    const-string v2, "mClassLoader"
+    invoke-virtual {v1, v2}, Ljava/lang/Class;->getDeclaredField(Ljava/lang/String;)Ljava/lang/reflect/Field;
+    move-result-object v1
+    invoke-virtual {v1, v3}, Ljava/lang/reflect/Field;->setAccessible(Z)V
+    new-instance v5, Ldalvik/system/PathClassLoader;
+    const-string v6, ""
+    invoke-direct {v5, v6, v4}, Ldalvik/system/PathClassLoader;-><init>(Ljava/lang/String;Ljava/lang/ClassLoader;)V
+    invoke-virtual {v1, v0, v5}, Ljava/lang/reflect/Field;->set(Ljava/lang/Object;Ljava/lang/Object;)V
+    sput-object v5, Lfixture/ReplacingLoaderApplication;->replacement:Ljava/lang/ClassLoader;
+    return-void
+.end method
+
+.method static public replacementIsCurrent()I
+.registers 2
+    invoke-static {}, Landroid/app/ActivityThread;->currentApplication()Landroid/app/Application;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/app/Application;->getClassLoader()Ljava/lang/ClassLoader;
+    move-result-object v0
+    sget-object v1, Lfixture/ReplacingLoaderApplication;->replacement:Ljava/lang/ClassLoader;
+    if-ne v0, v1, :different
+    const/4 v0, 1
+    return v0
+:different
+    const/4 v0, 0
+    return v0
+.end method
+
 .class public Lfixture/ClinitLoadingApplication;
 .super Landroid/app/Application;
 

@@ -98,7 +98,13 @@ void PublishDexApplication(dx::Interpreter& vm, runtime::DexVmAndroidContext& co
     if (!base.IsValid() || vm.Model().ObjectClass(base) != vm.Linker().ResolveDescriptor("Landroid/app/ContextImpl;"))
         Fail("bound Application does not have a ContextImpl");
     const auto loader = CallOn(vm, base, "getClassLoader", "()Ljava/lang/ClassLoader;").ref;
-    if (loader != vm.ClassLoaders().ApplicationLoader()) Fail("LoadedApk returned a different application ClassLoader");
+    if (loader != vm.ClassLoaders().ApplicationLoader() && vm.Log()) {
+        vm.Log()->Write(core::LogLevel::warn, "session.application", "guest replaced the application ClassLoader", {},
+                        {{"application", application_descriptor},
+                         {"loader_class",
+                          loader.IsValid() ? vm.Linker().Class(vm.Model().ObjectClass(loader)).descriptor : "null"}},
+                        {.mode = core::RateLimitMode::none});
+    }
     context.application = app;
     context.application_base_context = base;
     context.application_descriptor = application_descriptor;

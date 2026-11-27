@@ -523,7 +523,7 @@ void VirtualFileSystem::Impl::RemoveFile(const std::string_view path) {
         throw VfsError(kEnoent, "VFS file not found");
     }
     if (IsSystemPartitionPath(normalized)) throw VfsError(kErofs, "read-only VFS system partition");
-    if (!found->second->writable) {
+    if (!found->second->writable || found->second->character_device) {
         throw VfsError(kEacces, "VFS file is read-only");
     }
     PersistRemovalLocked(normalized);
@@ -678,6 +678,7 @@ void VirtualFileSystem::Impl::Truncate(const std::int32_t descriptor, const std:
         throw VfsError(kEbadf, "VFS descriptor is not writable");
     }
     if (open->pipe || open->endpoint) throw VfsError(kEinval, "VFS stream cannot be truncated");
+    if (open->file->character_device) throw VfsError(kEinval, "VFS character device cannot be truncated");
     if (size > std::numeric_limits<std::size_t>::max()) {
         throw VfsError(kEfbig, "VFS truncate size is not representable");
     }

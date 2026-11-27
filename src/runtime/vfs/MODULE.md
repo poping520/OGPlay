@@ -111,17 +111,25 @@ fstat 报当前快照大小。每份快照保留独立 node_id 供 lease/缓存/
 已有快照继续可读，close/lease 释放回收预算。退役路径可重新注册，不允许覆盖活跃节点。
 VFS 不依赖 provider 所属上层模块，也不调用宿主 procfs。
 
-## 只读字符设备
+## 字符设备
 
-`RegisterReadOnlyCharacterDevice` 注入按次读取的 reader 与 guest device number。
+`RegisterCharacterDevice` 注入按次读取的 reader、guest device number 与可选属性；
+`RegisterReadOnlyCharacterDevice` 保留为无可选属性的只读特例。
 设备共用稳定节点、FD 和操作锁；`Duplicate` 共享打开状态，关闭一个 FD 不影响其副本。
 read 不使用 size/offset 推断 EOF，每次非空读取调用 reader；空读返回 0。
 reader 在全局锁及节点锁外执行，由设备锁串行，短读与 `VfsError` 原样传播，其他标准异常
-转为 EIO，超长返回拒绝。注册句柄析构等待在途读取、撤销回调；旧 FD 后续读取返回 EIO，
+转为 EIO，超长返回拒绝。注册句柄析构等待在途 IO、撤销回调；旧 FD 后续读写返回 EIO，
 新 stat/open 返回 ENOENT，重新注册不会使旧 FD 指向新设备。
 
-stat/fstat 发布字符设备类型、size=0、只读权限和 rdev；目录条目保留 DT_CHR。
-write/create/truncate/unlink/rename/替换拒绝；seek/pread 返回 ESPIPE，lease 返回 ENOTSUP，
+stat/fstat 发布字符设备类型、size=0 和 rdev；目录条目保留 DT_CHR。只读设备维持 0444，
+写入丢弃设备报告 0666，允许读/写/读写打开；O_CREAT/O_TRUNC 不改变该设备（O_EXCL 仍检查存在）。
+写入丢弃直接返回请求长度，不进入可写命名空间检查、overlay 或 backing 物化，不改变 offset/尺寸。
+`ZeroDeviceMappingReadable` 只读查询 fd 是否为零页设备及是否可读；普通字符设备的
+`CaptureMappingSource` 仍返回 ENODEV。`/dev/zero` 的可读 fd 支持任意保护位、忽略 offset 的
+私有零页映射，按匿名映射处理，不捕获文件快照、不登记文件映射、不回写；不可读 fd 返回 EACCES。
+`/dev/zero` 的 MAP_SHARED 返回 ENOSYS，本次不实现 shmem；`/dev/null` mmap 返回 ENODEV。
+只读设备 write/create/truncate 拒绝；所有设备 ftruncate/unlink/rename/替换拒绝。
+seek 默认 ESPIPE，`/dev/zero` 与 `/dev/null` 按 Linux 返回 0；pread 返回 ESPIPE，lease 返回 ENOTSUP，
 fsync 返回 EINVAL。O_NONBLOCK 仅放行字符设备，reader 自身负责就绪策略；本层不创建
 熵池或等待队列，也不扩展 PipePollEvents 的非 pipe 轮询范围。回调不得递归读/撤销自身。
 随机设备的 HAL 装配与具体策略见 [ADR-0129](https://github.com/poping520/OGPlay/blob/6beee68524f76d4a90e4957c9433171f30784425/docs/adr/runtime.md#adr-0129)。

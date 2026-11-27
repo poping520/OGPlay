@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "ogplay/runtime/vfs/vfs.h"
+#include "ogplay/runtime/vfs/sandbox_store.h"
 #include "ogplay/hal/fs.h"
 
 namespace {
@@ -109,6 +110,46 @@ TEST_CASE("VFS-06 character devices read fresh bytes and share descriptor lifeti
     vfs.Close(dup);
     vfs.Close(reused);
     vfs.Close(new_fd);
+    CHECK(vfs.IoStatistics().resource_memory_bytes == 0);
+}
+
+TEST_CASE("VFS-06 writable character devices bypass sandbox storage and retain device restrictions") {
+    using namespace ogplay::runtime;
+    HostMountFixture root;
+    auto sandbox = SandboxStore::Open(root.root, "com.test.devices", "com.test.devices");
+    VirtualFileSystem vfs;
+    const std::array<std::string, 1> writable_roots{"/sdcard"};
+    vfs.AttachSandbox(*sandbox, writable_roots);
+    auto device =
+        vfs.RegisterCharacterDevice("/dev/zero", 0x105,
+                                    [](auto bytes) {
+                                        std::ranges::fill(bytes, std::byte{0});
+                                        return bytes.size();
+                                    },
+                                    {.discard_writes = true, .zero_page_mapping = true, .seek_returns_zero = true});
+    const auto fd = vfs.Open("/dev/zero", {.read = true, .write = true, .create = true, .truncate = true});
+    const auto identity = vfs.Stat("/dev/zero");
+    std::array<std::byte, 16> bytes{};
+    CHECK(vfs.Write(fd, bytes) == bytes.size());
+    ExpectHostErrno([&] { static_cast<void>(vfs.ReadAt(fd, 0, bytes)); }, 29);
+    ExpectHostErrno([&] { static_cast<void>(vfs.WriteAt(fd, 0, bytes)); }, 29);
+    ExpectHostErrno([&] { static_cast<void>(vfs.CaptureReadLease(fd, 0)); }, 95);
+    ExpectHostErrno([&] { static_cast<void>(vfs.CaptureMappingSource(fd, [] {})); }, 19);
+    ExpectHostErrno([&] { vfs.Truncate(fd, 8); }, 22);
+    ExpectHostErrno([&] { vfs.RemoveFile("/dev/zero"); }, 13);
+    ExpectHostErrno([&] { vfs.Rename("/dev/zero", "/sdcard/moved"); }, 13);
+    vfs.PutFile("/sdcard/other", bytes, true);
+    ExpectHostErrno([&] { vfs.Rename("/sdcard/other", "/dev/zero"); }, 13);
+    ExpectHostErrno([&] { vfs.PutFile("/dev/zero", bytes, true); }, 17);
+    CHECK(vfs.DescriptorInfo(fd).size == 0);
+    CHECK(vfs.DescriptorInfo(fd).generation == identity.generation);
+    CHECK(vfs.ZeroDeviceMappingReadable(fd) == std::optional<bool>{true});
+    device.reset();
+    ExpectHostErrno([&] { static_cast<void>(vfs.Write(fd, bytes)); }, 5);
+    ExpectHostErrno([&] { static_cast<void>(vfs.ZeroDeviceMappingReadable(fd)); }, 5);
+    vfs.Close(fd);
+    vfs.FlushAll();
+    CHECK(sandbox->UsedBytes() == 0);
     CHECK(vfs.IoStatistics().resource_memory_bytes == 0);
 }
 

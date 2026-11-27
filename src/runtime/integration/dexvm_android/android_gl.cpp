@@ -729,8 +729,8 @@ dx::IntrinsicHandler Egl14SimpleHandler(const Context& context, std::string name
                 return dx::VmValue::Ref(dx::VmObjectRef{});
             }
             switch (call.arguments[1].AsInt()) {
-            case 0x3053: return MakeString(call, "OGPlay");
-            case 0x3054: return MakeString(call, "1.4 OGPlay");
+            case 0x3053: return MakeString(call, context->session->ManagedEglString(0x3053U));
+            case 0x3054: return MakeString(call, context->session->ManagedEglString(0x3054U));
             case 0x3055: return MakeString(call, context->session->ManagedEglString(0x3055U));
             case 0x308D: return MakeString(call, "OpenGL_ES");
             default: return dx::VmValue::Ref(dx::VmObjectRef{});

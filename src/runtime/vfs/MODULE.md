@@ -141,7 +141,8 @@ fsync 返回 EINVAL。O_NONBLOCK 仅放行字符设备，reader 自身负责就�
 ```
 
 `meta.toml` 只接受 schema 3，并校验 installation id、真实 package、versionCode 诊断值与
-每实例 `ANDROID_ID`。旧 `fs/`、旧/缺失 schema、未知或混合布局、不匹配 meta 明确失败；
+每实例 `ANDROID_ID` 与 `serialno`（`ro.serialno`，与 ANDROID_ID 各取独立 64 位熵，均为 16 位小写十六进制，
+缺失时首次启动生成并写回）。旧 `fs/`、旧/缺失 schema、未知或混合布局、不匹配 meta 明确失败；
 不迁移、不删除、不以空沙盒降级。
 
 映射唯一集中在 `SandboxStore`：语义根按 VFS 的 ASCII case-fold 匹配并规范化；

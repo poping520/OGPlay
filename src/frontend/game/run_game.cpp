@@ -224,7 +224,10 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                  {{"data_root", PathUtf8(bundled_data.root)}});
     const auto device = session::LoadDevicePreset(bundled_data.root / "devices", device_preset);
     logger.Write(core::LogLevel::info, "frontend.game", "device preset selected", {},
-                 {{"device_preset", device.id}, {"model", device.build.model}});
+                 {{"device_preset", device.id},
+                  {"model", device.build.model},
+                  {"cpu_hardware", device.cpu.cpuinfo_hardware},
+                  {"gl_renderer", device.gpu.renderer}});
     const auto profiles = profiles_directory
                               ? session::TitleProfileCatalog::LoadDirectory(*profiles_directory)
                               : session::TitleProfileCatalog::LoadOptionalDirectory(bundled_data.profiles_directory);
@@ -486,6 +489,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             dex_context->host_display_sleep_inhibited = window->State().display_sleep_inhibited;
             dex_context->api_level = static_cast<std::int32_t>(api_level);
             dex_context->device_state.build_identity = device.build;
+            dex_context->device_state.build_identity.serialno = sandbox.serialno;
             // Tags are language-REGION, the device's locale as Android reports it.
             const auto guest_tag = app::UiLanguageTag(guest_language);
             dex_context->locale_language = std::string(guest_tag.substr(0, 2));
@@ -575,7 +579,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         app_request.proc_facts.cpu = {
             cpu_config.cores,
             cpu_config.frequency_mhz,
-            {cpu_config.execution.limit_parallelism, cpu_config.execution.max_mticks_per_second}};
+            {cpu_config.execution.limit_parallelism, cpu_config.execution.max_mticks_per_second},
+            {device.cpu.cpuinfo_hardware, device.cpu.midr}};
         app_request.manifest = manifest;
         app_request.native_libraries = libraries;
         app_request.system_libraries = system_sources;
@@ -589,7 +594,10 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         app_request.backend = NativeBackend();
         app_request.filesystem = &filesystem;
         app_request.progress = runtime_progress;
-        app_request.boundary_options = {.async_present_readback = !mcp_manual_step, .frame_period_ns = frame_period_ns};
+        app_request.boundary_options = {.async_present_readback = !mcp_manual_step,
+                                        .frame_period_ns = frame_period_ns,
+                                        .gl_vendor = device.gpu.vendor,
+                                        .gl_renderer = device.gpu.renderer};
         app_request.guest_call_slice_observer = guest_slice_observer;
         app_request.guest_call_slice_observer_thread = std::this_thread::get_id();
         app_request.platform = {

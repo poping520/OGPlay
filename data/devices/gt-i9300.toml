@@ -14,13 +14,22 @@ cpu_abi = "armeabi-v7a"
 
 [build]
 product = "m0"
+id = "KTU84Q"
+version_incremental = "I9300XXUGNG3"
+display_id = "KTU84Q.I9300XXUGNG3"
 fingerprint = "samsung/m0xx/m0:4.4.4/KTU84Q/I9300XXUGNG3:user/release-keys"
 version_release = "4.4.4"
 version_sdk = 19
 
 [cpu]
 name = "Exynos 4412"
+cpuinfo_hardware = "SMDK4x12"
+midr = "0x413fc090"
 cores = 4
+
+[board]
+hardware = "smdk4x12"
+platform = "exynos4"
 
 [gpu]
 vendor = "ARM"

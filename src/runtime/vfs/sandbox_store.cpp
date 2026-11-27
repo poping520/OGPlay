@@ -192,6 +192,7 @@ public:
     std::uint64_t temporaries_removed{};
     std::uint32_t version_code{};
     std::string android_id;
+    std::string serialno;
     // Guest path -> entry, ordered so enumeration is deterministic.
     std::map<std::string, SandboxEntry, std::less<>> entries;
     // Deleted directories whose host directory still holds child tombstones;
@@ -453,6 +454,8 @@ public:
                 version_code = ParseMetaInteger<std::uint32_t>(value, key);
             } else if (key == "android_id") {
                 android_id = unquote(value);
+            } else if (key == "serialno") {
+                serialno = unquote(value);
             } else {
                 // No guessing at migrations: an unknown key means this
                 // directory was written by something else.
@@ -470,6 +473,9 @@ public:
         if (!android_id.empty() && !IsAndroidId(android_id)) {
             throw VfsError(kEinval, "sandbox meta.toml has a malformed android_id");
         }
+        if (!serialno.empty() && !IsAndroidId(serialno)) {
+            throw VfsError(kEinval, "sandbox meta.toml has a malformed serialno");
+        }
     }
 
     void WriteMeta() const {
@@ -483,6 +489,11 @@ public:
         if (!android_id.empty()) {
             text.append("android_id = \"");
             text.append(android_id);
+            text.append("\"\n");
+        }
+        if (!serialno.empty()) {
+            text.append("serialno = \"");
+            text.append(serialno);
             text.append("\"\n");
         }
         const auto target = directory / kMetaName;
@@ -903,6 +914,18 @@ std::string SandboxStore::EnsureAndroidId(const std::span<const std::byte> entro
 std::optional<std::string> SandboxStore::AndroidId() const {
     if (impl_->android_id.empty()) return std::nullopt;
     return impl_->android_id;
+}
+
+std::string SandboxStore::EnsureSerialNumber(const std::span<const std::byte> entropy) {
+    if (!impl_->serialno.empty()) return impl_->serialno;
+    impl_->serialno = AndroidIdFromEntropy(entropy);  // same 16-hex shape
+    impl_->WriteMeta();
+    return impl_->serialno;
+}
+
+std::optional<std::string> SandboxStore::SerialNumber() const {
+    if (impl_->serialno.empty()) return std::nullopt;
+    return impl_->serialno;
 }
 
 }  // namespace ogplay::runtime

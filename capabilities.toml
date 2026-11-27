@@ -215,8 +215,8 @@ note = "ogplay 桌面主入口与 ogplay-cli 共用 ogplaycore；Windows 使用 
 
 [frontend.device_presets]
 status = "partial"
-test = "tools.device_presets_current; tools.device_presets_validator; tests/runtime/api19_guest_process_tests.cpp#real API19 libc trie lookup; tests/dexvm/bootdex_library_tests.cpp#API19 Build family; tests/frontend/library_lock_tests.cpp#Library launch resolution; webui/apps/gui/settings/settings.test.ts"
-note = "data/devices schema 1 内置 Galaxy S2–S5 五款，GUI device_preset 与 run-apk --device-preset 选择（默认 gt-i9300）。预设注入 ro.product.*（manufacturer/brand/name/model/device/board/cpu.abi）与 ro.build.product/fingerprint，Java、getprop 与 native 属性区同源（native 为启动快照）。逐字段自定义、cpuinfo、GPU 字符串、分辨率与内存未接入；fingerprint 为合成值。"
+test = "tools.device_presets_current; tools.device_presets_validator; tests/runtime/api19_guest_process_tests.cpp#real API19 libc trie lookup; tests/runtime/guest_cpu_environment_tests.cpp#Device preset cpuinfo; tests/runtime/boundary/integration/android_egl_lifecycle_tests.cpp#Device preset GL vendor; tests/dexvm/bootdex_library_tests.cpp#API19 Build family; tests/frontend/library_lock_tests.cpp#Library launch resolution; webui/apps/gui/settings/settings.test.ts"
+note = "data/devices 内置 Galaxy S2–S5 五款，GUI device_preset 与 run-apk --device-preset 选择（默认 gt-i9300）。预设注入 ro.product.*、ro.build.*、ro.hardware/board.platform，ro.serialno 取自沙盒（Java、getprop、native 同源），cpuinfo Hardware/MIDR 与 GL_VENDOR/RENDERER。逐字段自定义、核数/分辨率/内存联动未接入；fingerprint 为合成值。"
 
 [frontend.gui_library]
 status = "complete"
@@ -2041,7 +2041,7 @@ note = "ADR-0079：ARM legacy/RT 帧支持 ARM/Thumb/VFP、备用栈、嵌套及
 [runtime.guest_cpu_facts]
 status = "partial"
 test = "tests/runtime/guest_cpu_environment_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp#BND-42; tests/frontend/gui_launch_tests.cpp#BND-42"
-note = "ADR-0080：冻结 1..32 核、1..10000 MHz（默认 1/1000）；cpuinfo、CPU sysfs、sysconf 96/97 与 Java 核数同源，可由 CLI/单游戏配置。cpuinfo 按 Linux 3.4 ARM SMP 格式，虚拟 Cortex-A9 r0p0 匹配既有 Features，BogoMIPS=2×MHz；板级 Revision/Serial 为零。Java sysconf 39/40 返回 4096，其余 selector 明确失败；proc/stat、负载统计及全局预设未实现。执行配额见 cpu.execution_budget。"
+note = "ADR-0080：冻结 1..32 核、1..10000 MHz（默认 1/1000）；cpuinfo、CPU sysfs、sysconf 96/97 与 Java 核数同源，可由 CLI/单游戏配置。cpuinfo 按 Linux 3.4 ARM SMP 格式，默认虚拟 Cortex-A9 r0p0，预设替换 Hardware/MIDR，Features 固定；板级 Revision/Serial 为零。Java sysconf 39/40 返回 4096，其余 selector 明确失败；proc/stat、负载统计及全局预设未实现。执行配额见 cpu.execution_budget。"
 
 [cpu.execution_budget]
 status = "complete"

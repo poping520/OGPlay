@@ -153,7 +153,10 @@ struct SimulatedDeviceState final {
     // fields are not published, so Build reads them as "unknown".
     struct BuildIdentity final {
         std::string manufacturer, brand, name, model, device, board, cpu_abi;
-        std::string build_product, fingerprint;
+        std::string build_product, build_id, incremental, fingerprint;  // ro.build.product/id/version.incremental
+        std::string hardware, board_platform;                           // ro.hardware / ro.board.platform
+        std::string display_id;                                         // ro.build.display.id
+        std::string serialno;  // ro.serialno: per installation (sandbox), not from the preset
 
         bool operator==(const BuildIdentity&) const = default;
     } build_identity;

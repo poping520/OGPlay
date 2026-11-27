@@ -317,14 +317,56 @@ TEST_CASE("Android EGL errors and API binding are isolated by guest thread") {
           0x30A0U);
 }
 
+TEST_CASE("Device preset GL vendor and renderer replace ANGLE in every glGetString path") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) return;
+    BoundaryFixture f(1, nullptr, {}, true, {}, false, ogplay::gles::CompressedTextureFamily::all, 0, "ARM",
+                      "Mali-400 MP");
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1U}) == 1U);
+    const auto read = [&f](const std::uint32_t pointer) {
+        REQUIRE(pointer != 0U);
+        const ogplay::memory::GuestAddress address{pointer};
+        std::string text(f.memory.CStringLength(address, 4096U, 1U), '\0');
+        f.memory.Read(address, std::as_writable_bytes(std::span(text)), 1U);
+        return text;
+    };
+    // Version 2 goes through the GLES2/3 dispatch, version 1 through the fixed-function strings.
+    for (const auto version : {2U, 1U}) {
+        CAPTURE(version);
+        const auto surface = AuditSurface(f), context = AuditContext(f, version);
+        AuditBind(f, context, surface);
+        CHECK(read(AuditGl(f, "glGetString", {0x1F00U})) == "ARM");
+        CHECK(read(AuditGl(f, "glGetString", {0x1F01U})) == "Mali-400 MP");
+        const auto gl_version = read(AuditGl(f, "glGetString", {0x1F02U}));
+        CAPTURE(gl_version);
+        // The backend context version is reported as is; only the ANGLE suffix goes.
+        CHECK(gl_version.starts_with(version == 1U ? "OpenGL ES-CM 1.1" : "OpenGL ES "));
+        CHECK(gl_version.find("ANGLE") == std::string::npos);
+        if (version == 2U) {
+            const auto shading = read(AuditGl(f, "glGetString", {0x8B8CU}));
+            CAPTURE(shading);
+            CHECK(shading.starts_with("OpenGL ES GLSL ES "));
+            CHECK(shading.find("ANGLE") == std::string::npos);
+        }
+        REQUIRE(f.Call("libEGL.so", "eglMakeCurrent", {1U, 0U, 0U, 0U}) == 1U);
+    }
+    f.boundary.OpenManagedSurface();  // Java GL10/GLES20 glGetString
+    CHECK(f.boundary.ManagedGlString(0x1F00U) == "ARM");
+    CHECK(f.boundary.ManagedGlString(0x1F01U) == "Mali-400 MP");
+    CHECK(f.boundary.ManagedGlString(0x1F02U).find("ANGLE") == std::string::npos);
+}
+
 TEST_CASE("Android EGL query strings and pbuffer attributes use guest memory") {
     BoundaryFixture fixture;
     REQUIRE(fixture.Call("libEGL.so", "eglInitialize", {1U}) == 1U);
     const auto vendor = fixture.Call("libEGL.so", "eglQueryString",
                                      {1U, 0x3053U, 0U, 0U});
     REQUIRE(vendor != 0U);
-    CHECK(fixture.memory.CStringLength(
-              ogplay::memory::GuestAddress{vendor}, 64U, 1U) == 6U);
+    std::string vendor_text(fixture.memory.CStringLength(ogplay::memory::GuestAddress{vendor}, 64U, 1U), '\0');
+    fixture.memory.Read(ogplay::memory::GuestAddress{vendor}, std::as_writable_bytes(std::span(vendor_text)), 1U);
+    CHECK(vendor_text == "Android");  // libEGL's own answer on every Android device
+    const auto version = fixture.Call("libEGL.so", "eglQueryString", {1U, 0x3054U, 0U, 0U});
+    CHECK(fixture.memory.CStringLength(ogplay::memory::GuestAddress{version}, 64U, 1U) ==
+          std::string_view("1.4 Android META-EGL").size());
 
     const auto attributes = fixture.output;
     fixture.bus.Write32(attributes, 0x3057U, 1U);

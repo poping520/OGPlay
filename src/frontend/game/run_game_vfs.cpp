@@ -335,6 +335,7 @@ SandboxSession OpenSandbox(const SandboxOptions& options, const std::string& pac
         session.root = *session.temporary_root;
         session.store = runtime::SandboxStore::Create(session.root, session.installation_id, package);
         session.android_id = session.store->EnsureAndroidId(entropy);
+        session.serialno = session.store->EnsureSerialNumber(AndroidIdEntropy());
         session.store->RecordVersionCode(version_code);
         return session;
     }
@@ -364,6 +365,8 @@ SandboxSession OpenSandbox(const SandboxOptions& options, const std::string& pac
         if (session.android_id.empty()) {
             session.android_id = session.store->EnsureAndroidId(AndroidIdEntropy());
         }
+        session.serialno = session.store->SerialNumber().value_or("");
+        if (session.serialno.empty()) session.serialno = session.store->EnsureSerialNumber(AndroidIdEntropy());
         session.store->RecordVersionCode(version_code);
     } catch (const runtime::VfsError& error) {
         // The repair action has to be in the message: the user owns this

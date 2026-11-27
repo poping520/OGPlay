@@ -42,7 +42,7 @@ guest 主线程在独立宿主线程持续执行 ROM Looper.loop。session 提�
 - `SelectApkCompatibilityProfile`：按 package 与可选 version/hash 约束选择覆盖；
   无匹配或纯 Java APK 可走 generic startup，ABI 只由 APK inventory resolver 决定。
 - `LoadDevicePreset(directory, id)` / `LoadDevicePresetText`：读取 data/devices schema 1 设备预设，
-  严格校验键、类型、范围与 fingerprint 格式（与 tools/validate_devices.py 一致），未知字段失败；
+  严格校验键、类型、范围，fingerprint 必须与 brand/name/device/build id/incremental 一致（与 tools/validate_devices.py 相同），未知字段失败；
   当前只有 Build 身份供运行时使用，cpu/gpu/display/memory 表仅校验并保留。
 - `TitleProfileCatalog::LoadDirectory`：稳定加载目录，校验非法及交叠身份；已删除旧的
   单根库 exact adapter，前端只投影 profile id。

@@ -92,6 +92,11 @@ public:
     [[nodiscard]] std::string EnsureAndroidId(std::span<const std::byte> entropy);
     // Empty for an untouched schema-1 sandbox.
     [[nodiscard]] std::optional<std::string> AndroidId() const;
+    // Sandbox-stable ro.serialno (Build.SERIAL): 16 lowercase hex digits drawn
+    // from its own 64 bits of OS entropy, independent of ANDROID_ID, and
+    // created on the first launch that lacks one.
+    [[nodiscard]] std::string EnsureSerialNumber(std::span<const std::byte> entropy);
+    [[nodiscard]] std::optional<std::string> SerialNumber() const;
 
     // Host filename translation, exposed for its own tests: guest path
     // segments become host-safe names losslessly in both directions.

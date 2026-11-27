@@ -646,6 +646,33 @@ TEST_CASE("sandbox store creates and preserves one API 19 ANDROID_ID") {
     CHECK_THROWS_AS(static_cast<void>(invalid->EnsureAndroidId(std::span{first}.first(7))), VfsError);
 }
 
+TEST_CASE("sandbox store creates and preserves one serial number apart from ANDROID_ID") {
+    const TemporaryRoot root("serialno");
+    constexpr std::array<std::byte, 8> android{std::byte{0x01}, std::byte{0x23}, std::byte{0x45}, std::byte{0x67},
+                                               std::byte{0x89}, std::byte{0xab}, std::byte{0xcd}, std::byte{0xef}};
+    constexpr std::array<std::byte, 8> serial{std::byte{0x4d}, std::byte{0xf1}, std::byte{0x2a}, std::byte{0x00},
+                                              std::byte{0x9c}, std::byte{0x3e}, std::byte{0x71}, std::byte{0x05}};
+    constexpr std::array<std::byte, 8> ignored{std::byte{0xff}, std::byte{0xee}, std::byte{0xdd}, std::byte{0xcc},
+                                               std::byte{0xbb}, std::byte{0xaa}, std::byte{0x99}, std::byte{0x88}};
+    {
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
+        CHECK_FALSE(store->SerialNumber().has_value());
+        CHECK(store->EnsureAndroidId(android) == "0123456789abcdef");
+        CHECK(store->EnsureSerialNumber(serial) == "4df12a009c3e7105");
+        CHECK(store->EnsureSerialNumber(ignored) == "4df12a009c3e7105");
+    }
+    auto reopened = SandboxStore::Open(root.path, kPackage, kPackage);
+    CHECK(reopened->SerialNumber() == "4df12a009c3e7105");
+    CHECK(reopened->AndroidId() == "0123456789abcdef");
+    std::ifstream input(root.path / kPackage / "meta.toml");
+    const std::string meta{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+    CHECK(meta.find("serialno = \"4df12a009c3e7105\"") != std::string::npos);
+    input.close();
+    std::ofstream(root.path / kPackage / "meta.toml", std::ios::trunc)
+        << "schema = 3\npackage = \"" << kPackage << "\"\nversion_code = 0\nserialno = \"NOT-HEX\"\n";
+    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage, kPackage)), VfsError);
+}
+
 TEST_CASE("sandbox store clears every guest write and keeps its identity") {
     const TemporaryRoot root("clear");
     constexpr std::array<std::byte, 8> entropy{std::byte{0x01}, std::byte{0x23}, std::byte{0x45}, std::byte{0x67},

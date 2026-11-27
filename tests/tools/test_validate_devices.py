@@ -90,6 +90,13 @@ class DevicePresetTests(unittest.TestCase):
             self.text.replace(fingerprint, fingerprint.replace(":4.4.4/", ":4.3/")),
             self.text.replace(fingerprint, fingerprint.replace(":user/", ":eng/")),
             self.text.replace(fingerprint, fingerprint.replace("KTU84Q", "KTU 84Q")),
+            self.text.replace('id = "KTU84Q"', 'id = "KTU84P"'),
+            self.text.replace('version_incremental = "I9300XXUGNG3"', 'version_incremental = "I9300XXUGNG4"'),
+            self.text.replace('id = "KTU84Q"', 'id = "KTU 84Q"').replace(fingerprint, fingerprint.replace("KTU84Q", "KTU 84Q")),
+            self.text.replace('midr = "0x413fc090"', 'midr = "0x4130c090"'),
+            self.text.replace('midr = "0x413fc090"', 'midr = "0x413FC090"'),
+            self.text.replace('midr = "0x413fc090"', 'midr = "413fc090"'),
+            self.text.replace('renderer = "Mali-400 MP"', 'renderer = "Mali-400 MP\\n"'),
             self.text + "\n[extra]\nunknown = 1\n",
             "#" * (MAX_BYTES + 1),
         ]

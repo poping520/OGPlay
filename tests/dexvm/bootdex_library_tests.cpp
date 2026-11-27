@@ -99,6 +99,7 @@ TEST_CASE("API19 Build family executes from BootDex without class intrinsics") {
         f.context->device_state.build_identity =
             ogplay::session::LoadDevicePreset(std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/devices", "sm-g900f")
                 .build;
+        f.context->device_state.build_identity.serialno = "4df12a009c3e7105";  // per sandbox in production
         for (const auto descriptor :
              {"Landroid/os/Build;", "Landroid/os/Build$VERSION;", "Landroid/os/Build$VERSION_CODES;"}) {
             const auto type = f.linker.ResolveDescriptor(descriptor);
@@ -132,7 +133,12 @@ TEST_CASE("API19 Build family executes from BootDex without class intrinsics") {
         CHECK(string_field("Landroid/os/Build;", "CPU_ABI") == "armeabi-v7a");
         CHECK(string_field("Landroid/os/Build;", "FINGERPRINT") ==
               "samsung/kltexx/klte:4.4.4/KTU84Q/G900FXXU1BNL9:user/release-keys");
-        CHECK(string_field("Landroid/os/Build;", "HARDWARE") == "unknown");
+        CHECK(string_field("Landroid/os/Build;", "HARDWARE") == "qcom");
+        CHECK(string_field("Landroid/os/Build;", "ID") == "KTU84Q");
+        CHECK(string_field("Landroid/os/Build;", "DISPLAY") == "KTU84Q.G900FXXU1BNL9");
+        CHECK(string_field("Landroid/os/Build;", "TYPE") == "user");
+        CHECK(string_field("Landroid/os/Build;", "SERIAL") == "4df12a009c3e7105");
+        CHECK(string_field("Landroid/os/Build$VERSION;", "INCREMENTAL") == "G900FXXU1BNL9");
         CHECK(string_field("Landroid/os/Build;", "TAGS") == "release-keys");
         CHECK(string_field("Landroid/os/Build$VERSION;", "RELEASE") == "4.4.4");
         CHECK(string_field("Landroid/os/Build$VERSION;", "SDK") == "19");

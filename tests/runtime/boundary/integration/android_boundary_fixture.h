@@ -62,7 +62,7 @@ public:
         const bool allow_single_stage_texcoord_fallback = true, ogplay::runtime::AndroidLooperHooks loopers = {},
         const bool async_readback = false,
         const ogplay::gles::CompressedTextureFamily texture_family = ogplay::gles::CompressedTextureFamily::all,
-        const std::uint64_t frame_period_ns = 0);
+        const std::uint64_t frame_period_ns = 0, std::string gl_vendor = {}, std::string gl_renderer = {});
 
     ogplay::runtime::SupervisorCallProgress CallProgress(const std::string_view library, const std::string_view symbol,
                                                          const std::array<std::uint32_t, 4> arguments = {});

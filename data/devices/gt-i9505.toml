@@ -14,13 +14,22 @@ cpu_abi = "armeabi-v7a"
 
 [build]
 product = "jflte"
+id = "KTU84Q"
+version_incremental = "I9505XXUHOJ2"
+display_id = "KTU84Q.I9505XXUHOJ2"
 fingerprint = "samsung/jfltexx/jflte:4.4.4/KTU84Q/I9505XXUHOJ2:user/release-keys"
 version_release = "4.4.4"
 version_sdk = 19
 
 [cpu]
 name = "Snapdragon 600"
+cpuinfo_hardware = "SAMSUNG JF"
+midr = "0x511f06f0"
 cores = 4
+
+[board]
+hardware = "qcom"
+platform = "msm8960"
 
 [gpu]
 vendor = "Qualcomm"

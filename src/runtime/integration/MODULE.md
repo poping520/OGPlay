@@ -39,7 +39,9 @@ thread owner join，不能依赖惰性 native context 是否存在来区分。
 
 `GuestCpuEnvironment` 由进程拥有并冻结 CPU 配置；在 VFS 发布可撤销只读 CPU 信息与
 sysfs 拓扑/标称频率。cpuinfo 遵循 Linux 3.4 ARM SMP 格式，微架构身份从不可变
-虚拟 Cortex-A9 模型派生并匹配 Dynarmic Features；BogoMIPS 为 2 × 标称 MHz，板级
+虚拟 Cortex-A9 模型派生并匹配 Dynarmic Features；配置带设备预设的 `GuestCpuIdentity` 时只替换
+Hardware 行与 MIDR（implementer/variant/part/revision 及 Processor 行的 rev），Features 不随之改变，
+PL0 UNDEFINED 分类仍按 Cortex-A9 模型；BogoMIPS 为 2 × 标称 MHz，板级
 Revision/Serial 为无板级信息时的零值，不采样宿主。API19 `sysconf` 导出通过进程私有 RX guest 桥处理核数 selector
 96/97，其余参数保持原 ABI 尾调用原 libc。重定位、dlsym 与 linker 视图使用同一导出；
 不修改原 ELF 指令。DexVM bridge 从该进程取得核数，禁止另用宿主硬件事实。

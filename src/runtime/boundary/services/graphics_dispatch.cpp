@@ -149,6 +149,16 @@ std::uint32_t QueryStringOffset(const std::uint32_t parameter) {
 
 }  // namespace
 
+std::string GuestGlString(gles::AngleFrame& frame, const std::uint32_t parameter, const GuestGlIdentity& identity) {
+    if (parameter == 0x1F00U && !identity.vendor.empty()) return identity.vendor;
+    if (parameter == 0x1F01U && !identity.renderer.empty()) return identity.renderer;
+    auto value = frame.GetString(parameter);
+    if (parameter == 0x1F02U || parameter == 0x8B8CU) {
+        if (const auto suffix = value.find(" (ANGLE"); suffix != std::string::npos) value.erase(suffix);
+    }
+    return value;
+}
+
 std::vector<std::string_view> GuestGlesExtensions(gles::AngleFrame& frame) {
     auto values = GuestGlesExtensions(frame.GetString(0x1F03U));
     const auto& compressed = frame.TextureCapabilities();
@@ -246,6 +256,8 @@ public:
     }
 
     void SetBufferMappings(BufferMappingService& mappings) noexcept { mappings_ = &mappings; }
+
+    void SetGuestGlIdentity(GuestGlIdentity identity) { gl_identity_ = std::move(identity); }
 
     std::optional<std::uint32_t> Dispatch(
         const gles::GlesThunkId function_id,
@@ -652,8 +664,7 @@ public:
                 }
                 return WriteQueryString(args[0], value, tid);
             }
-            return WriteQueryString(
-                args[0], RequireFrame(frame, symbol).GetString(args[0]), tid);
+            return WriteQueryString(args[0], GuestGlString(RequireFrame(frame, symbol), args[0], gl_identity_), tid);
         }
         if (function_id == Id(Gles2Function::get_error)) {
             if (const auto error = context_.Shared().TakeGuestError();
@@ -1105,6 +1116,7 @@ private:
     memory::AddressSpace& address_space_;
     GuestGlContext& context_;
     BufferMappingService* mappings_{};
+    GuestGlIdentity gl_identity_;
     bool query_string_page_mapped_{};
 };
 
@@ -1117,6 +1129,10 @@ AndroidBoundaryGles::AndroidBoundaryGles(memory::AddressSpace& address_space,
 AndroidBoundaryGles::~AndroidBoundaryGles() = default;
 void AndroidBoundaryGles::SetBufferMappings(BufferMappingService& mappings) noexcept {
     impl_->SetBufferMappings(mappings);
+}
+
+void AndroidBoundaryGles::SetGuestGlIdentity(GuestGlIdentity identity) {
+    impl_->SetGuestGlIdentity(std::move(identity));
 }
 
 std::optional<std::uint32_t> AndroidBoundaryGles::Dispatch(

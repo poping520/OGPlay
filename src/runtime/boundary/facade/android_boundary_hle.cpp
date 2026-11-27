@@ -151,6 +151,8 @@ public:
           libc_override_module_(call_services_), libdl_override_module_(call_services_, options.dynamic_link) {
         graphics_context_.compressed_texture_family = options.compressed_texture_family;
         graphics_context_.logger = options.logger;
+        gl_identity_ = {options.gl_vendor, options.gl_renderer};
+        gles_dispatch_.SetGuestGlIdentity(gl_identity_);
         graphics_context_.submit_unswapped_work = &ServiceSubmitUnswappedWork;
         detail::BindAndroidBoundaryGles1Core(
             gles1_dispatch_, gles1_state_, address_space_, layout_.factor,
@@ -193,7 +195,7 @@ public:
                         result += "GL_OES_EGL_image ";
                     return result;
                 }
-                default: return RequireFrame("glGetString").GetString(parameter);
+                default: return GuestGlString(RequireFrame("glGetString"), parameter, gl_identity_);
                 }
             });
         detail::BindAndroidBoundaryGles1Legacy(
@@ -330,7 +332,7 @@ public:
             }
             return value;
         }
-        return frame.GetString(parameter);
+        return GuestGlString(frame, parameter, gl_identity_);
     }
 
     [[nodiscard]] std::string ManagedEglString(const std::uint32_t parameter) {
@@ -1082,6 +1084,7 @@ private:
     detail::AndroidBoundaryGles1State gles1_state_;
     detail::AndroidBoundaryGles1DrawState gles1_draw_state_;
     BufferMappingService buffer_mappings_{address_space_};
+    GuestGlIdentity gl_identity_;
     detail::AndroidBoundaryGles1QueryStrings gles1_query_strings_{address_space_};
     detail::AndroidBoundaryGles1LegacyState gles1_legacy_state_;
     gles::GlesDispatchTable gles1_dispatch_{gles::GlesApi::gles1};

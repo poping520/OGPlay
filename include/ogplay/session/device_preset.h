@@ -16,19 +16,22 @@ public:
 };
 
 // One data/devices/<id>.toml (schema 1; tools/validate_devices.py is the
-// executable schema). Only the Build identity reaches the runtime today; the
-// cpu/gpu/display/memory tables are validated and kept for later consumers.
+// executable schema). The runtime consumes the Build identity (including
+// [board]), the cpuinfo identity and the GL strings; cpu name/cores, display
+// and memory are validated and kept for display or later consumers.
 struct DevicePreset final {
     std::string id, label, description;
     runtime::SimulatedDeviceState::BuildIdentity build;
 
     struct Cpu final {
         std::string name;
+        std::string cpuinfo_hardware;  // /proc/cpuinfo "Hardware"
+        std::uint32_t midr{};          // implementer/variant/part/revision
         std::uint32_t cores{};
     } cpu;
 
     struct Gpu final {
-        std::string vendor, renderer;
+        std::string vendor, renderer;  // GL_VENDOR / GL_RENDERER
     } gpu;
 
     struct Display final {

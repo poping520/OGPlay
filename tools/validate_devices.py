@@ -13,10 +13,12 @@ MAX_PRESETS = 128
 ID = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
 # Android system property values hold at most PROP_VALUE_MAX - 1 = 91 bytes.
 PROPERTY = 91
-FINGERPRINT_TAIL = re.compile(r":4\.4\.4/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+:user/release-keys")
+# ARMv7 MIDR as 0x + 8 lowercase hex digits; bits 19:16 must be 0xf (CPUID scheme).
+MIDR = re.compile(r"0x[0-9a-f]{8}")
+BUILD_TOKEN = re.compile(r"[A-Za-z0-9._-]+")
 # Exact keys and scalar rules are the executable schema 1 definition.
 # Integers use inclusive bounds; strings use UTF-8 byte limits or finite choices.
-# ("prop", n) strings become system property values: printable ASCII, at most n bytes.
+# ("prop", n) strings are guest-visible ASCII (system properties, cpuinfo, GL strings): printable, at most n bytes.
 SCHEMA = {
     "schema": (int, 1, 1), "id": (str, 64), "label": (str, 128),
     "description": (str, 512),
@@ -26,11 +28,14 @@ SCHEMA = {
         "cpu_abi": (str, {"armeabi-v7a"}),
     },
     "build": {
-        "product": ("prop", PROPERTY), "fingerprint": ("prop", PROPERTY),
+        "product": ("prop", PROPERTY), "id": ("prop", PROPERTY), "version_incremental": ("prop", PROPERTY),
+        "display_id": ("prop", PROPERTY),
+        "fingerprint": ("prop", PROPERTY),
         "version_release": (str, {"4.4.4"}), "version_sdk": (int, 19, 19),
     },
-    "cpu": {"name": (str, 128), "cores": (int, 1, 32)},
-    "gpu": {"vendor": (str, 128), "renderer": (str, 128)},
+    "cpu": {"name": (str, 128), "cpuinfo_hardware": ("prop", 64), "midr": ("prop", 10), "cores": (int, 1, 32)},
+    "board": {"hardware": ("prop", PROPERTY), "platform": ("prop", PROPERTY)},
+    "gpu": {"vendor": ("prop", 128), "renderer": ("prop", 128)},
     "display": {"width": (int, 240, 4096), "height": (int, 240, 4096),
                 "density_dpi": (int, 72, 960)},
     "memory": {"ram_mb": (int, 128, 8192)},
@@ -84,11 +89,19 @@ def load_preset(path: Path) -> dict:
         validate_fields(value, SCHEMA)
         if not ID.fullmatch(value["id"]) or path.name != value["id"] + ".toml":
             raise PresetError("id must be lowercase kebab-case and match filename")
+        midr = value["cpu"]["midr"]
+        if not MIDR.fullmatch(midr) or (int(midr, 16) >> 16) & 0xF != 0xF:
+            raise PresetError("cpu.midr: expected 0x + 8 lowercase hex digits with architecture 0xf")
         product = value["product"]
         head = f"{product['brand']}/{product['name']}/{product['device']}"
-        fingerprint = value["build"]["fingerprint"]
-        if not fingerprint.startswith(head) or not FINGERPRINT_TAIL.fullmatch(fingerprint[len(head):]):
-            raise PresetError(f"build.fingerprint: expected {head}:4.4.4/<id>/<incremental>:user/release-keys")
+        build = value["build"]
+        for key in ("id", "version_incremental"):
+            if not BUILD_TOKEN.fullmatch(build[key]):
+                raise PresetError(f"build.{key}: expected [A-Za-z0-9._-]+")
+        # The fingerprint restates the other fields, as Android's build system composes it.
+        expected = f"{head}:4.4.4/{build['id']}/{build['version_incremental']}:user/release-keys"
+        if build["fingerprint"] != expected:
+            raise PresetError(f"build.fingerprint: expected {expected}")
         return value
     except (OSError, UnicodeError, ValueError) as error:
         raise PresetError(f"{path}: {error}") from error

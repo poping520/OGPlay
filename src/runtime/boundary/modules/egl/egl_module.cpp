@@ -136,8 +136,10 @@ struct PublishedString final {
 };
 
 constexpr std::array kPublishedStrings{
-    PublishedString{kEglVendor, 0U, "OGPlay"},
-    PublishedString{kEglVersion, 256U, "1.4 OGPlay"},
+    // Android's libEGL wrapper answers these itself, whatever the GPU driver
+    // (frameworks/native/opengl/libs/EGL/egl_display.cpp sVendorString/sVersionString).
+    PublishedString{kEglVendor, 0U, "Android"},
+    PublishedString{kEglVersion, 256U, "1.4 Android META-EGL"},
     PublishedString{kEglExtensions, 512U, ""},
     PublishedString{kEglClientApis, 2048U, "OpenGL_ES"},
 };

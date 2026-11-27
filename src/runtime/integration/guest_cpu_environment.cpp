@@ -2,21 +2,29 @@
 #include "guest_cpu_environment.h"
 #include "ogplay/cpu/execution_budget.h"
 
+#include <algorithm>
 #include <array>
 #include <iomanip>
 #include <locale>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace ogplay::runtime {
 
-GuestCpuEnvironment::GuestCpuEnvironment(const GuestCpuConfig config) : config_(config) {
-    if (config.cores < 1 || config.cores > 32 || config.frequency_mhz < 1 || config.frequency_mhz > 10000) {
+GuestCpuEnvironment::GuestCpuEnvironment(GuestCpuConfig config) : config_(std::move(config)) {
+    if (config_.cores < 1 || config_.cores > 32 || config_.frequency_mhz < 1 || config_.frequency_mhz > 10000) {
         throw std::invalid_argument("guest CPU requires 1..32 cores and 1..10000 MHz");
     }
-    if (config.execution.max_mticks_per_second > 10000)
+    if (config_.execution.max_mticks_per_second > 10000)
         throw std::invalid_argument("guest CPU rate requires 0..10000 million ticks/s");
+    if (const auto& hardware = config_.identity.hardware; !hardware.empty()) {
+        if (hardware.size() > 64 || std::ranges::any_of(hardware, [](const char c) { return c < 0x20 || c > 0x7e; }))
+            throw std::invalid_argument("guest CPU hardware must be 1..64 printable ASCII bytes");
+        if (((config_.identity.midr >> 16U) & 0xfU) != 0xfU)
+            throw std::invalid_argument("guest CPU MIDR must use the ARMv7 CPUID scheme");
+    }
 }
 
 bool GuestCpuEnvironment::ClassifyUserUndefined(const cpu::RunStopReason reason, const std::uint32_t instruction,
@@ -69,7 +77,8 @@ void GuestCpuEnvironment::Publish(VirtualFileSystem& filesystem) {
     // Preserve tabs, blank lines and the kernel's trailing Features space.
     std::ostringstream cpuinfo;
     cpuinfo.imbue(std::locale::classic());
-    const auto revision = identity_.midr & 15U;
+    const auto midr = Midr();
+    const auto revision = midr & 15U;
     cpuinfo << "Processor\t: " << identity_.name << " rev " << revision << " (" << identity_.platform << ")\n";
     // c_show: BogoMIPS = loops_per_jiffy * HZ / 500000. The virtual delay
     // loop is defined as one iteration/cycle: lpj = MHz * 1000000 / HZ,
@@ -79,11 +88,11 @@ void GuestCpuEnvironment::Publish(VirtualFileSystem& filesystem) {
         cpuinfo << "processor\t: " << core << "\nBogoMIPS\t: " << config_.frequency_mhz * 2U << ".00\n\n";
     }
     cpuinfo << "Features\t: " << identity_.features << " \n"
-            << "CPU implementer\t: 0x" << std::hex << std::setfill('0') << std::setw(2) << (identity_.midr >> 24)
+            << "CPU implementer\t: 0x" << std::hex << std::setfill('0') << std::setw(2) << (midr >> 24)
             << "\nCPU architecture: " << std::dec << identity_.architecture << "\nCPU variant\t: 0x" << std::hex
-            << ((identity_.midr >> 20) & 15U) << "\nCPU part\t: 0x" << std::setw(3) << ((identity_.midr >> 4) & 0xfffU)
+            << ((midr >> 20) & 15U) << "\nCPU part\t: 0x" << std::setw(3) << ((midr >> 4) & 0xfffU)
             << "\nCPU revision\t: " << std::dec << revision << "\n\nHardware\t: "
-            << identity_.hardware
+            << Hardware()
             // Kernel system_rev/system_serial default to zero without board data.
             << "\nRevision\t: " << std::hex << std::setw(4) << identity_.board_revision
             << "\nSerial\t\t: " << std::setw(16) << identity_.serial << "\n";

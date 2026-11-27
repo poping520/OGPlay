@@ -92,18 +92,29 @@ void Expect(const std::string& value, const std::string_view expected, const std
     return true;
 }
 
-// <brand>/<name>/<device>:4.4.4/<build id>/<incremental>:user/release-keys
+// 0x + 8 lowercase hex digits; architecture bits 19:16 must be 0xf (CPUID scheme).
+[[nodiscard]] std::uint32_t ParseMidr(const std::string& text) {
+    std::uint32_t value{};
+    bool valid = text.size() == 10 && text.starts_with("0x");
+    for (std::size_t index = 2; valid && index < text.size(); ++index) {
+        const auto character = text[index];
+        const bool digit = character >= '0' && character <= '9';
+        valid = digit || (character >= 'a' && character <= 'f');
+        if (valid) value = (value << 4U) | static_cast<std::uint32_t>(digit ? character - '0' : character - 'a' + 10);
+    }
+    if (!valid || ((value >> 16U) & 0xfU) != 0xfU)
+        Fail("cpu.midr", "must be 0x + 8 lowercase hex digits with architecture 0xf");
+    return value;
+}
+
+// The fingerprint restates the other fields, as Android's build system composes it:
+// <brand>/<name>/<device>:4.4.4/<build.id>/<build.version_incremental>:user/release-keys
 void ValidateFingerprint(const runtime::SimulatedDeviceState::BuildIdentity& build) {
-    const auto head = build.brand + "/" + build.name + "/" + build.device + ":4.4.4/";
-    constexpr std::string_view tail = ":user/release-keys";
-    const std::string_view fingerprint = build.fingerprint;
-    if (!fingerprint.starts_with(head) || !fingerprint.ends_with(tail))
-        Fail("build.fingerprint", "must be " + head + "<id>/<incremental>" + std::string(tail));
-    const auto middle = fingerprint.substr(head.size(), fingerprint.size() - head.size() - tail.size());
-    const auto slash = middle.find('/');
-    if (slash == std::string_view::npos || !IsBuildToken(middle.substr(0, slash)) ||
-        !IsBuildToken(middle.substr(slash + 1U)))
-        Fail("build.fingerprint", "build id and incremental must be [A-Za-z0-9._-]+");
+    if (!IsBuildToken(build.build_id)) Fail("build.id", "must be [A-Za-z0-9._-]+");
+    if (!IsBuildToken(build.incremental)) Fail("build.version_incremental", "must be [A-Za-z0-9._-]+");
+    const auto expected = build.brand + "/" + build.name + "/" + build.device + ":4.4.4/" + build.build_id + "/" +
+                          build.incremental + ":user/release-keys";
+    if (build.fingerprint != expected) Fail("build.fingerprint", "must be " + expected);
 }
 
 }  // namespace
@@ -119,8 +130,8 @@ DevicePreset LoadDevicePresetText(const std::string_view text, const std::string
     }
     detail::ValidateExactTableKeys(
         root, "device preset",
-        {"schema", "id", "label", "description", "product", "build", "cpu", "gpu", "display", "memory"},
-        {"schema", "id", "label", "description", "product", "build", "cpu", "gpu", "display", "memory"});
+        {"schema", "id", "label", "description", "product", "build", "cpu", "board", "gpu", "display", "memory"},
+        {"schema", "id", "label", "description", "product", "build", "cpu", "board", "gpu", "display", "memory"});
     static_cast<void>(Integer(root, "schema", "schema", 1, 1));
     DevicePreset preset;
     preset.id = Text(root, "id", "id", 64);
@@ -140,18 +151,27 @@ DevicePreset LoadDevicePresetText(const std::string_view text, const std::string
     build.cpu_abi = Text(product, "cpu_abi", "product.cpu_abi", kPropertyBytes, true);
     Expect(build.cpu_abi, "armeabi-v7a", "product.cpu_abi");
 
-    const auto& build_table = Section(root, "build", {"product", "fingerprint", "version_release", "version_sdk"});
+    const auto& build_table = Section(
+        root, "build",
+        {"product", "id", "version_incremental", "display_id", "fingerprint", "version_release", "version_sdk"});
     build.build_product = Text(build_table, "product", "build.product", kPropertyBytes, true);
+    build.build_id = Text(build_table, "id", "build.id", kPropertyBytes, true);
+    build.incremental = Text(build_table, "version_incremental", "build.version_incremental", kPropertyBytes, true);
+    build.display_id = Text(build_table, "display_id", "build.display_id", kPropertyBytes, true);
     build.fingerprint = Text(build_table, "fingerprint", "build.fingerprint", kPropertyBytes, true);
     Expect(Text(build_table, "version_release", "build.version_release", kPropertyBytes, true), "4.4.4",
            "build.version_release");
     static_cast<void>(Integer(build_table, "version_sdk", "build.version_sdk", 19, 19));
     ValidateFingerprint(build);
 
-    const auto& cpu = Section(root, "cpu", {"name", "cores"});
-    preset.cpu = {Text(cpu, "name", "cpu.name", 128), Integer(cpu, "cores", "cpu.cores", 1, 32)};
+    const auto& cpu = Section(root, "cpu", {"name", "cpuinfo_hardware", "midr", "cores"});
+    preset.cpu = {Text(cpu, "name", "cpu.name", 128), Text(cpu, "cpuinfo_hardware", "cpu.cpuinfo_hardware", 64, true),
+                  ParseMidr(Text(cpu, "midr", "cpu.midr", 10, true)), Integer(cpu, "cores", "cpu.cores", 1, 32)};
+    const auto& board = Section(root, "board", {"hardware", "platform"});
+    build.hardware = Text(board, "hardware", "board.hardware", kPropertyBytes, true);
+    build.board_platform = Text(board, "platform", "board.platform", kPropertyBytes, true);
     const auto& gpu = Section(root, "gpu", {"vendor", "renderer"});
-    preset.gpu = {Text(gpu, "vendor", "gpu.vendor", 128), Text(gpu, "renderer", "gpu.renderer", 128)};
+    preset.gpu = {Text(gpu, "vendor", "gpu.vendor", 128, true), Text(gpu, "renderer", "gpu.renderer", 128, true)};
     const auto& display = Section(root, "display", {"width", "height", "density_dpi"});
     preset.display = {Integer(display, "width", "display.width", 240, 4096),
                       Integer(display, "height", "display.height", 240, 4096),

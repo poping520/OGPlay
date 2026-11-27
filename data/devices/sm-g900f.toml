@@ -14,13 +14,22 @@ cpu_abi = "armeabi-v7a"
 
 [build]
 product = "klte"
+id = "KTU84Q"
+version_incremental = "G900FXXU1BNL9"
+display_id = "KTU84Q.G900FXXU1BNL9"
 fingerprint = "samsung/kltexx/klte:4.4.4/KTU84Q/G900FXXU1BNL9:user/release-keys"
 version_release = "4.4.4"
 version_sdk = 19
 
 [cpu]
 name = "Snapdragon 801"
+cpuinfo_hardware = "Qualcomm MSM8974PRO-AC"
+midr = "0x512f06f1"
 cores = 4
+
+[board]
+hardware = "qcom"
+platform = "msm8974"
 
 [gpu]
 vendor = "Qualcomm"

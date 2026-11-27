@@ -157,7 +157,7 @@ BoundaryFixture::BoundaryFixture(const std::uint32_t supersample_factor,
                                  const bool allow_single_stage_texcoord_fallback,
                                  ogplay::runtime::AndroidLooperHooks loopers, const bool async_readback,
                                  const ogplay::gles::CompressedTextureFamily texture_family,
-                                 const std::uint64_t frame_period_ns)
+                                 const std::uint64_t frame_period_ns, std::string gl_vendor, std::string gl_renderer)
     : bus(memory), cpu(bus),
       boundary(memory, {kNativeRenderer, ogplay::gles::AngleDevice::hardware}, 4, 3, supersample_factor,
                {.allow_gles1_single_stage_texcoord_fallback = allow_single_stage_texcoord_fallback,
@@ -184,7 +184,9 @@ BoundaryFixture::BoundaryFixture(const std::uint32_t supersample_factor,
                 .ledger = &ledger,
                 .async_present_readback = async_readback,
                 .compressed_texture_family = texture_family,
-                .frame_period_ns = frame_period_ns}) {
+                .frame_period_ns = frame_period_ns,
+                .gl_vendor = std::move(gl_vendor),
+                .gl_renderer = std::move(gl_renderer)}) {
     memory.Map({stack, memory.PageSize()},
                ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
     memory.Map({output, memory.PageSize()},

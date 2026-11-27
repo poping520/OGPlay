@@ -51,6 +51,8 @@ struct SandboxSession final {
     std::string installation_id;
     // Per-sandbox API 19 identity. Never derived from host hardware.
     std::string android_id;
+    // Per-sandbox ro.serialno, independent of android_id.
+    std::string serialno;
 
     [[nodiscard]] std::string Describe() const;
 };

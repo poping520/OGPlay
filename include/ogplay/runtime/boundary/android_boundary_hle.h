@@ -3,6 +3,7 @@
 #include "ogplay/runtime/common/guest_address_layout.h"
 #include "ogplay/runtime/boundary/device_locale.h"
 
+#include <string>
 #include <cstdint>
 #include "ogplay/gles/external_texture.h"
 #include <array>
@@ -189,6 +190,9 @@ struct AndroidBoundaryOptions final {
     // one period after that surface's previous release. 0 leaves swaps unpaced.
     std::uint64_t frame_period_ns{};
     AndroidObbHooks obb{};
+    // GL_VENDOR / GL_RENDERER from the device preset; empty keeps ANGLE's strings.
+    std::string gl_vendor;
+    std::string gl_renderer;
 };
 
 struct FrameReadbackFilter final {

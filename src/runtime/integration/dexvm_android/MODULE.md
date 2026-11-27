@@ -35,7 +35,7 @@ Time 的 native 入口仅转发到 guest Calendar/TimeZone 实现；format 转�
 
 ## Context、组件与进程
 
-ROM Build 通过 SystemProperties 读取会话的模拟设备身份 `device_state.build_identity`：ro.product.manufacturer/brand/name/model/device/board/cpu.abi 与 ro.build.product/fingerprint 由前端从设备预设注入，ro.build.version.sdk/release 固定 19/4.4.4。身份默认全空，空字段不发布（Build 读到 "unknown"）；运行时不内置任何机型。
+ROM Build 通过 SystemProperties 读取会话的模拟设备身份 `device_state.build_identity`：ro.product.manufacturer/brand/name/model/device/board/cpu.abi、ro.build.product/id/version.incremental/display.id/fingerprint 与 ro.hardware/ro.board.platform 由前端从设备预设注入，ro.serialno 取自每实例沙盒；ro.build.version.sdk/release/type/tags 固定 19/4.4.4/user/release-keys。身份默认全空，空字段不发布（Build 读到 "unknown"）；运行时不内置任何机型。
 
 设备语言地区仅存 locale_language/locale_region，默认 en/US，严格校验小写两字母语言与大写
 两字母地区。System 初始化从该事实写 user.language/user.region；bridge 通过 boundary

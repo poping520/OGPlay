@@ -39,12 +39,20 @@ private:
         std::uint64_t serial;
     };
 
-    // Cortex-A9 r0p0: a fixed virtual model matching the supported ARMv7 subset,
-    // not a claim about the host CPU or a particular physical device/stepping.
+    // Cortex-A9 r0p0: the virtual default when no device preset names a SoC;
+    // a preset replaces only hardware and midr.
     inline static constexpr VirtualCpuIdentity identity_{
         "ARMv7 Processor", "v7l", 0x410fc090U, 7,
         // Fixed Dynarmic execution surface; never ROM/host-configurable flags.
         "half thumb fastmult vfp edsp neon vfpv3 tls", "OGPlay virtual ARMv7", 0, 0};
+
+    [[nodiscard]] std::uint32_t Midr() const noexcept {
+        return config_.identity.hardware.empty() ? identity_.midr : config_.identity.midr;
+    }
+
+    [[nodiscard]] std::string_view Hardware() const noexcept {
+        return config_.identity.hardware.empty() ? identity_.hardware : std::string_view(config_.identity.hardware);
+    }
     const GuestCpuConfig config_;
     std::vector<std::unique_ptr<VfsGeneratedFileRegistration>> files_;
 };

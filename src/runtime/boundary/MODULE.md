@@ -62,7 +62,10 @@ TryTrace 只短锁复制有界记录，busy 不等待 graphics 线程。跨线�
   删除清除所有 unit/target 引用。对象名由 ANGLE 唯一生成/删除。
 - query 返回真实 ANGLE 或对应逻辑 shadow，shape 明确受检；不得泄漏超采样坐标或猜未知 pname。
   glGetString 两个库入口按调用线程 current EGL client version 选择查询实现，不能由 ELF
-  依赖顺序决定。ES1 version 表示 ES-CM 1.1，ES2/3 返回对应 ANGLE 值；扩展串只发布
+  依赖顺序决定。ES1 version 表示 ES-CM 1.1，ES2/3 返回对应 ANGLE 版本并去掉 ` (ANGLE …)` 后缀
+  （SHADING_LANGUAGE_VERSION 同）；VENDOR/RENDERER 取 `AndroidBoundaryOptions.gl_vendor/gl_renderer`
+  （设备预设），为空才用 ANGLE 值，GLES1/2/3 与 managed 路径共用 `GuestGlString`。
+  EGL_VENDOR/EGL_VERSION 固定为 Android libEGL 封装层的 `Android` / `1.4 Android META-EGL`。扩展串只发布
   完整可执行能力，不透传后端扩展全集。未启用 guest EGL 的托管路径保持入口 API 语义。
   字符串位于分槽只读 guest 区，不因其他 pname 查询覆盖；GLES1 扩展串保留尾随分隔符。
 - client array 保存定义时 buffer binding，在 draw 按 first/count 或实际最大索引预检并上传；

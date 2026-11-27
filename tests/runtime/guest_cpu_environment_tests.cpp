@@ -165,6 +165,35 @@ TEST_CASE("BND-42 CPU facts publish isolated readonly topology and fixed frequen
     }
 }
 
+TEST_CASE("Device preset cpuinfo reports the SoC hardware and MIDR with fixed Features") {
+    runtime::VirtualFileSystem fs;
+    runtime::GuestCpuEnvironment environment({4, 1400, {}, {"SMDK4x12", 0x413fc090U}});  // GT-I9300
+    environment.Publish(fs);
+    const auto info = ReadCpuFile(fs, "/proc/cpuinfo");
+    CHECK(info.starts_with("Processor\t: ARMv7 Processor rev 0 (v7l)\n"));
+    CHECK(info.find("Features\t: half thumb fastmult vfp edsp neon vfpv3 tls \n"
+                    "CPU implementer\t: 0x41\n"
+                    "CPU architecture: 7\n"
+                    "CPU variant\t: 0x3\n"
+                    "CPU part\t: 0xc09\n"
+                    "CPU revision\t: 0\n"
+                    "\n"
+                    "Hardware\t: SMDK4x12\n") != std::string::npos);
+    runtime::VirtualFileSystem krait_fs;
+    runtime::GuestCpuEnvironment krait({4, 2500, {}, {"Qualcomm MSM8974PRO-AC", 0x512f06f1U}});  // SM-G900F
+    krait.Publish(krait_fs);
+    const auto krait_info = ReadCpuFile(krait_fs, "/proc/cpuinfo");
+    CHECK(krait_info.starts_with("Processor\t: ARMv7 Processor rev 1 (v7l)\n"));
+    CHECK(krait_info.find("CPU implementer\t: 0x51\nCPU architecture: 7\nCPU variant\t: 0x2\n"
+                          "CPU part\t: 0x06f\nCPU revision\t: 1\n") != std::string::npos);
+    CHECK(krait_info.find("Hardware\t: Qualcomm MSM8974PRO-AC\n") != std::string::npos);
+    for (const auto& identity :
+         {runtime::GuestCpuIdentity{"SMDK4x12", 0x4130c090U}, runtime::GuestCpuIdentity{"bad\nline", 0x413fc090U},
+          runtime::GuestCpuIdentity{std::string(65, 'x'), 0x413fc090U}})
+        CHECK_THROWS_AS(static_cast<void>(runtime::GuestCpuEnvironment({1, 1000, {}, identity})),
+                        std::invalid_argument);
+}
+
 TEST_CASE("BND-42 CPU configuration rejects invalid values and rolls back collisions") {
     for (const auto config : {runtime::GuestCpuConfig{0, 1000}, {33, 1000}, {1, 0}, {1, 10001}})
         CHECK_THROWS_AS(static_cast<void>(runtime::GuestCpuEnvironment{config}), std::invalid_argument);

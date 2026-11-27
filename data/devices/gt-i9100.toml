@@ -14,13 +14,22 @@ cpu_abi = "armeabi-v7a"
 
 [build]
 product = "GT-I9100"
+id = "KTU84Q"
+version_incremental = "I9100XWLSW"
+display_id = "KTU84Q.I9100XWLSW"
 fingerprint = "samsung/GT-I9100/GT-I9100:4.4.4/KTU84Q/I9100XWLSW:user/release-keys"
 version_release = "4.4.4"
 version_sdk = 19
 
 [cpu]
 name = "Exynos 4210"
+cpuinfo_hardware = "SMDK4210"
+midr = "0x412fc091"
 cores = 2
+
+[board]
+hardware = "smdk4210"
+platform = "exynos4"
 
 [gpu]
 vendor = "ARM"

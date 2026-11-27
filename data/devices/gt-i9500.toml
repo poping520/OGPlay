@@ -14,13 +14,22 @@ cpu_abi = "armeabi-v7a"
 
 [build]
 product = "ja3g"
+id = "KTU84Q"
+version_incremental = "I9500XXUHOB7"
+display_id = "KTU84Q.I9500XXUHOB7"
 fingerprint = "samsung/ja3gxx/ja3g:4.4.4/KTU84Q/I9500XXUHOB7:user/release-keys"
 version_release = "4.4.4"
 version_sdk = 19
 
 [cpu]
 name = "Exynos 5410"
+cpuinfo_hardware = "UNIVERSAL5410"
+midr = "0x412fc0f3"
 cores = 4
+
+[board]
+hardware = "universal5410"
+platform = "exynos5"
 
 [gpu]
 vendor = "Imagination Technologies"
